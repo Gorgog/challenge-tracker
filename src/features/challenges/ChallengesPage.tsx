@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { PlusIcon } from 'lucide-react'
+import { PlusIcon, TagsIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   useChallenges,
   useCreateChallenge,
+  useCreateTag,
   useDeleteChallenge,
+  useDeleteTag,
   usePurgeChallenge,
   useRestoreChallenge,
   useSetChallengeStatus,
@@ -17,6 +19,7 @@ import { plural } from '@/lib/plural'
 import { ChallengeForm } from './ChallengeForm'
 import { ChallengeRow } from './ChallengeRow'
 import { DeletedChallenges } from './DeletedChallenges'
+import { TagsDialog } from './TagsDialog'
 
 export function ChallengesPage() {
   const challenges = useChallenges()
@@ -26,7 +29,10 @@ export function ChallengesPage() {
   const deleteChallenge = useDeleteChallenge()
   const restoreChallenge = useRestoreChallenge()
   const purgeChallenge = usePurgeChallenge()
+  const createTag = useCreateTag()
+  const deleteTag = useDeleteTag()
   const [formOpen, setFormOpen] = useState(false)
+  const [tagsOpen, setTagsOpen] = useState(false)
 
   const all = challenges.data ?? []
   /* Удалённые уходят из списка, но статистика их помнит. */
@@ -34,6 +40,10 @@ export function ChallengesPage() {
   const trash = all.filter((c) => !isLive(c))
   const tagName = new Map((tags.data ?? []).map((t) => [t.id, t.name]))
   const namesOf = (c: Challenge) => c.tagIds.flatMap((id) => tagName.get(id) ?? [])
+
+  /* Сколько живых челленджей носят каждый тег — чтобы удаление тега не было вслепую. */
+  const usage: Record<string, number> = {}
+  for (const c of list) for (const id of c.tagIds) usage[id] = (usage[id] ?? 0) + 1
 
   const remove = (c: Challenge) => {
     deleteChallenge.mutate(c.id)
@@ -51,10 +61,16 @@ export function ChallengesPage() {
             {list.length} {plural(list.length, 'челлендж', 'челленджа', 'челленджей')}
           </p>
         </div>
-        <Button onClick={() => setFormOpen(true)}>
-          <PlusIcon className="size-4" />
-          Новый челлендж
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setTagsOpen(true)}>
+            <TagsIcon className="size-4" />
+            Теги
+          </Button>
+          <Button onClick={() => setFormOpen(true)}>
+            <PlusIcon className="size-4" />
+            Новый челлендж
+          </Button>
+        </div>
       </div>
 
       {challenges.isPending ? (
@@ -91,11 +107,21 @@ export function ChallengesPage() {
         }}
       />
 
+      <TagsDialog
+        open={tagsOpen}
+        tags={tags.data ?? []}
+        usage={usage}
+        onCreate={(name) => createTag.mutateAsync(name)}
+        onDelete={(id) => deleteTag.mutate(id)}
+        onClose={() => setTagsOpen(false)}
+      />
+
       {formOpen && (
         <ChallengeForm
           open
           /* Все, включая удалённые: вернувшийся челлендж не должен совпасть по цвету с новым. */
           existing={all}
+          tags={tags.data ?? []}
           onCancel={() => setFormOpen(false)}
           onCreate={(draft) => {
             createChallenge.mutate(draft)

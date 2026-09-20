@@ -10,20 +10,24 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { todayKey } from '@/domain/date'
 import { buildChallenge, suggestCode } from '@/domain/newChallenge'
-import type { Challenge, ChallengeKind, ChallengeMeasure } from '@/domain/types'
+import type { Challenge, ChallengeKind, ChallengeMeasure, Tag } from '@/domain/types'
 import { cn } from '@/lib/utils'
+import { TagPicker } from './TagPicker'
 
 export type ChallengeFormProps = {
   open: boolean
   /** Уже заведённые челленджи: из них берутся свободный цвет и порядок. */
   existing: Challenge[]
+  /** Все теги челленджей — из них выбираются теги нового. */
+  tags: Tag[]
   onCreate: (challenge: Omit<Challenge, 'id'>) => void
   onCancel: () => void
 }
 
-export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeFormProps) {
+export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: ChallengeFormProps) {
   const [name, setName] = useState('')
   const [codeInput, setCodeInput] = useState('')
   const [codeTouched, setCodeTouched] = useState(false)
@@ -33,6 +37,8 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
   const [unit, setUnit] = useState('')
   const [limited, setLimited] = useState(false)
   const [lengthText, setLengthText] = useState('30')
+  const [tagIds, setTagIds] = useState<string[]>([])
+  const [rulesLocked, setRulesLocked] = useState(false)
 
   /* Код следует за названием, пока его не тронули руками. */
   const code = codeTouched ? codeInput : suggestCode(name)
@@ -50,8 +56,8 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
           measure,
           goal: Number(goalText) || 1,
           unit,
-          tagIds: [],
-          rulesLocked: false,
+          tagIds,
+          rulesLocked,
           lengthDays: limited ? Number(lengthText) || 1 : null,
         },
         existing,
@@ -155,6 +161,11 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
           )}
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-medium">Теги</span>
+          <TagPicker tags={tags} value={tagIds} onChange={setTagIds} />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <Field id="ch-code" label="Код">
             <Input
@@ -167,6 +178,24 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
               }}
             />
           </Field>
+        </div>
+
+        <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+          <Switch
+            id="ch-lock"
+            checked={rulesLocked}
+            onCheckedChange={setRulesLocked}
+            className="mt-0.5"
+          />
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor="ch-lock" className="text-[13px] font-medium">
+              Запереть правила
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Тип, измерение, цель и срок потом не поменять — статистику не подправить задним
+              числом. Название и теги менять можно. Запереть можно и позже, отпереть — нет.
+            </p>
+          </div>
         </div>
 
         <DialogFooter>
