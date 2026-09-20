@@ -46,6 +46,9 @@ import { groupId, groupOf } from './groups'
 import { HoldCard } from './HoldCard'
 import { TaskRow } from './TaskRow'
 
+/* Стабильная пустая ссылка: иначе useMemo ниже пересчитывался бы каждый рендер. */
+const NO_CHALLENGES: Challenge[] = []
+
 const SCORE_LABELS: { field: keyof Pick<DayLog, 'mood' | 'wellbeing' | 'productivity'>; label: string }[] = [
   { field: 'mood', label: 'Настроение' },
   { field: 'wellbeing', label: 'Самочувствие' },
@@ -73,9 +76,26 @@ export function DayPage() {
 
   const [dialogDay, setDialogDay] = useState<string | null>(null)
 
+  /*
+   * Порядок после броска применяется здесь, синхронно, а не ждёт мутацию:
+   * иначе на один кадр трансформации уже сброшены, а список ещё в старом порядке,
+   * и карточки успевают мигнуть на прежних местах.
+   */
+  const [rowOrder, setRowOrder] = useState<string[] | null>(null)
+  const [groupOrder, setGroupOrder] = useState<DayGroup[] | null>(null)
+
   const entries = entriesQuery.data ?? {}
   const logs = logsQuery.data ?? []
-  const allChallenges = challenges.data ?? []
+  const fetched = challenges.data ?? NO_CHALLENGES
+
+  const allChallenges = useMemo(() => {
+    if (!rowOrder) return fetched
+    const byId = new Map(fetched.map((c) => [c.id, c]))
+    const known = rowOrder.flatMap((id) => byId.get(id) ?? [])
+    const rest = fetched.filter((c) => !rowOrder.includes(c.id))
+    return [...known, ...rest]
+  }, [fetched, rowOrder])
+
   const active = allChallenges.filter((c) => c.status === 'active')
   const tasks = active.filter((c) => c.kind === 'do')
   const holds = active.filter((c) => c.kind === 'quit')
@@ -120,7 +140,7 @@ export function DayPage() {
     )
   }
 
-  const groups = dayGroupsQuery.data ?? DEFAULT_DAY_GROUPS
+  const groups = groupOrder ?? dayGroupsQuery.data ?? DEFAULT_DAY_GROUPS
   const shownGroups = groups.filter((g) => (g === 'tasks' ? tasks : holds).length > 0)
 
   /** Перестановка блоков между собой. */
@@ -129,7 +149,10 @@ export function DayPage() {
     const from = groups.indexOf(groupOf(String(dragged.id)) as DayGroup)
     const to = groups.indexOf(groupOf(String(over.id)) as DayGroup)
     if (from < 0 || to < 0) return
-    saveDayGroups.mutate(arrayMove(groups, from, to))
+
+    const next = arrayMove(groups, from, to)
+    setGroupOrder(next)
+    saveDayGroups.mutate(next, { onSuccess: () => setGroupOrder(null) })
   }
 
   /** Перестановка карточек внутри блока. Между блоками они не ходят: контексты разные. */
@@ -145,7 +168,9 @@ export function DayPage() {
     /* Челленджи из другого блока остаются на своих местах в общем порядке. */
     let next = 0
     const fullOrder = allChallenges.map((c) => (groupIds.includes(c.id) ? moved[next++]! : c.id))
-    reorderChallenges.mutate(fullOrder)
+
+    setRowOrder(fullOrder)
+    reorderChallenges.mutate(fullOrder, { onSuccess: () => setRowOrder(null) })
   }
 
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */

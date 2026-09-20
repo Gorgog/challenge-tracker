@@ -352,3 +352,122 @@ describe('хранение между перезагрузками', () => {
     expect((await r.listEntries())[c!.id]?.['2026-09-20']).toBe(5)
   })
 })
+
+describe('управление челленджем', () => {
+  const byCode = async (r: ReturnType<typeof repo>, code: string) =>
+    (await r.listChallenges()).find((c) => c.code === code)!
+
+  it('правка меняет название', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    await r.updateChallenge(c.id, { name: 'Читать 30 страниц' })
+    expect((await byCode(r, 'ЧТН')).name).toBe('Читать 30 страниц')
+  })
+
+  it('у запертого челленджа правка не трогает цель', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ОТЖ')
+    await r.updateChallenge(c.id, { rulesLocked: true })
+    await r.updateChallenge(c.id, { goal: 5 })
+    expect((await byCode(r, 'ОТЖ')).goal).toBe(30)
+  })
+
+  it('ставит на паузу и снимает с неё', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+
+    await r.setChallengeStatus(c.id, 'paused')
+    expect((await byCode(r, 'ЧТН')).status).toBe('paused')
+
+    await r.setChallengeStatus(c.id, 'active')
+    expect((await byCode(r, 'ЧТН')).status).toBe('active')
+  })
+
+  it('мягкое удаление проставляет дату и не трогает отметки', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    const before = (await r.listEntries())[c.id]
+
+    await r.deleteChallenge(c.id)
+
+    expect((await byCode(r, 'ЧТН')).deletedAt).not.toBeNull()
+    expect((await r.listEntries())[c.id]).toEqual(before)
+  })
+
+  it('возврат снимает дату удаления', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    await r.deleteChallenge(c.id)
+    await r.restoreChallenge(c.id)
+    expect((await byCode(r, 'ЧТН')).deletedAt).toBeNull()
+  })
+
+  it('удаление навсегда сносит и челлендж, и его отметки', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    await r.purgeChallenge(c.id)
+
+    expect((await r.listChallenges()).some((x) => x.id === c.id)).toBe(false)
+    expect(c.id in (await r.listEntries())).toBe(false)
+  })
+
+  it('правка и удаление переживают перезагрузку', async () => {
+    const storage = fakeStorage()
+    const first = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    const c = (await first.listChallenges()).find((x) => x.code === 'ЧТН')!
+    await first.updateChallenge(c.id, { name: 'Переименован' })
+    await first.deleteChallenge(c.id)
+
+    const again = (await createDemoRepo({ today: TODAY, seed: 20260921, storage }).listChallenges()).find(
+      (x) => x.id === c.id,
+    )!
+    expect(again.name).toBe('Переименован')
+    expect(again.deletedAt).not.toBeNull()
+  })
+})
+
+describe('теги челленджей', () => {
+  it('в демо заведены теги прототипа, и челленджи на них ссылаются', async () => {
+    const r = repo()
+    const tags = await r.listTags()
+    expect(tags.map((t) => t.name).sort()).toEqual(['еда', 'здоровье', 'тело', 'ум'])
+
+    const body = tags.find((t) => t.name === 'тело')!
+    const push = (await r.listChallenges()).find((c) => c.code === 'ОТЖ')!
+    expect(push.tagIds).toEqual([body.id])
+  })
+
+  it('заводит тег', async () => {
+    const r = repo()
+    const created = await r.createTag('сон')
+    expect((await r.listTags()).some((t) => t.id === created.id && t.name === 'сон')).toBe(true)
+  })
+
+  it('обрезает пробелы по краям имени', async () => {
+    expect((await repo().createTag('  сон  ')).name).toBe('сон')
+  })
+
+  it('не даёт завести тег, который уже есть, — без учёта регистра и пробелов', async () => {
+    await expect(repo().createTag('  Тело ')).rejects.toThrow(/уже есть/i)
+  })
+
+  it('пустое имя отклоняется', async () => {
+    await expect(repo().createTag('   ')).rejects.toThrow()
+  })
+
+  it('удаление тега снимает его со всех челленджей', async () => {
+    const r = repo()
+    const body = (await r.listTags()).find((t) => t.name === 'тело')!
+    await r.deleteTag(body.id)
+
+    expect((await r.listTags()).some((t) => t.id === body.id)).toBe(false)
+    for (const c of await r.listChallenges()) expect(c.tagIds).not.toContain(body.id)
+  })
+
+  it('теги переживают перезагрузку', async () => {
+    const storage = fakeStorage()
+    await createDemoRepo({ today: TODAY, seed: 20260921, storage }).createTag('сон')
+    const tags = await createDemoRepo({ today: TODAY, seed: 20260921, storage }).listTags()
+    expect(tags.some((t) => t.name === 'сон')).toBe(true)
+  })
+})
