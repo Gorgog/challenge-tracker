@@ -33,7 +33,7 @@ describe('forecast', () => {
   it('считает темп по прошедшим дням и прогноз на финиш', () => {
     // 20 прошедших дней (1–20 сентября), выполнены все
     const entries = entriesBack(20, () => true)
-    const f = forecast(limited, entries, TODAY)
+    const f = forecast(limited, entries, TODAY)!
     expect(f.pace).toBe(1)
     expect(f.projected).toBe(30)
     expect(f.onTrack).toBe(true)
@@ -41,7 +41,7 @@ describe('forecast', () => {
 
   it('половинный темп не дотягивает до цели', () => {
     const entries = entriesBack(20, (i) => i % 2 === 0)
-    const f = forecast(limited, entries, TODAY)
+    const f = forecast(limited, entries, TODAY)!
     expect(f.pace).toBeCloseTo(0.5)
     expect(f.projected).toBe(15)
     expect(f.onTrack).toBe(false)
