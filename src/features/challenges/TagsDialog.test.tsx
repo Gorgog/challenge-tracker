@@ -74,4 +74,18 @@ describe('окно тегов', () => {
     await user.click(screen.getByRole('button', { name: /да, удалить/i }))
     expect(onDelete).toHaveBeenCalledWith('t1')
   })
+
+  it('поле ищет по списку — длинный список не надо листать', async () => {
+    const { user } = setup()
+    await user.type(nameField(), 'здо')
+    expect(screen.getByText('здоровье')).toBeInTheDocument()
+    expect(screen.queryByText('тело')).not.toBeInTheDocument()
+  })
+
+  it('если по поиску ничего нет — подсказывает, что такой тег можно добавить', async () => {
+    const { user } = setup()
+    await user.type(nameField(), 'сон')
+    expect(screen.getByText(/такого тега нет/i)).toBeInTheDocument()
+  })
 })
+

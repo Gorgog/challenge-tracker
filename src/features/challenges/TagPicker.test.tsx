@@ -80,4 +80,63 @@ describe('выбор тегов', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: /выбрать теги|теги/i }))
     expect(screen.getByText(/заведи их кнопкой «теги»/i)).toBeInTheDocument()
   })
+
 })
+
+/** Обёртка, которая умеет заводить теги, — как форма, у которой есть репозиторий. */
+function CreatingHarness() {
+  const [tags, setTags] = useState<Tag[]>(TAGS)
+  const [value, setValue] = useState<string[]>([])
+  return (
+    <>
+      <TagPicker
+        tags={tags}
+        value={value}
+        onChange={setValue}
+        onCreate={async (name) => {
+          const tag = { id: 'new', name }
+          setTags((prev) => [...prev, tag])
+          return tag
+        }}
+      />
+      <output data-testid="value">{value.join(',')}</output>
+    </>
+  )
+}
+
+describe('создание тега прямо из выбора', () => {
+  const open = async () => {
+    render(<CreatingHarness />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /выбрать теги/i }))
+    return user
+  }
+
+  it('если такого тега нет — предлагает создать и сразу выбирает созданный', async () => {
+    const user = await open()
+    await user.type(screen.getByRole('searchbox'), 'йога')
+    await user.click(screen.getByRole('button', { name: /создать тег «йога»/i }))
+
+    expect(screen.getByTestId('value')).toHaveTextContent('new')
+    expect(screen.getByRole('button', { name: /убрать тег «йога»/i })).toBeInTheDocument()
+  })
+
+  it('при точном совпадении создать не предлагает — без учёта регистра и пробелов', async () => {
+    const user = await open()
+    await user.type(screen.getByRole('searchbox'), '  Тело ')
+    expect(screen.queryByRole('button', { name: /создать тег/i })).not.toBeInTheDocument()
+  })
+
+  it('частичное совпадение не мешает создать новый', async () => {
+    const user = await open()
+    await user.type(screen.getByRole('searchbox'), 'те')
+    expect(screen.getByRole('option', { name: 'тело' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /создать тег «те»/i })).toBeInTheDocument()
+  })
+
+  it('с пустым поиском создавать нечего', async () => {
+    await open()
+    expect(screen.queryByRole('button', { name: /создать тег/i })).not.toBeInTheDocument()
+  })
+})
+
