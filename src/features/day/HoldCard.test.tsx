@@ -20,13 +20,14 @@ const challenge: Challenge = {
   sortOrder: 1,
 }
 
-const setup = (over: { failed?: boolean; streak?: number } = {}) => {
+const setup = (over: { failed?: boolean; streak?: number; frozen?: boolean } = {}) => {
   const onToggleRelapse = vi.fn()
   render(
     <HoldCard
       challenge={challenge}
       failed={over.failed ?? false}
       streak={over.streak ?? 40}
+      frozen={over.frozen ?? false}
       onToggleRelapse={onToggleRelapse}
     />,
   )
@@ -59,5 +60,14 @@ describe('карточка отказа', () => {
   it('счётчик с нулём не превращается в «0 дня»', () => {
     setup({ failed: true, streak: 0 })
     expect(screen.getByText('0')).toBeInTheDocument()
+  })
+
+  it('после закрытия дня срыв не отметить', async () => {
+    const { user, onToggleRelapse } = setup({ frozen: true })
+    const button = screen.getByRole('button', { name: /сорвался/i })
+    expect(button).toBeDisabled()
+
+    await user.click(button)
+    expect(onToggleRelapse).not.toHaveBeenCalled()
   })
 })
