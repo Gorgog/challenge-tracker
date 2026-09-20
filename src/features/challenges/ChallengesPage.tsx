@@ -12,6 +12,7 @@ import {
   useRestoreChallenge,
   useSetChallengeStatus,
   useTags,
+  useUpdateChallenge,
 } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import type { Challenge } from '@/domain/types'
@@ -31,8 +32,10 @@ export function ChallengesPage() {
   const purgeChallenge = usePurgeChallenge()
   const createTag = useCreateTag()
   const deleteTag = useDeleteTag()
+  const updateChallenge = useUpdateChallenge()
   const [formOpen, setFormOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [editing, setEditing] = useState<Challenge | null>(null)
 
   const all = challenges.data ?? []
   /* Удалённые уходят из списка, но статистика их помнит. */
@@ -91,6 +94,7 @@ export function ChallengesPage() {
               onToggleStatus={() =>
                 setStatus.mutate({ id: c.id, status: c.status === 'paused' ? 'active' : 'paused' })
               }
+              onEdit={() => setEditing(c)}
               onDelete={() => remove(c)}
             />
           ))}
@@ -115,6 +119,22 @@ export function ChallengesPage() {
         onDelete={(id) => deleteTag.mutate(id)}
         onClose={() => setTagsOpen(false)}
       />
+
+      {editing && (
+        <ChallengeForm
+          key={editing.id}
+          open
+          existing={all}
+          tags={tags.data ?? []}
+          challenge={editing}
+          onCancel={() => setEditing(null)}
+          onSave={(patch) => {
+            updateChallenge.mutate({ id: editing.id, patch })
+            setEditing(null)
+            toast(`«${patch.name?.trim() || editing.name}» сохранён`)
+          }}
+        />
+      )}
 
       {formOpen && (
         <ChallengeForm

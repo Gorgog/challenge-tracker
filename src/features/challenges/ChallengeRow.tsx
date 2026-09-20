@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
+import { LockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatHuman, parseDay } from '@/domain/date'
 import type { Challenge } from '@/domain/types'
@@ -10,11 +10,19 @@ export type ChallengeRowProps = {
   challenge: Challenge
   tagNames: string[]
   onToggleStatus: () => void
+  /** Доступна и у запертого: замок закрывает только правила, имя и теги менять можно. */
+  onEdit: () => void
   /** Мягкое удаление: челлендж уходит в «Удалённые», статистика его помнит. */
   onDelete: () => void
 }
 
-export function ChallengeRow({ challenge: c, tagNames, onToggleStatus, onDelete }: ChallengeRowProps) {
+export function ChallengeRow({
+  challenge: c,
+  tagNames,
+  onToggleStatus,
+  onEdit,
+  onDelete,
+}: ChallengeRowProps) {
   const paused = c.status === 'paused'
 
   const what =
@@ -43,7 +51,19 @@ export function ChallengeRow({ challenge: c, tagNames, onToggleStatus, onDelete 
       </span>
 
       <div className={cn('min-w-0', paused && 'opacity-55')}>
-        <div className="truncate text-[14px] font-medium">{c.name}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-[14px] font-medium">{c.name}</span>
+          {c.rulesLocked && (
+            <span
+              role="img"
+              aria-label="Правила заперты"
+              title="Правила заперты: тип, измерение, цель и срок не меняются"
+              className="shrink-0 text-muted-foreground"
+            >
+              <LockIcon className="size-3" />
+            </span>
+          )}
+        </div>
         <div className="font-mono text-[10.5px] text-muted-foreground">
           {what} · {term} · с {formatHuman(parseDay(c.startDate))}
           {tagNames.length > 0 && ` · ${tagNames.map((t) => `«${t}»`).join(' ')}`}
@@ -64,6 +84,9 @@ export function ChallengeRow({ challenge: c, tagNames, onToggleStatus, onDelete 
           title={paused ? 'Снять с паузы' : 'Поставить на паузу'}
         >
           {paused ? <PlayIcon /> : <PauseIcon />}
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onEdit} aria-label="Изменить" title="Изменить">
+          <PencilIcon />
         </Button>
         <Button
           variant="ghost"

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LockIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import type { ChallengePatch } from '@/domain/challenges'
 import { todayKey } from '@/domain/date'
 import { buildChallenge, suggestCode } from '@/domain/newChallenge'
 import type { Challenge, ChallengeKind, ChallengeMeasure, Tag } from '@/domain/types'
@@ -21,24 +23,39 @@ export type ChallengeFormProps = {
   open: boolean
   /** Уже заведённые челленджи: из них берутся свободный цвет и порядок. */
   existing: Challenge[]
-  /** Все теги челленджей — из них выбираются теги нового. */
+  /** Все теги челленджей — из них выбираются теги этого. */
   tags: Tag[]
-  onCreate: (challenge: Omit<Challenge, 'id'>) => void
+  /** Передан — форма правит его, не передан — заводит новый. */
+  challenge?: Challenge
+  onCreate?: (challenge: Omit<Challenge, 'id'>) => void
+  onSave?: (patch: ChallengePatch) => void
   onCancel: () => void
 }
 
-export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: ChallengeFormProps) {
-  const [name, setName] = useState('')
-  const [codeInput, setCodeInput] = useState('')
-  const [codeTouched, setCodeTouched] = useState(false)
-  const [kind, setKind] = useState<ChallengeKind>('do')
-  const [measure, setMeasure] = useState<ChallengeMeasure>('binary')
-  const [goalText, setGoalText] = useState('1')
-  const [unit, setUnit] = useState('')
-  const [limited, setLimited] = useState(false)
-  const [lengthText, setLengthText] = useState('30')
-  const [tagIds, setTagIds] = useState<string[]>([])
-  const [rulesLocked, setRulesLocked] = useState(false)
+export function ChallengeForm({
+  open,
+  existing,
+  tags,
+  challenge,
+  onCreate,
+  onSave,
+  onCancel,
+}: ChallengeFormProps) {
+  const editing = Boolean(challenge)
+  /* Замок, который стоял ещё до открытия формы. Здесь его не снять. */
+  const rulesFrozen = Boolean(challenge?.rulesLocked)
+
+  const [name, setName] = useState(challenge?.name ?? '')
+  const [codeInput, setCodeInput] = useState(challenge?.code ?? '')
+  const [codeTouched, setCodeTouched] = useState(editing)
+  const [kind, setKind] = useState<ChallengeKind>(challenge?.kind ?? 'do')
+  const [measure, setMeasure] = useState<ChallengeMeasure>(challenge?.measure ?? 'binary')
+  const [goalText, setGoalText] = useState(String(challenge?.goal ?? 1))
+  const [unit, setUnit] = useState(challenge?.unit ?? '')
+  const [limited, setLimited] = useState(challenge ? challenge.lengthDays !== null : false)
+  const [lengthText, setLengthText] = useState(String(challenge?.lengthDays ?? 30))
+  const [tagIds, setTagIds] = useState<string[]>(challenge?.tagIds ?? [])
+  const [rulesLocked, setRulesLocked] = useState(challenge?.rulesLocked ?? false)
 
   /* Код следует за названием, пока его не тронули руками. */
   const code = codeTouched ? codeInput : suggestCode(name)
@@ -47,19 +64,32 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
 
   const submit = () => {
     if (!ready) return
-    onCreate(
+    const goal = counted ? Number(goalText) || 1 : 1
+    const lengthDays = limited ? Number(lengthText) || 1 : null
+
+    if (challenge) {
+      onSave?.({
+        name,
+        code,
+        tagIds,
+        rulesLocked,
+        /* У запертого правила не отправляем вовсе: applyPatch их всё равно отбросит. */
+        ...(rulesFrozen
+          ? {}
+          : {
+              kind,
+              measure: counted ? 'count' : 'binary',
+              goal,
+              unit: counted ? unit.trim() || null : null,
+              lengthDays,
+            }),
+      })
+      return
+    }
+
+    onCreate?.(
       buildChallenge(
-        {
-          name,
-          code,
-          kind,
-          measure,
-          goal: Number(goalText) || 1,
-          unit,
-          tagIds,
-          rulesLocked,
-          lengthDays: limited ? Number(lengthText) || 1 : null,
-        },
+        { name, code, kind, measure, goal, unit, tagIds, rulesLocked, lengthDays },
         existing,
         todayKey(),
       ),
@@ -70,7 +100,9 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
     <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <DialogContent className="max-h-[90dvh] gap-5 overflow-y-auto sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="text-lg font-bold tracking-tight">Новый челлендж</DialogTitle>
+          <DialogTitle className="text-lg font-bold tracking-tight">
+            {editing ? 'Изменить челлендж' : 'Новый челлендж'}
+          </DialogTitle>
           <DialogDescription>
             Привычку нужно выполнять, отказ — держать. Считаются они по-разному.
           </DialogDescription>
@@ -86,13 +118,20 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
           />
         </Field>
 
+        {rulesFrozen && (
+          <p className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <LockIcon className="size-3.5 shrink-0" />
+            Правила заперты — тип, измерение, цель и срок не меняются.
+          </p>
+        )}
+
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-medium">Тип</span>
           <div className="flex gap-2">
-            <Choice active={kind === 'do'} onClick={() => setKind('do')}>
+            <Choice active={kind === 'do'} disabled={rulesFrozen} onClick={() => setKind('do')}>
               Привычка
             </Choice>
-            <Choice active={kind === 'quit'} onClick={() => setKind('quit')}>
+            <Choice active={kind === 'quit'} disabled={rulesFrozen} onClick={() => setKind('quit')}>
               Отказ
             </Choice>
           </div>
@@ -107,10 +146,18 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
           <div className="flex flex-col gap-2">
             <span className="text-[13px] font-medium">Чем измеряем</span>
             <div className="flex gap-2">
-              <Choice active={measure === 'binary'} onClick={() => setMeasure('binary')}>
+              <Choice
+                active={measure === 'binary'}
+                disabled={rulesFrozen}
+                onClick={() => setMeasure('binary')}
+              >
                 Галочка
               </Choice>
-              <Choice active={measure === 'count'} onClick={() => setMeasure('count')}>
+              <Choice
+                active={measure === 'count'}
+                disabled={rulesFrozen}
+                onClick={() => setMeasure('count')}
+              >
                 Число
               </Choice>
             </div>
@@ -124,6 +171,7 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
                 id="ch-goal"
                 inputMode="numeric"
                 value={goalText}
+                disabled={rulesFrozen}
                 onChange={(e) => setGoalText(e.target.value.replace(/\D/g, ''))}
               />
             </Field>
@@ -131,6 +179,7 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
               <Input
                 id="ch-unit"
                 value={unit}
+                disabled={rulesFrozen}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="раз, шагов, страниц"
               />
@@ -141,10 +190,10 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-medium">Срок</span>
           <div className="flex gap-2">
-            <Choice active={!limited} onClick={() => setLimited(false)}>
+            <Choice active={!limited} disabled={rulesFrozen} onClick={() => setLimited(false)}>
               Бессрочно
             </Choice>
-            <Choice active={limited} onClick={() => setLimited(true)}>
+            <Choice active={limited} disabled={rulesFrozen} onClick={() => setLimited(true)}>
               Задать срок
             </Choice>
           </div>
@@ -154,6 +203,7 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
                 id="ch-length"
                 inputMode="numeric"
                 value={lengthText}
+                disabled={rulesFrozen}
                 onChange={(e) => setLengthText(e.target.value.replace(/\D/g, ''))}
                 className="w-28"
               />
@@ -184,6 +234,7 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
           <Switch
             id="ch-lock"
             checked={rulesLocked}
+            disabled={rulesFrozen}
             onCheckedChange={setRulesLocked}
             className="mt-0.5"
           />
@@ -203,7 +254,7 @@ export function ChallengeForm({ open, existing, tags, onCreate, onCancel }: Chal
             Отмена
           </Button>
           <Button disabled={!ready} onClick={submit}>
-            Создать
+            {editing ? 'Сохранить' : 'Создать'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -232,10 +283,12 @@ function Field({
 
 function Choice({
   active,
+  disabled,
   onClick,
   children,
 }: {
   active: boolean
+  disabled?: boolean
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -243,12 +296,13 @@ function Choice({
     <button
       type="button"
       aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
-        'rounded-lg border px-3 py-1.5 text-[13px] transition-colors',
+        'rounded-lg border px-3 py-1.5 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         active
           ? 'border-foreground bg-foreground font-medium text-background'
-          : 'border-input bg-secondary text-secondary-foreground hover:bg-muted',
+          : 'border-input bg-secondary text-secondary-foreground enabled:hover:bg-muted',
       )}
     >
       {children}
