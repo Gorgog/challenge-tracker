@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
+/**
+ * Анимацию перестроения после броска выключаем. Она проигрывалась уже после того,
+ * как список встал в новый порядок, и карточки заметно уезжали с чужих мест.
+ * Без неё соседи просто оказываются там, куда их подвинули во время перетаскивания.
+ */
+const noLayoutAnimation = () => false
 import { CSS } from '@dnd-kit/utilities'
 import { GripVerticalIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -43,7 +49,7 @@ export type SortableRowProps = {
  */
 export function SortableRow({ id, label, children }: SortableRowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id })
+    useSortable({ id, animateLayoutChanges: noLayoutAnimation })
 
   return (
     <div
@@ -51,8 +57,7 @@ export function SortableRow({ id, label, children }: SortableRowProps) {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1',
-        /* Оригинал приглушается: за курсором едет копия в DragOverlay. */
-        isDragging && 'opacity-35',
+        isDragging && 'z-10 rounded-xl ring-2 ring-primary/25',
       )}
     >
       <Grip
@@ -76,7 +81,7 @@ export type SortableGroupProps = {
 /** Блок целиком: его тоже можно переставить относительно соседнего блока. */
 export function SortableGroup({ group, title, children }: SortableGroupProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id: groupId(group) })
+    useSortable({ id: groupId(group), animateLayoutChanges: noLayoutAnimation })
 
   return (
     <div
