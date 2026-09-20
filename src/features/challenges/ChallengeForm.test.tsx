@@ -131,3 +131,97 @@ describe('форма нового челленджа', () => {
     expect(created(onCreate).rulesLocked).toBe(true)
   })
 })
+
+describe('форма правки челленджа', () => {
+  const existing: Challenge = {
+    id: 'push',
+    name: '30 дней отжимаюсь',
+    code: 'ОТЖ',
+    kind: 'do',
+    measure: 'count',
+    goal: 30,
+    unit: 'раз',
+    color: 'var(--chart-1)',
+    tagIds: ['t1'],
+    startDate: '2026-09-01',
+    lengthDays: 30,
+    status: 'active',
+    rulesLocked: false,
+    deletedAt: null,
+    sortOrder: 0,
+  }
+
+  const edit = (c: Challenge = existing) => {
+    const onSave = vi.fn()
+    render(
+      <ChallengeForm
+        open
+        existing={[c]}
+        tags={TAGS}
+        challenge={c}
+        onCreate={vi.fn()}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />,
+    )
+    return { onSave, user: userEvent.setup() }
+  }
+
+  const save = () => screen.getByRole('button', { name: /сохранить/i })
+  const saved = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls[0]![0]
+
+  it('открывается с текущими значениями', () => {
+    edit()
+    expect(screen.getByRole('heading', { name: /изменить челлендж/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/название/i)).toHaveValue('30 дней отжимаюсь')
+    expect(screen.getByLabelText(/цель/i)).toHaveValue('30')
+    expect(screen.getByText('тело')).toBeInTheDocument()
+  })
+
+  it('сохраняет новое название и теги', async () => {
+    const { user, onSave } = edit()
+    await user.clear(screen.getByLabelText(/название/i))
+    await user.type(screen.getByLabelText(/название/i), '40 дней отжимаюсь')
+    await user.click(screen.getByRole('button', { name: /выбрать теги|изменить теги/i }))
+    await user.click(screen.getByRole('option', { name: 'ум' }))
+    await user.keyboard('{Escape}')
+    await user.click(save())
+
+    expect(saved(onSave).name).toBe('40 дней отжимаюсь')
+    expect(saved(onSave).tagIds).toEqual(['t1', 't2'])
+  })
+
+  it('у незапертого правила меняются', async () => {
+    const { user, onSave } = edit()
+    await user.clear(screen.getByLabelText(/цель/i))
+    await user.type(screen.getByLabelText(/цель/i), '50')
+    await user.click(save())
+    expect(saved(onSave).goal).toBe(50)
+  })
+
+  it('у запертого поля правил недоступны, а название меняется', async () => {
+    const { user, onSave } = edit({ ...existing, rulesLocked: true })
+    expect(screen.getByLabelText(/цель/i)).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^отказ$/i })).toBeDisabled()
+    expect(screen.getByText(/правила заперты/i)).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText(/название/i))
+    await user.type(screen.getByLabelText(/название/i), 'Отжимания')
+    await user.click(save())
+    expect(saved(onSave).name).toBe('Отжимания')
+  })
+
+  it('запертый замок снять нельзя', () => {
+    edit({ ...existing, rulesLocked: true })
+    const lock = screen.getByRole('switch', { name: /запереть правила/i })
+    expect(lock).toBeChecked()
+    expect(lock).toBeDisabled()
+  })
+
+  it('незапертый можно запереть при правке', async () => {
+    const { user, onSave } = edit()
+    await user.click(screen.getByRole('switch', { name: /запереть правила/i }))
+    await user.click(save())
+    expect(saved(onSave).rulesLocked).toBe(true)
+  })
+})

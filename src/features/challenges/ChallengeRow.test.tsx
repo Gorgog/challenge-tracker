@@ -26,10 +26,17 @@ const challenge = (over: Partial<Challenge> = {}): Challenge => ({
 const setup = (c: Challenge = challenge()) => {
   const onToggleStatus = vi.fn()
   const onDelete = vi.fn()
+  const onEdit = vi.fn()
   render(
-    <ChallengeRow challenge={c} tagNames={['ум']} onToggleStatus={onToggleStatus} onDelete={onDelete} />,
+    <ChallengeRow
+      challenge={c}
+      tagNames={['ум']}
+      onToggleStatus={onToggleStatus}
+      onDelete={onDelete}
+      onEdit={onEdit}
+    />,
   )
-  return { onToggleStatus, onDelete, user: userEvent.setup() }
+  return { onToggleStatus, onDelete, onEdit, user: userEvent.setup() }
 }
 
 describe('строка челленджа', () => {
@@ -54,5 +61,21 @@ describe('строка челленджа', () => {
     const { user, onDelete } = setup()
     await user.click(screen.getByRole('button', { name: /удалить/i }))
     expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('кнопка правки открывает форму', async () => {
+    const { user, onEdit } = setup()
+    await user.click(screen.getByRole('button', { name: /изменить/i }))
+    expect(onEdit).toHaveBeenCalledTimes(1)
+  })
+
+  it('у запертого правка всё равно доступна — имя и теги менять можно', () => {
+    setup(challenge({ rulesLocked: true }))
+    expect(screen.getByRole('button', { name: /изменить/i })).toBeEnabled()
+  })
+
+  it('у запертого видно, что правила заперты', () => {
+    setup(challenge({ rulesLocked: true }))
+    expect(screen.getByLabelText(/правила заперты/i)).toBeInTheDocument()
   })
 })
