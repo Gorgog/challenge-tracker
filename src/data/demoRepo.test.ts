@@ -154,3 +154,43 @@ describe('saveDayLog', () => {
     expect(days).toEqual([...days].sort())
   })
 })
+
+describe('createChallenge', () => {
+  const fresh = {
+    name: 'Без кофе',
+    code: 'БК',
+    kind: 'quit' as const,
+    measure: 'binary' as const,
+    goal: 1,
+    unit: null,
+    color: 'var(--chart-6)',
+    tag: null,
+    startDate: '2026-09-21',
+    lengthDays: null,
+    status: 'active' as const,
+    sortOrder: 6,
+  }
+
+  it('добавляет челлендж в список и выдаёт ему id', async () => {
+    const r = repo()
+    const created = await r.createChallenge(fresh)
+    expect(created.id).toBeTruthy()
+
+    const list = await r.listChallenges()
+    expect(list).toHaveLength(7)
+    expect(list.find((c) => c.id === created.id)?.name).toBe('Без кофе')
+  })
+
+  it('новый челлендж начинается без единой отметки', async () => {
+    const r = repo()
+    const created = await r.createChallenge(fresh)
+    expect((await r.listEntries())[created.id]).toEqual({})
+  })
+
+  it('выдаёт разные id при повторном создании', async () => {
+    const r = repo()
+    const a = await r.createChallenge(fresh)
+    const b = await r.createChallenge(fresh)
+    expect(a.id).not.toBe(b.id)
+  })
+})
