@@ -8,7 +8,7 @@ import { currentStreak, dayOutcome } from '@/domain/streaks'
 import type { Challenge, DayLog, EntryMap } from '@/domain/types'
 import { plural } from '@/lib/plural'
 import { DayCloseDialog } from './DayCloseDialog'
-import { HoldChip } from './HoldChip'
+import { HoldCard } from './HoldCard'
 import { TaskRow } from './TaskRow'
 
 const SCORE_LABELS: { field: keyof Pick<DayLog, 'mood' | 'wellbeing' | 'productivity'>; label: string }[] = [
@@ -134,9 +134,9 @@ export function DayPage() {
       </div>
 
       {holds.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {holds.map((c) => (
-            <HoldChip
+            <HoldCard
               key={c.id}
               challenge={c}
               failed={entriesOf(c)[todayK] === 0}
