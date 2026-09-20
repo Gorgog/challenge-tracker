@@ -51,7 +51,8 @@ export function SortableRow({ id, label, children }: SortableRowProps) {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1',
-        isDragging && 'z-10 rounded-xl ring-2 ring-primary/25',
+        /* Оригинал приглушается: за курсором едет копия в DragOverlay. */
+        isDragging && 'opacity-35',
       )}
     >
       <Grip

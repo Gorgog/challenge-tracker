@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
@@ -46,6 +49,13 @@ import { groupId, groupOf } from './groups'
 import { HoldCard } from './HoldCard'
 import { TaskRow } from './TaskRow'
 
+/** Короткое и ровное приземление: длинная анимация на списке читается как рывок. */
+const DROP_ANIMATION = {
+  duration: 180,
+  easing: 'cubic-bezier(0.2, 0, 0, 1)',
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }),
+}
+
 const SCORE_LABELS: { field: keyof Pick<DayLog, 'mood' | 'wellbeing' | 'productivity'>; label: string }[] = [
   { field: 'mood', label: 'Настроение' },
   { field: 'wellbeing', label: 'Самочувствие' },
@@ -72,6 +82,8 @@ export function DayPage() {
   )
 
   const [dialogDay, setDialogDay] = useState<string | null>(null)
+  /* Карточка, которая сейчас едет за курсором в DragOverlay. */
+  const [draggedId, setDraggedId] = useState<string | null>(null)
 
   const entries = entriesQuery.data ?? {}
   const logs = logsQuery.data ?? []
@@ -132,8 +144,11 @@ export function DayPage() {
     saveDayGroups.mutate(arrayMove(groups, from, to))
   }
 
+  const onRowDragStart = ({ active: dragged }: DragStartEvent) => setDraggedId(String(dragged.id))
+
   /** Перестановка карточек внутри блока. Между блоками они не ходят: контексты разные. */
   const onRowDragEnd = (group: DayGroup, { active: dragged, over }: DragEndEvent) => {
+    setDraggedId(null)
     if (!over || dragged.id === over.id) return
 
     const groupIds = (group === 'tasks' ? tasks : holds).map((c) => c.id)
@@ -168,6 +183,34 @@ export function DayPage() {
   if (challenges.isPending) {
     return <p className="p-8 text-center text-sm text-muted-foreground">Загружаю…</p>
   }
+
+  const dragged = allChallenges.find((c) => c.id === draggedId) ?? null
+
+  /** Копия карточки, которая едет за курсором. Сам список при этом стоит на месте. */
+  const overlayCard = (c: Challenge) => (
+    <div className="pointer-events-none">
+      {c.kind === 'do' ? (
+        <TaskRow
+          challenge={c}
+          value={entriesOf(c)[todayK]}
+          done={isDone(c)}
+          streak={streakOf(c)}
+          index={0}
+          frozen
+          onToggle={() => {}}
+          onSetValue={() => {}}
+        />
+      ) : (
+        <HoldCard
+          challenge={c}
+          failed={entriesOf(c)[todayK] === 0}
+          streak={streakOf(c)}
+          frozen
+          onToggleRelapse={() => {}}
+        />
+      )}
+    </div>
+  )
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
@@ -210,6 +253,8 @@ export function DayPage() {
                     sensors={sensors}
                     collisionDetection={closestCenter}
                     modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+                    onDragStart={onRowDragStart}
+                    onDragCancel={() => setDraggedId(null)}
                     onDragEnd={(event) => onRowDragEnd('tasks', event)}
                   >
                     <SortableContext
@@ -235,6 +280,10 @@ export function DayPage() {
                         ))}
                       </div>
                     </SortableContext>
+
+                    <DragOverlay dropAnimation={DROP_ANIMATION}>
+                      {dragged?.kind === 'do' ? overlayCard(dragged) : null}
+                    </DragOverlay>
                   </DndContext>
                 </SortableGroup>
               ) : (
@@ -243,6 +292,8 @@ export function DayPage() {
                     sensors={sensors}
                     collisionDetection={closestCenter}
                     modifiers={[restrictToParentElement]}
+                    onDragStart={onRowDragStart}
+                    onDragCancel={() => setDraggedId(null)}
                     onDragEnd={(event) => onRowDragEnd('holds', event)}
                   >
                     <SortableContext items={holds.map((c) => c.id)} strategy={rectSortingStrategy}>
@@ -260,6 +311,10 @@ export function DayPage() {
                         ))}
                       </div>
                     </SortableContext>
+
+                    <DragOverlay dropAnimation={DROP_ANIMATION}>
+                      {dragged?.kind === 'quit' ? overlayCard(dragged) : null}
+                    </DragOverlay>
                   </DndContext>
                 </SortableGroup>
               ),
