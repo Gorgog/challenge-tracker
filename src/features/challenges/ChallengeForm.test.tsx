@@ -2,13 +2,18 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { todayKey } from '@/domain/date'
-import type { Challenge } from '@/domain/types'
+import type { Challenge, Tag } from '@/domain/types'
 import { ChallengeForm } from './ChallengeForm'
+
+const TAGS: Tag[] = [
+  { id: 't1', name: 'тело' },
+  { id: 't2', name: 'ум' },
+]
 
 const setup = () => {
   const onCreate = vi.fn()
   const onCancel = vi.fn()
-  render(<ChallengeForm open existing={[]} onCreate={onCreate} onCancel={onCancel} />)
+  render(<ChallengeForm open existing={[]} tags={TAGS} onCreate={onCreate} onCancel={onCancel} />)
   return { onCreate, onCancel, user: userEvent.setup() }
 }
 
@@ -97,5 +102,32 @@ describe('форма нового челленджа', () => {
     await user.click(submit())
 
     expect(created(onCreate).lengthDays).toBe(30)
+  })
+
+  it('выбранные теги попадают в челлендж', async () => {
+    const { user, onCreate } = setup()
+    await user.type(nameField(), 'Бегать')
+    await user.click(screen.getByRole('button', { name: /выбрать теги/i }))
+    await user.click(screen.getByRole('option', { name: 'тело' }))
+    await user.click(screen.getByRole('option', { name: 'ум' }))
+    await user.keyboard('{Escape}')
+    await user.click(submit())
+
+    expect(created(onCreate).tagIds).toEqual(['t1', 't2'])
+  })
+
+  it('по умолчанию правила можно менять', async () => {
+    const { user, onCreate } = setup()
+    await user.type(nameField(), 'Бегать')
+    await user.click(submit())
+    expect(created(onCreate).rulesLocked).toBe(false)
+  })
+
+  it('правила можно сразу запереть', async () => {
+    const { user, onCreate } = setup()
+    await user.type(nameField(), 'Бегать')
+    await user.click(screen.getByRole('switch', { name: /запереть правила/i }))
+    await user.click(submit())
+    expect(created(onCreate).rulesLocked).toBe(true)
   })
 })
