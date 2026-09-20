@@ -1,25 +1,46 @@
 import { useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import type { CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
-import { useChallenges, useCreateChallenge, useTags } from '@/data/queries'
+import {
+  useChallenges,
+  useCreateChallenge,
+  useDeleteChallenge,
+  usePurgeChallenge,
+  useRestoreChallenge,
+  useSetChallengeStatus,
+  useTags,
+} from '@/data/queries'
 import { isLive } from '@/domain/challenges'
-import { formatHuman, parseDay } from '@/domain/date'
 import type { Challenge } from '@/domain/types'
-import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
 import { ChallengeForm } from './ChallengeForm'
+import { ChallengeRow } from './ChallengeRow'
+import { DeletedChallenges } from './DeletedChallenges'
 
 export function ChallengesPage() {
   const challenges = useChallenges()
+  const tags = useTags()
   const createChallenge = useCreateChallenge()
+  const setStatus = useSetChallengeStatus()
+  const deleteChallenge = useDeleteChallenge()
+  const restoreChallenge = useRestoreChallenge()
+  const purgeChallenge = usePurgeChallenge()
   const [formOpen, setFormOpen] = useState(false)
 
-  const tags = useTags()
-  /* Удалённые из списка уходят, но остаются в статистике. */
-  const list = (challenges.data ?? []).filter(isLive)
+  const all = challenges.data ?? []
+  /* Удалённые уходят из списка, но статистика их помнит. */
+  const list = all.filter(isLive)
+  const trash = all.filter((c) => !isLive(c))
   const tagName = new Map((tags.data ?? []).map((t) => [t.id, t.name]))
+  const namesOf = (c: Challenge) => c.tagIds.flatMap((id) => tagName.get(id) ?? [])
+
+  const remove = (c: Challenge) => {
+    deleteChallenge.mutate(c.id)
+    toast(`«${c.name}» в удалённых`, {
+      action: { label: 'Вернуть', onClick: () => restoreChallenge.mutate(c.id) },
+    })
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
@@ -50,16 +71,31 @@ export function ChallengesPage() {
             <ChallengeRow
               key={c.id}
               challenge={c}
-              tagNames={c.tagIds.flatMap((id) => tagName.get(id) ?? [])}
+              tagNames={namesOf(c)}
+              onToggleStatus={() =>
+                setStatus.mutate({ id: c.id, status: c.status === 'paused' ? 'active' : 'paused' })
+              }
+              onDelete={() => remove(c)}
             />
           ))}
         </div>
       )}
 
+      <DeletedChallenges
+        challenges={trash}
+        onRestore={(id) => restoreChallenge.mutate(id)}
+        onPurge={(id) => {
+          const name = trash.find((c) => c.id === id)?.name
+          purgeChallenge.mutate(id)
+          toast(`«${name}» удалён навсегда`)
+        }}
+      />
+
       {formOpen && (
         <ChallengeForm
           open
-          existing={list}
+          /* Все, включая удалённые: вернувшийся челлендж не должен совпасть по цвету с новым. */
+          existing={all}
           onCancel={() => setFormOpen(false)}
           onCreate={(draft) => {
             createChallenge.mutate(draft)
@@ -67,47 +103,6 @@ export function ChallengesPage() {
             toast(`Челлендж «${draft.name}» заведён`)
           }}
         />
-      )}
-    </div>
-  )
-}
-
-function ChallengeRow({ challenge: c, tagNames }: { challenge: Challenge; tagNames: string[] }) {
-  const what =
-    c.kind === 'quit'
-      ? 'отказ'
-      : c.measure === 'count'
-        ? `цель ${c.goal.toLocaleString('ru')} ${c.unit ?? ''} в день`
-        : 'привычка · галочка за день'
-
-  const term = c.lengthDays
-    ? `${c.lengthDays} ${plural(c.lengthDays, 'день', 'дня', 'дней')}`
-    : 'бессрочно'
-
-  return (
-    <div
-      style={{ '--c': c.color } as CSSProperties}
-      className={cn(
-        'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border bg-card p-3 px-4',
-        c.status !== 'active' && 'opacity-55',
-      )}
-    >
-      <span className="grid size-8 place-items-center rounded-lg bg-[var(--c)] font-mono text-[10px] font-semibold text-white">
-        {c.code}
-      </span>
-
-      <div className="min-w-0">
-        <div className="truncate text-[14px] font-medium">{c.name}</div>
-        <div className="font-mono text-[10.5px] text-muted-foreground">
-          {what} · {term} · с {formatHuman(parseDay(c.startDate))}
-          {tagNames.length > 0 && ` · ${tagNames.map((t) => `«${t}»`).join(' ')}`}
-        </div>
-      </div>
-
-      {c.status !== 'active' && (
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          на паузе
-        </span>
       )}
     </div>
   )
