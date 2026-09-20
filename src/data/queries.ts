@@ -58,9 +58,11 @@ export function useReorderChallenges() {
       if (context?.previous) client.setQueryData(queryKeys.challenges, context.previous)
     },
 
-    onSettled() {
-      void client.invalidateQueries({ queryKey: queryKeys.challenges })
-    },
+    /*
+     * Инвалидации нет намеренно: перечитывание сразу после броска перерисовывало
+     * список и рвало анимацию возврата карточки. Оптимистичный порядок совпадает
+     * с тем, что вернёт хранилище, а ошибка откатывается выше.
+     */
   })
 }
 
@@ -81,9 +83,7 @@ export function useSaveDayGroups() {
       if (context?.previous) client.setQueryData(queryKeys.dayGroups, context.previous)
     },
 
-    onSettled() {
-      void client.invalidateQueries({ queryKey: queryKeys.dayGroups })
-    },
+    /* Инвалидации нет по той же причине, что и у порядка челленджей. */
   })
 }
 

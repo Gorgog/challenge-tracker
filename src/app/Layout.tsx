@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { DemoResetButton } from '@/features/dev/DemoResetButton'
 import { formatHuman, todayKey, parseDay, DOW, isoDow } from '@/domain/date'
 import { cn } from '@/lib/utils'
 
@@ -55,6 +56,8 @@ export function Layout() {
       <main className="min-h-0 flex-1 rounded-2xl border border-border bg-card">
         <Outlet />
       </main>
+
+      <DemoResetButton />
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
   SortableContext,
   arrayMove,
@@ -37,6 +38,7 @@ import {
   type DayLog,
   type EntryMap,
 } from '@/domain/types'
+import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
 import { DayCloseDialog } from './DayCloseDialog'
 import { SortableGroup, SortableRow } from './Sortable'
@@ -191,7 +193,14 @@ export function DayPage() {
         </p>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onGroupDragEnd}>
+      <div className="relative">
+      <div className={cn(frozen && 'pointer-events-none select-none opacity-70 blur-[2.5px]')}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+        onDragEnd={onGroupDragEnd}
+      >
         <SortableContext items={shownGroups.map(groupId)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-4">
             {shownGroups.map((group) =>
@@ -200,6 +209,7 @@ export function DayPage() {
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
+                    modifiers={[restrictToVerticalAxis, restrictToParentElement]}
                     onDragEnd={(event) => onRowDragEnd('tasks', event)}
                   >
                     <SortableContext
@@ -232,6 +242,7 @@ export function DayPage() {
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
+                    modifiers={[restrictToParentElement]}
                     onDragEnd={(event) => onRowDragEnd('holds', event)}
                   >
                     <SortableContext items={holds.map((c) => c.id)} strategy={rectSortingStrategy}>
@@ -256,6 +267,19 @@ export function DayPage() {
           </div>
         </SortableContext>
       </DndContext>
+      </div>
+
+        {frozen && (
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <div className="rounded-xl border border-border bg-card/95 px-5 py-3 text-center shadow-lg">
+              <div className="text-[15px] font-semibold">День закрыт</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Отметки заморожены до завтра. Поменять можно только оценку.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {todayLog ? (
         <div className="flex flex-col gap-3 rounded-xl border border-good/35 bg-good/5 px-4 py-4">
@@ -277,9 +301,6 @@ export function DayPage() {
             </Button>
           </div>
 
-          <p className="text-[11.5px] text-muted-foreground">
-            День закрыт — отметки заморожены. Поменять можно только оценку.
-          </p>
 
           {todayLog.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
