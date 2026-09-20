@@ -6,3 +6,10 @@ build/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Сборка и локальные файлы
+*.local
+.vite/
+logs/
+*.log
+.vercel

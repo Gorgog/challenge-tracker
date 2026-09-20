@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/archivo";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Archivo Variable', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* собственные роли проекта */
+    --color-good: var(--good);
+    --color-warn: var(--warn);
+    --color-grid: var(--grid);
+    --color-axis: var(--axis);
+
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+  Палитра перенесена из прототипа. Цвета серий (chart-1..5) взяты из проверенного
+  набора для графиков: они различимы при дальтонизме и держат контраст на обеих темах.
+*/
+:root {
+    --background: #eceff3;
+    --foreground: #0f1419;
+    --card: #fbfcfd;
+    --card-foreground: #0f1419;
+    --popover: #fbfcfd;
+    --popover-foreground: #0f1419;
+    --primary: #1f6fd0;
+    --primary-foreground: #ffffff;
+    --secondary: #f3f6f9;
+    --secondary-foreground: #4a5560;
+    --muted: #f3f6f9;
+    --muted-foreground: #7d8a96;
+    --accent: #e6eefb;
+    --accent-foreground: #1f6fd0;
+    --destructive: #d03b3b;
+    --border: #dde3e9;
+    --input: #c8d1da;
+    --ring: #1f6fd0;
+
+    --chart-1: #2a78d6;
+    --chart-2: #1baf7a;
+    --chart-3: #eb6834;
+    --chart-4: #4a3aa7;
+    --chart-5: #e87ba4;
+
+    --good: #006300;
+    --warn: #fab219;
+    --grid: #e4e8ed;
+    --axis: #c3c9d1;
+
+    --radius: 0.625rem;
+    --sidebar: #fbfcfd;
+    --sidebar-foreground: #0f1419;
+    --sidebar-primary: #1f6fd0;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e6eefb;
+    --sidebar-accent-foreground: #1f6fd0;
+    --sidebar-border: #dde3e9;
+    --sidebar-ring: #1f6fd0;
+}
+
+.dark {
+    --background: #0b0e11;
+    --foreground: #f1f4f7;
+    --card: #15191d;
+    --card-foreground: #f1f4f7;
+    --popover: #1f252b;
+    --popover-foreground: #f1f4f7;
+    --primary: #3987e5;
+    --primary-foreground: #06121f;
+    --secondary: #1b2026;
+    --secondary-foreground: #b3bfc9;
+    --muted: #1b2026;
+    --muted-foreground: #7e8d99;
+    --accent: #152838;
+    --accent-foreground: #3987e5;
+    --destructive: #e06767;
+    --border: #252b32;
+    --input: #333c45;
+    --ring: #3987e5;
+
+    --chart-1: #3987e5;
+    --chart-2: #199e70;
+    --chart-3: #d95926;
+    --chart-4: #9085e9;
+    --chart-5: #d55181;
+
+    --good: #0ca30c;
+    --warn: #fab219;
+    --grid: #232931;
+    --axis: #39424b;
+
+    --sidebar: #15191d;
+    --sidebar-foreground: #f1f4f7;
+    --sidebar-primary: #3987e5;
+    --sidebar-primary-foreground: #06121f;
+    --sidebar-accent: #152838;
+    --sidebar-accent-foreground: #3987e5;
+    --sidebar-border: #252b32;
+    --sidebar-ring: #3987e5;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
