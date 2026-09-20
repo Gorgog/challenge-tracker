@@ -60,15 +60,61 @@ export type DemoOptions = {
   /** «Сегодня» для сида. По умолчанию — реальная текущая дата. */
   today?: Date
   seed?: number
+  /** Где держать демо-данные между перезагрузками. `null` — нигде, только в памяти. */
+  storage?: Storage | null
 }
 
-/**
- * Демо-репозиторий в памяти. Нужен, чтобы переносить и править интерфейс на живых данных,
- * пока схема в Supabase не готова. Данные держатся до перезагрузки страницы.
- */
-export function createDemoRepo(options: DemoOptions = {}): Repo {
-  const today = options.today ?? parseDay(todayKey())
-  const rnd = mulberry32(options.seed ?? 20260921)
+const STORAGE_KEY = 'tabel-demo'
+/** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
+const STORAGE_VERSION = 1
+
+type Snapshot = {
+  version: number
+  challenges: Challenge[]
+  entries: Record<string, EntryMap>
+  logs: DayLog[]
+}
+
+/** Обращение к localStorage бросает в приватном окне и при запрете хранилища для сайта. */
+function defaultStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null
+  } catch {
+    return null
+  }
+}
+
+function load(storage: Storage | null): Snapshot | null {
+  if (!storage) return null
+  try {
+    const raw = storage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Snapshot
+    const valid =
+      parsed?.version === STORAGE_VERSION &&
+      Array.isArray(parsed.challenges) &&
+      Array.isArray(parsed.logs) &&
+      !!parsed.entries &&
+      typeof parsed.entries === 'object'
+    return valid ? parsed : null
+  } catch {
+    /* битый json или недоступное хранилище — начнём с чистого сида */
+    return null
+  }
+}
+
+function save(storage: Storage | null, snapshot: Snapshot) {
+  if (!storage) return
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+  } catch {
+    /* места нет или запись запрещена — демо продолжает жить в памяти */
+  }
+}
+
+/** Насыпает историю: челленджи прототипа, отметки и итоги дней за DAYS_BACK дней. */
+function seedSnapshot(today: Date, seed: number): Snapshot {
+  const rnd = mulberry32(seed)
 
   const challenges: Challenge[] = BLUEPRINT.map(({ startsAgo, ...rest }) => ({
     ...rest,
@@ -166,7 +212,35 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     logs.set(key, { day: key, mood, wellbeing, productivity, tags, note, closedAt: `${key}T21:00:00.000Z` })
   }
 
-  let lastId = 0
+  return { version: STORAGE_VERSION, challenges, entries, logs: [...logs.values()] }
+}
+
+/**
+ * Демо-репозиторий. Нужен, чтобы переносить и править интерфейс на живых данных,
+ * пока схема в Supabase не готова. Состояние переживает перезагрузку через localStorage;
+ * при переезде на настоящее хранилище этот файл просто удаляется.
+ */
+export function createDemoRepo(options: DemoOptions = {}): Repo {
+  const today = options.today ?? parseDay(todayKey())
+  const storage = options.storage === undefined ? defaultStorage() : options.storage
+
+  const restored = load(storage)
+  const state = restored ?? seedSnapshot(today, options.seed ?? 20260921)
+
+  const challenges = state.challenges
+  const entries = state.entries
+  const logs = new Map(state.logs.map((l) => [l.day, l]))
+
+  /* Нумерация продолжается после перезагрузки, иначе новый челлендж займёт чужой id. */
+  let lastId = challenges.reduce((max, c) => {
+    const n = Number(/^ch-(\d+)$/.exec(c.id)?.[1])
+    return Number.isFinite(n) ? Math.max(max, n) : max
+  }, 0)
+
+  const persist = () =>
+    save(storage, { version: STORAGE_VERSION, challenges, entries, logs: [...logs.values()] })
+
+  if (!restored) persist()
 
   /* Наружу отдаём копии: кэш запросов не должен делить объекты с хранилищем. */
   const snapshotEntries = () =>
@@ -188,15 +262,18 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       const created: Challenge = { ...draft, id: `ch-${++lastId}` }
       challenges.push(created)
       entries[created.id] = {}
+      persist()
       return { ...created }
     },
     async setEntry(challengeId, day, value) {
       const map = (entries[challengeId] ??= {})
       if (value === undefined) delete map[day]
       else map[day] = value
+      persist()
     },
     async saveDayLog(log) {
       logs.set(log.day, { ...log, tags: [...log.tags] })
+      persist()
     },
   }
 }
