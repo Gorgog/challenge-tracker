@@ -30,15 +30,13 @@ describe('форма нового челленджа', () => {
     expect(submit()).toBeEnabled()
   })
 
-  it('код подставляется из названия и его можно поправить', async () => {
-    const { user } = setup()
-    await user.type(nameField(), 'Без сахара')
-    const code = screen.getByLabelText(/код/i)
-    expect(code).toHaveValue('БС')
+  it('при создании поля кода нет — код подставляется из названия', async () => {
+    const { user, onCreate } = setup()
+    expect(screen.queryByLabelText(/код/i)).not.toBeInTheDocument()
 
-    await user.clear(code)
-    await user.type(code, 'БСХ')
-    expect(code).toHaveValue('БСХ')
+    await user.type(nameField(), 'Без сахара')
+    await user.click(submit())
+    expect(created(onCreate).code).toBe('БС')
   })
 
   it('у галочки не спрашивает цель и единицу', async () => {
@@ -216,6 +214,17 @@ describe('форма правки челленджа', () => {
     const lock = screen.getByRole('switch', { name: /запереть правила/i })
     expect(lock).toBeChecked()
     expect(lock).toBeDisabled()
+  })
+
+  it('при правке код виден и правится', async () => {
+    const { user, onSave } = edit()
+    const code = screen.getByLabelText(/код/i)
+    expect(code).toHaveValue('ОТЖ')
+
+    await user.clear(code)
+    await user.type(code, 'ОТЖ2')
+    await user.click(save())
+    expect(saved(onSave).code).toBe('ОТЖ2')
   })
 
   it('незапертый можно запереть при правке', async () => {
