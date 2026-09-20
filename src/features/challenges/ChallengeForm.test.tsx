@@ -216,15 +216,31 @@ describe('форма правки челленджа', () => {
     expect(lock).toBeDisabled()
   })
 
-  it('при правке код виден и правится', async () => {
-    const { user, onSave } = edit()
-    const code = screen.getByLabelText(/код/i)
-    expect(code).toHaveValue('ОТЖ')
+  it('при правке поля кода тоже нет', () => {
+    edit()
+    expect(screen.queryByLabelText(/код/i)).not.toBeInTheDocument()
+  })
 
-    await user.clear(code)
-    await user.type(code, 'ОТЖ2')
+  it('если название не меняли — код остаётся прежним, а не пересчитывается', async () => {
+    const { user, onSave } = edit()
     await user.click(save())
-    expect(saved(onSave).code).toBe('ОТЖ2')
+    expect(saved(onSave).code).toBe('ОТЖ')
+  })
+
+  it('новое название — новый код', async () => {
+    const { user, onSave } = edit()
+    await user.clear(screen.getByLabelText(/название/i))
+    await user.type(screen.getByLabelText(/название/i), 'Отжимания')
+    await user.click(save())
+    expect(saved(onSave).code).toBe('ОТЖ')
+  })
+
+  it('новое название из нескольких слов — код из первых букв', async () => {
+    const { user, onSave } = edit()
+    await user.clear(screen.getByLabelText(/название/i))
+    await user.type(screen.getByLabelText(/название/i), 'Утренние отжимания')
+    await user.click(save())
+    expect(saved(onSave).code).toBe('УО')
   })
 
   it('незапертый можно запереть при правке', async () => {
