@@ -62,3 +62,8 @@ export type Outcome =
   | 'outside'
 
 export type ScoreField = 'mood' | 'wellbeing' | 'productivity'
+
+/** Блоки экрана дня: привычки, которые отмечаю сам, и отказы, которые идут сами. */
+export type DayGroup = 'tasks' | 'holds'
+
+export const DEFAULT_DAY_GROUPS: DayGroup[] = ['tasks', 'holds']

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Challenge, DayLog, EntryMap } from '@/domain/types'
+import type { Challenge, DayGroup, DayLog, EntryMap } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -13,6 +13,7 @@ export const queryKeys = {
   challenges: ['challenges'] as const,
   entries: ['entries'] as const,
   dayLogs: ['dayLogs'] as const,
+  dayGroups: ['dayGroups'] as const,
 }
 
 export function useChallenges() {
@@ -25,6 +26,65 @@ export function useEntries() {
 
 export function useDayLogs() {
   return useQuery({ queryKey: queryKeys.dayLogs, queryFn: () => repo.listDayLogs() })
+}
+
+export function useDayGroups() {
+  return useQuery({ queryKey: queryKeys.dayGroups, queryFn: () => repo.getDayGroups() })
+}
+
+/** Перетаскивание должно оставлять карточку там, куда её бросили, — поэтому оптимистично. */
+export function useReorderChallenges() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => repo.reorderChallenges(orderedIds),
+
+    async onMutate(orderedIds) {
+      await client.cancelQueries({ queryKey: queryKeys.challenges })
+      const previous = client.getQueryData<Challenge[]>(queryKeys.challenges)
+
+      client.setQueryData<Challenge[]>(queryKeys.challenges, (old) => {
+        if (!old) return old
+        const byId = new Map(old.map((c) => [c.id, c]))
+        const ordered = orderedIds.flatMap((id) => byId.get(id) ?? [])
+        const rest = old.filter((c) => !orderedIds.includes(c.id))
+        return [...ordered, ...rest].map((c, i) => ({ ...c, sortOrder: i }))
+      })
+
+      return { previous }
+    },
+
+    onError(_error, _ids, context) {
+      if (context?.previous) client.setQueryData(queryKeys.challenges, context.previous)
+    },
+
+    onSettled() {
+      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+    },
+  })
+}
+
+export function useSaveDayGroups() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (groups: DayGroup[]) => repo.saveDayGroups(groups),
+
+    async onMutate(groups) {
+      await client.cancelQueries({ queryKey: queryKeys.dayGroups })
+      const previous = client.getQueryData<DayGroup[]>(queryKeys.dayGroups)
+      client.setQueryData<DayGroup[]>(queryKeys.dayGroups, groups)
+      return { previous }
+    },
+
+    onError(_error, _groups, context) {
+      if (context?.previous) client.setQueryData(queryKeys.dayGroups, context.previous)
+    },
+
+    onSettled() {
+      void client.invalidateQueries({ queryKey: queryKeys.dayGroups })
+    },
+  })
 }
 
 export function useCreateChallenge() {

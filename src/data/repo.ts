@@ -1,4 +1,4 @@
-import type { Challenge, DayLog, EntryMap } from '@/domain/types'
+import type { Challenge, DayGroup, DayLog, EntryMap } from '@/domain/types'
 
 /**
  * Договор доступа к данным. Компоненты не знают, что за ним стоит: сейчас демо-данные
@@ -18,4 +18,12 @@ export type Repo = {
   setEntry(challengeId: string, day: string, value: number | undefined): Promise<void>
   /** Сохранить итог дня. Запись за день одна: повторный вызов перезаписывает её. */
   saveDayLog(log: DayLog): Promise<void>
+  /**
+   * Выстроить челленджи в заданном порядке. Не упомянутые остаются в хвосте
+   * в прежнем порядке — список не должен терять челленджи из-за неполного вызова.
+   */
+  reorderChallenges(orderedIds: string[]): Promise<void>
+  /** Порядок блоков на экране дня. */
+  getDayGroups(): Promise<DayGroup[]>
+  saveDayGroups(groups: DayGroup[]): Promise<void>
 }

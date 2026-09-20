@@ -1,5 +1,5 @@
 import { addDays, dayKey, isoDow, parseDay, todayKey } from '@/domain/date'
-import type { Challenge, DayLog, EntryMap } from '@/domain/types'
+import { DEFAULT_DAY_GROUPS, type Challenge, type DayGroup, type DayLog, type EntryMap } from '@/domain/types'
 import type { Repo } from './repo'
 
 /** Сколько дней истории насыпает сид. */
@@ -73,6 +73,8 @@ type Snapshot = {
   challenges: Challenge[]
   entries: Record<string, EntryMap>
   logs: DayLog[]
+  /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
+  dayGroups?: DayGroup[]
 }
 
 /** Обращение к localStorage бросает в приватном окне и при запрете хранилища для сайта. */
@@ -212,7 +214,13 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     logs.set(key, { day: key, mood, wellbeing, productivity, tags, note, closedAt: `${key}T21:00:00.000Z` })
   }
 
-  return { version: STORAGE_VERSION, challenges, entries, logs: [...logs.values()] }
+  return {
+    version: STORAGE_VERSION,
+    challenges,
+    entries,
+    logs: [...logs.values()],
+    dayGroups: [...DEFAULT_DAY_GROUPS],
+  }
 }
 
 /**
@@ -230,6 +238,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const challenges = state.challenges
   const entries = state.entries
   const logs = new Map(state.logs.map((l) => [l.day, l]))
+  let dayGroups: DayGroup[] = state.dayGroups ?? [...DEFAULT_DAY_GROUPS]
 
   /* Нумерация продолжается после перезагрузки, иначе новый челлендж займёт чужой id. */
   let lastId = challenges.reduce((max, c) => {
@@ -238,7 +247,13 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   }, 0)
 
   const persist = () =>
-    save(storage, { version: STORAGE_VERSION, challenges, entries, logs: [...logs.values()] })
+    save(storage, {
+      version: STORAGE_VERSION,
+      challenges,
+      entries,
+      logs: [...logs.values()],
+      dayGroups,
+    })
 
   if (!restored) persist()
 
@@ -248,7 +263,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
 
   return {
     async listChallenges() {
-      return challenges.map((c) => ({ ...c }))
+      return [...challenges].sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({ ...c }))
     },
     async listEntries() {
       return snapshotEntries()
@@ -273,6 +288,24 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     },
     async saveDayLog(log) {
       logs.set(log.day, { ...log, tags: [...log.tags] })
+      persist()
+    },
+    async reorderChallenges(orderedIds) {
+      /* Не упомянутые идут следом, сохраняя прежний относительный порядок. */
+      const rest = challenges
+        .filter((c) => !orderedIds.includes(c.id))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((c) => c.id)
+
+      const order = [...orderedIds.filter((id) => challenges.some((c) => c.id === id)), ...rest]
+      for (const c of challenges) c.sortOrder = order.indexOf(c.id)
+      persist()
+    },
+    async getDayGroups() {
+      return [...dayGroups]
+    },
+    async saveDayGroups(groups) {
+      dayGroups = [...groups]
       persist()
     },
   }

@@ -1,13 +1,46 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { Button } from '@/components/ui/button'
-import { useChallenges, useDayLogs, useEntries, useSaveDayLog, useSetEntry } from '@/data/queries'
+import {
+  useChallenges,
+  useDayGroups,
+  useDayLogs,
+  useEntries,
+  useReorderChallenges,
+  useSaveDayGroups,
+  useSaveDayLog,
+  useSetEntry,
+} from '@/data/queries'
 import { DOW_FULL, dayKey, formatHuman, isoDow, parseDay, todayKey } from '@/domain/date'
 import { unratedDays } from '@/domain/stats'
 import { currentStreak, dayOutcome } from '@/domain/streaks'
-import type { Challenge, DayLog, EntryMap } from '@/domain/types'
+import {
+  DEFAULT_DAY_GROUPS,
+  type Challenge,
+  type DayGroup,
+  type DayLog,
+  type EntryMap,
+} from '@/domain/types'
 import { plural } from '@/lib/plural'
 import { DayCloseDialog } from './DayCloseDialog'
+import { SortableGroup, SortableRow } from './Sortable'
+import { groupId, groupOf } from './groups'
 import { HoldCard } from './HoldCard'
 import { TaskRow } from './TaskRow'
 
@@ -24,14 +57,24 @@ export function DayPage() {
   const challenges = useChallenges()
   const entriesQuery = useEntries()
   const logsQuery = useDayLogs()
+  const dayGroupsQuery = useDayGroups()
   const setEntry = useSetEntry()
   const saveDayLog = useSaveDayLog()
+  const reorderChallenges = useReorderChallenges()
+  const saveDayGroups = useSaveDayGroups()
+
+  const sensors = useSensors(
+    /* Порог в 4 пикселя: без него клик по ручке уже считался бы перетаскиванием. */
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const [dialogDay, setDialogDay] = useState<string | null>(null)
 
   const entries = entriesQuery.data ?? {}
   const logs = logsQuery.data ?? []
-  const active = (challenges.data ?? []).filter((c) => c.status === 'active')
+  const allChallenges = challenges.data ?? []
+  const active = allChallenges.filter((c) => c.status === 'active')
   const tasks = active.filter((c) => c.kind === 'do')
   const holds = active.filter((c) => c.kind === 'quit')
 
@@ -73,6 +116,34 @@ export function DayPage() {
       failed ? undefined : 0,
       failed ? 'Срыв убран' : 'Срыв записан — серия обнулена',
     )
+  }
+
+  const groups = dayGroupsQuery.data ?? DEFAULT_DAY_GROUPS
+  const shownGroups = groups.filter((g) => (g === 'tasks' ? tasks : holds).length > 0)
+
+  /** Перестановка блоков между собой. */
+  const onGroupDragEnd = ({ active: dragged, over }: DragEndEvent) => {
+    if (!over || dragged.id === over.id) return
+    const from = groups.indexOf(groupOf(String(dragged.id)) as DayGroup)
+    const to = groups.indexOf(groupOf(String(over.id)) as DayGroup)
+    if (from < 0 || to < 0) return
+    saveDayGroups.mutate(arrayMove(groups, from, to))
+  }
+
+  /** Перестановка карточек внутри блока. Между блоками они не ходят: контексты разные. */
+  const onRowDragEnd = (group: DayGroup, { active: dragged, over }: DragEndEvent) => {
+    if (!over || dragged.id === over.id) return
+
+    const groupIds = (group === 'tasks' ? tasks : holds).map((c) => c.id)
+    const from = groupIds.indexOf(String(dragged.id))
+    const to = groupIds.indexOf(String(over.id))
+    if (from < 0 || to < 0) return
+
+    const moved = arrayMove(groupIds, from, to)
+    /* Челленджи из другого блока остаются на своих местах в общем порядке. */
+    let next = 0
+    const fullOrder = allChallenges.map((c) => (groupIds.includes(c.id) ? moved[next++]! : c.id))
+    reorderChallenges.mutate(fullOrder)
   }
 
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */
@@ -120,36 +191,71 @@ export function DayPage() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {tasks.map((c, i) => (
-          <TaskRow
-            key={c.id}
-            challenge={c}
-            value={entriesOf(c)[todayK]}
-            done={isDone(c)}
-            streak={streakOf(c)}
-            index={i + 1}
-            frozen={frozen}
-            onToggle={() => toggleTask(c)}
-            onSetValue={(value) => setEntry.mutate({ challengeId: c.id, day: todayK, value })}
-          />
-        ))}
-      </div>
-
-      {holds.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {holds.map((c) => (
-            <HoldCard
-              key={c.id}
-              challenge={c}
-              failed={entriesOf(c)[todayK] === 0}
-              streak={streakOf(c)}
-              frozen={frozen}
-              onToggleRelapse={() => toggleRelapse(c)}
-            />
-          ))}
-        </div>
-      )}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onGroupDragEnd}>
+        <SortableContext items={shownGroups.map(groupId)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col gap-4">
+            {shownGroups.map((group) =>
+              group === 'tasks' ? (
+                <SortableGroup key="tasks" group="tasks" title="Отмечаю сам">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event) => onRowDragEnd('tasks', event)}
+                  >
+                    <SortableContext
+                      items={tasks.map((c) => c.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="flex flex-col gap-2">
+                        {tasks.map((c, i) => (
+                          <SortableRow key={c.id} id={c.id} label={`Переставить: ${c.name}`}>
+                            <TaskRow
+                              challenge={c}
+                              value={entriesOf(c)[todayK]}
+                              done={isDone(c)}
+                              streak={streakOf(c)}
+                              index={i + 1}
+                              frozen={frozen}
+                              onToggle={() => toggleTask(c)}
+                              onSetValue={(value) =>
+                                setEntry.mutate({ challengeId: c.id, day: todayK, value })
+                              }
+                            />
+                          </SortableRow>
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </SortableGroup>
+              ) : (
+                <SortableGroup key="holds" group="holds" title="Идут сами">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event) => onRowDragEnd('holds', event)}
+                  >
+                    <SortableContext items={holds.map((c) => c.id)} strategy={rectSortingStrategy}>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {holds.map((c) => (
+                          <SortableRow key={c.id} id={c.id} label={`Переставить: ${c.name}`}>
+                            <HoldCard
+                              challenge={c}
+                              failed={entriesOf(c)[todayK] === 0}
+                              streak={streakOf(c)}
+                              frozen={frozen}
+                              onToggleRelapse={() => toggleRelapse(c)}
+                            />
+                          </SortableRow>
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </SortableGroup>
+              ),
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {todayLog ? (
         <div className="flex flex-col gap-3 rounded-xl border border-good/35 bg-good/5 px-4 py-4">
