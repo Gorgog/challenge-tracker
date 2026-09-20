@@ -5,19 +5,6 @@ import type { Repo } from './repo'
 /** Сколько дней истории насыпает сид. */
 const DAYS_BACK = 120
 
-export const DEMO_TAGS = [
-  'выходной',
-  'дедлайн',
-  'болел',
-  'мало спал',
-  'алкоголь',
-  'дорога',
-  'встречи',
-  'ссора',
-  'учёба',
-  'отдых',
-] as const
-
 /** Челленджи прототипа. `startsAgo` — за сколько дней до «сегодня» начался челлендж. */
 const BLUEPRINT: (Omit<Challenge, 'startDate'> & { startsAgo: number })[] = [
   { id: 'push', code: 'ОТЖ', name: '30 дней отжимаюсь', kind: 'do', measure: 'count', goal: 30, unit: 'раз', color: 'var(--chart-1)', tag: 'тело', lengthDays: 30, status: 'active', sortOrder: 0, startsAgo: 20 },
