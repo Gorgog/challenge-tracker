@@ -219,19 +219,25 @@ export function ChallengeForm({
           <TagPicker tags={tags} value={tagIds} onChange={setTagIds} onCreate={onCreateTag} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field id="ch-code" label="Код">
-            <Input
-              id="ch-code"
-              value={code}
-              maxLength={4}
-              onChange={(e) => {
-                setCodeTouched(true)
-                setCodeInput(e.target.value.toUpperCase())
-              }}
-            />
-          </Field>
-        </div>
+        {/* При создании код подставляется из названия сам; поправить его можно в правке. */}
+        {editing && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field id="ch-code" label="Код">
+              <Input
+                id="ch-code"
+                value={code}
+                maxLength={4}
+                onChange={(e) => {
+                  setCodeTouched(true)
+                  setCodeInput(e.target.value.toUpperCase())
+                }}
+              />
+            </Field>
+            <p className="self-end pb-2 text-xs text-muted-foreground">
+              Метка в цветном квадрате — чтобы челлендж узнавался не только по цвету.
+            </p>
+          </div>
+        )}
 
         <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
           <Switch
