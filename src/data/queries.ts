@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { DayLog, EntryMap } from '@/domain/types'
+import type { Challenge, DayLog, EntryMap } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -25,6 +25,18 @@ export function useEntries() {
 
 export function useDayLogs() {
   return useQuery({ queryKey: queryKeys.dayLogs, queryFn: () => repo.listDayLogs() })
+}
+
+export function useCreateChallenge() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (challenge: Omit<Challenge, 'id'>) => repo.createChallenge(challenge),
+    onSuccess() {
+      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      void client.invalidateQueries({ queryKey: queryKeys.entries })
+    },
+  })
 }
 
 export type SetEntryArgs = {

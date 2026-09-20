@@ -24,6 +24,19 @@ export type Challenge = {
   sortOrder: number
 }
 
+/** То, что человек заполняет в форме. Остальные поля челленджа вычисляются. */
+export type ChallengeDraft = {
+  name: string
+  /** Пустой — код подставится из названия. */
+  code: string
+  kind: ChallengeKind
+  measure: ChallengeMeasure
+  goal: number
+  unit: string
+  tag: string
+  lengthDays: number | null
+}
+
 /** Отметки одного челленджа: ключ дня → значение. Отсутствие ключа — это НЕ ноль. */
 export type EntryMap = Record<string, number>
 

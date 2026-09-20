@@ -9,6 +9,8 @@ export type Repo = {
   /** Отметки всех челленджей: id челленджа → отметки по дням. */
   listEntries(): Promise<Record<string, EntryMap>>
   listDayLogs(): Promise<DayLog[]>
+  /** Заводит челлендж и возвращает его уже с выданным id. */
+  createChallenge(challenge: Omit<Challenge, 'id'>): Promise<Challenge>
   /**
    * Поставить или снять отметку. `undefined` УДАЛЯЕТ запись, а не пишет ноль:
    * «не отмечено» и «ноль» — разные состояния (см. CLAUDE.md).

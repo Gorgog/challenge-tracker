@@ -166,6 +166,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     logs.set(key, { day: key, mood, wellbeing, productivity, tags, note, closedAt: `${key}T21:00:00.000Z` })
   }
 
+  let lastId = 0
+
   /* Наружу отдаём копии: кэш запросов не должен делить объекты с хранилищем. */
   const snapshotEntries = () =>
     Object.fromEntries(Object.entries(entries).map(([id, map]) => [id, { ...map }]))
@@ -181,6 +183,12 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       return [...logs.values()]
         .map((l) => ({ ...l, tags: [...l.tags] }))
         .sort((a, b) => a.day.localeCompare(b.day))
+    },
+    async createChallenge(draft) {
+      const created: Challenge = { ...draft, id: `ch-${++lastId}` }
+      challenges.push(created)
+      entries[created.id] = {}
+      return { ...created }
     },
     async setEntry(challengeId, day, value) {
       const map = (entries[challengeId] ??= {})
