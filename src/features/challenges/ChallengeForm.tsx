@@ -29,6 +29,8 @@ export type ChallengeFormProps = {
   challenge?: Challenge
   onCreate?: (challenge: Omit<Challenge, 'id'>) => void
   onSave?: (patch: ChallengePatch) => void
+  /** Передан — тег можно создать прямо из выбора, не уходя из формы. */
+  onCreateTag?: (name: string) => Promise<Tag>
   onCancel: () => void
 }
 
@@ -39,6 +41,7 @@ export function ChallengeForm({
   challenge,
   onCreate,
   onSave,
+  onCreateTag,
   onCancel,
 }: ChallengeFormProps) {
   const editing = Boolean(challenge)
@@ -213,7 +216,7 @@ export function ChallengeForm({
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-medium">Теги</span>
-          <TagPicker tags={tags} value={tagIds} onChange={setTagIds} />
+          <TagPicker tags={tags} value={tagIds} onChange={setTagIds} onCreate={onCreateTag} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

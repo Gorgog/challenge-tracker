@@ -36,6 +36,11 @@ export function ChallengeRow({
     ? `${c.lengthDays} ${plural(c.lengthDays, 'день', 'дня', 'дней')}`
     : 'бессрочно'
 
+  const tagsText = tagNames.map((t) => `«${t}»`).join(' ')
+  const meta = [what, term, `с ${formatHuman(parseDay(c.startDate))}`, tagsText]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <div
       style={{ '--c': c.color } as CSSProperties}
@@ -52,7 +57,7 @@ export function ChallengeRow({
 
       <div className={cn('min-w-0', paused && 'opacity-55')}>
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[14px] font-medium">{c.name}</span>
+          <span className="min-w-0 truncate text-[14px] font-medium">{c.name}</span>
           {c.rulesLocked && (
             <span
               role="img"
@@ -64,9 +69,9 @@ export function ChallengeRow({
             </span>
           )}
         </div>
-        <div className="font-mono text-[10.5px] text-muted-foreground">
-          {what} · {term} · с {formatHuman(parseDay(c.startDate))}
-          {tagNames.length > 0 && ` · ${tagNames.map((t) => `«${t}»`).join(' ')}`}
+        {/* Одна строка с многоточием: полный текст — во всплывающей подсказке. */}
+        <div title={meta} className="truncate font-mono text-[10.5px] text-muted-foreground">
+          {meta}
         </div>
       </div>
 

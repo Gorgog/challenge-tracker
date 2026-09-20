@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, PlusIcon, XIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Tag } from '@/domain/types'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,8 @@ export type TagPickerProps = {
   /** Выбранные id — в том порядке, в котором их отмечали. */
   value: string[]
   onChange: (ids: string[]) => void
+  /** Передан — в поиске появляется «Создать», если такого тега ещё нет. */
+  onCreate?: (name: string) => Promise<Tag>
 }
 
 const norm = (s: string) => s.trim().toLocaleLowerCase('ru')
@@ -17,15 +19,35 @@ const norm = (s: string) => s.trim().toLocaleLowerCase('ru')
  * Мультиселект тегов с поиском. Выбранные видны чипами прямо в форме,
  * а список с поиском открывается поверх — на сотне тегов форма не раздувается.
  */
-export function TagPicker({ tags, value, onChange }: TagPickerProps) {
+export function TagPicker({ tags, value, onChange, onCreate }: TagPickerProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
+  const clean = query.trim()
   const selected = value.flatMap((id) => tags.find((t) => t.id === id) ?? [])
   const shown = tags.filter((t) => norm(t.name).includes(norm(query)))
+  /* Создать можно, только если точно такого тега нет: частичное совпадение не мешает. */
+  const canCreate = Boolean(onCreate) && clean.length > 0 && !tags.some((t) => norm(t.name) === norm(clean))
 
   const toggle = (id: string) =>
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])
+
+  const create = async () => {
+    if (!onCreate || !canCreate || creating) return
+    setCreating(true)
+    try {
+      const tag = await onCreate(clean)
+      onChange([...value, tag.id])
+      setQuery('')
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не получилось создать тег')
+    } finally {
+      setCreating(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -54,7 +76,10 @@ export function TagPicker({ tags, value, onChange }: TagPickerProps) {
         open={open}
         onOpenChange={(next) => {
           setOpen(next)
-          if (!next) setQuery('')
+          if (!next) {
+            setQuery('')
+            setError(null)
+          }
         }}
       >
         <PopoverTrigger asChild>
@@ -68,56 +93,91 @@ export function TagPicker({ tags, value, onChange }: TagPickerProps) {
           </button>
         </PopoverTrigger>
 
-        <PopoverContent className="flex flex-col gap-1.5">
+        {/* Ширина по полю выбора, а не фиксированная: иначе список висит узкой полоской. */}
+        <PopoverContent className="flex w-[var(--radix-popover-trigger-width)] flex-col gap-1.5">
           <input
             type="search"
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Найти тег"
-            className="h-8 rounded-md border border-input bg-transparent px-2.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setError(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canCreate && shown.length === 0) {
+                e.preventDefault()
+                void create()
+              }
+            }}
+            placeholder={onCreate ? 'Найти или создать тег' : 'Найти тег'}
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           />
 
-          {tags.length === 0 ? (
+          {tags.length === 0 && !canCreate ? (
             <p className="px-1 py-2 text-xs text-muted-foreground">
-              Тегов пока нет — заведи их кнопкой «Теги» над списком.
+              {onCreate
+                ? 'Тегов пока нет — впиши название, и появится кнопка «Создать».'
+                : 'Тегов пока нет — заведи их кнопкой «Теги» над списком.'}
             </p>
-          ) : shown.length === 0 ? (
+          ) : shown.length === 0 && !canCreate ? (
             <p className="px-1 py-2 text-xs text-muted-foreground">Ничего не нашлось</p>
           ) : (
-            <div role="listbox" aria-multiselectable="true" className="flex max-h-56 flex-col overflow-y-auto">
-              {shown.map((t) => {
-                const on = value.includes(t.id)
-                return (
-                  <div
-                    key={t.id}
-                    role="option"
-                    aria-selected={on}
-                    tabIndex={0}
-                    onClick={() => toggle(t.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        toggle(t.id)
-                      }
-                    }}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none hover:bg-muted focus-visible:bg-muted"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'grid size-4 place-items-center rounded border',
-                        on ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
-                      )}
+            shown.length > 0 && (
+              <div
+                role="listbox"
+                aria-multiselectable="true"
+                className="flex max-h-56 flex-col overflow-y-auto"
+              >
+                {shown.map((t) => {
+                  const on = value.includes(t.id)
+                  return (
+                    <div
+                      key={t.id}
+                      role="option"
+                      aria-selected={on}
+                      tabIndex={0}
+                      onClick={() => toggle(t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggle(t.id)
+                        }
+                      }}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none hover:bg-muted focus-visible:bg-muted"
                     >
-                      {on && <CheckIcon className="size-3" strokeWidth={3} />}
-                    </span>
-                    {t.name}
-                  </div>
-                )
-              })}
-            </div>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'grid size-4 place-items-center rounded border',
+                          on ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
+                        )}
+                      >
+                        {on && <CheckIcon className="size-3" strokeWidth={3} />}
+                      </span>
+                      {t.name}
+                    </div>
+                  )
+                })}
+              </div>
+            )
           )}
+
+          {canCreate && (
+            <button
+              type="button"
+              aria-label={`Создать тег «${clean}»`}
+              disabled={creating}
+              onClick={() => void create()}
+              className="flex items-center gap-2 rounded-md border border-dashed border-input px-2 py-1.5 text-left text-[13px] hover:bg-muted disabled:opacity-60"
+            >
+              <PlusIcon className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Создать «<b className="font-semibold">{clean}</b>»
+              </span>
+            </button>
+          )}
+
+          {error && <p className="px-1 text-xs text-destructive">{error}</p>}
         </PopoverContent>
       </Popover>
     </div>

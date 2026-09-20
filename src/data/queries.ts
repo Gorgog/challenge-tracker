@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { applyPatch, type ChallengePatch } from '@/domain/challenges'
-import type { Challenge, ChallengeStatus, DayGroup, DayLog, EntryMap } from '@/domain/types'
+import type { Challenge, ChallengeStatus, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -256,7 +256,11 @@ export function useCreateTag() {
 
   return useMutation({
     mutationFn: (name: string) => repo.createTag(name),
-    onSuccess() {
+    onSuccess(tag) {
+      /* Сразу в кэш: тег, созданный из выбора, должен появиться чипом, не дожидаясь перечитывания. */
+      client.setQueryData<Tag[]>(queryKeys.tags, (old) =>
+        [...(old ?? []), tag].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+      )
       void client.invalidateQueries({ queryKey: queryKeys.tags })
     },
   })

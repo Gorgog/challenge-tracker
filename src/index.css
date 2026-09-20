@@ -160,4 +160,36 @@
   html {
     @apply font-sans;
     }
+
+  /*
+    Tailwind 4 вернул кнопкам курсор по умолчанию — стрелку. Возвращаем указатель всему,
+    что нажимается, кроме выключенного: у выключенного курсор должен говорить «нельзя».
+  */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='option'],
+  [role='switch']:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  /*
+    Полосы прокрутки в тон теме: тонкие, без светлой дорожки поверх тёмного фона.
+    Стандартных свойств хватает Chrome, Edge и Firefox; ::-webkit-* — запасной путь для Safari.
+  */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 40%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+  }
 }

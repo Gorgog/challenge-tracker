@@ -127,6 +127,7 @@ export function ChallengesPage() {
           existing={all}
           tags={tags.data ?? []}
           challenge={editing}
+          onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setEditing(null)}
           onSave={(patch) => {
             updateChallenge.mutate({ id: editing.id, patch })
@@ -142,6 +143,7 @@ export function ChallengesPage() {
           /* Все, включая удалённые: вернувшийся челлендж не должен совпасть по цвету с новым. */
           existing={all}
           tags={tags.data ?? []}
+          onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setFormOpen(false)}
           onCreate={(draft) => {
             createChallenge.mutate(draft)
