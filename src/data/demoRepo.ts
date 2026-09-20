@@ -1,12 +1,28 @@
 import { addDays, dayKey, isoDow, parseDay, todayKey } from '@/domain/date'
-import { DEFAULT_DAY_GROUPS, type Challenge, type DayGroup, type DayLog, type EntryMap } from '@/domain/types'
+import { applyPatch } from '@/domain/challenges'
+import {
+  DEFAULT_DAY_GROUPS,
+  type Challenge,
+  type DayGroup,
+  type DayLog,
+  type EntryMap,
+  type Tag,
+} from '@/domain/types'
 import type { Repo } from './repo'
 
 /** Сколько дней истории насыпает сид. */
 const DAYS_BACK = 120
 
-/** Челленджи прототипа. `startsAgo` — за сколько дней до «сегодня» начался челлендж. */
-const BLUEPRINT: (Omit<Challenge, 'startDate'> & { startsAgo: number })[] = [
+/**
+ * Челленджи прототипа. `startsAgo` — за сколько дней до «сегодня» начался челлендж,
+ * `tag` — имя тега: при сиде из них собирается список тегов, а челлендж получает ссылку.
+ */
+type Blueprint = Omit<Challenge, 'startDate' | 'tagIds' | 'rulesLocked' | 'deletedAt'> & {
+  startsAgo: number
+  tag: string
+}
+
+const BLUEPRINT: Blueprint[] = [
   { id: 'push', code: 'ОТЖ', name: '30 дней отжимаюсь', kind: 'do', measure: 'count', goal: 30, unit: 'раз', color: 'var(--chart-1)', tag: 'тело', lengthDays: 30, status: 'active', sortOrder: 0, startsAgo: 20 },
   { id: 'smoke', code: 'БСГ', name: 'Без сигарет', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-2)', tag: 'здоровье', lengthDays: null, status: 'active', sortOrder: 1, startsAgo: 99 },
   { id: 'read', code: 'ЧТН', name: 'Читать 20 страниц', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-3)', tag: 'ум', lengthDays: null, status: 'active', sortOrder: 2, startsAgo: 81 },
@@ -66,13 +82,14 @@ export type DemoOptions = {
 
 const STORAGE_KEY = 'tabel-demo'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 1
+const STORAGE_VERSION = 2
 
 type Snapshot = {
   version: number
   challenges: Challenge[]
   entries: Record<string, EntryMap>
   logs: DayLog[]
+  tags: Tag[]
   /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
   dayGroups?: DayGroup[]
 }
@@ -96,6 +113,7 @@ function load(storage: Storage | null): Snapshot | null {
       parsed?.version === STORAGE_VERSION &&
       Array.isArray(parsed.challenges) &&
       Array.isArray(parsed.logs) &&
+      Array.isArray(parsed.tags) &&
       !!parsed.entries &&
       typeof parsed.entries === 'object'
     return valid ? parsed : null
@@ -118,9 +136,23 @@ function save(storage: Storage | null, snapshot: Snapshot) {
 function seedSnapshot(today: Date, seed: number): Snapshot {
   const rnd = mulberry32(seed)
 
-  const challenges: Challenge[] = BLUEPRINT.map(({ startsAgo, ...rest }) => ({
+  /* Теги — в порядке первого появления: у сида должны быть одинаковые id от запуска к запуску. */
+  const tags: Tag[] = []
+  const tagIdOf = (name: string) => {
+    let tag = tags.find((t) => t.name === name)
+    if (!tag) {
+      tag = { id: `tag-${tags.length + 1}`, name }
+      tags.push(tag)
+    }
+    return tag.id
+  }
+
+  const challenges: Challenge[] = BLUEPRINT.map(({ startsAgo, tag, ...rest }) => ({
     ...rest,
+    tagIds: [tagIdOf(tag)],
     startDate: dayKey(addDays(today, -startsAgo)),
+    rulesLocked: false,
+    deletedAt: null,
   })).sort((a, b) => a.sortOrder - b.sortOrder)
 
   const entries: Record<string, EntryMap> = {}
@@ -219,6 +251,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     challenges,
     entries,
     logs: [...logs.values()],
+    tags,
     dayGroups: [...DEFAULT_DAY_GROUPS],
   }
 }
@@ -238,13 +271,22 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const challenges = state.challenges
   const entries = state.entries
   const logs = new Map(state.logs.map((l) => [l.day, l]))
+  const tags = state.tags
   let dayGroups: DayGroup[] = state.dayGroups ?? [...DEFAULT_DAY_GROUPS]
 
   /* Нумерация продолжается после перезагрузки, иначе новый челлендж займёт чужой id. */
-  let lastId = challenges.reduce((max, c) => {
-    const n = Number(/^ch-(\d+)$/.exec(c.id)?.[1])
-    return Number.isFinite(n) ? Math.max(max, n) : max
-  }, 0)
+  const lastNumber = (ids: string[], prefix: string) =>
+    ids.reduce((max, id) => {
+      const n = Number(new RegExp(`^${prefix}-(\\d+)$`).exec(id)?.[1])
+      return Number.isFinite(n) ? Math.max(max, n) : max
+    }, 0)
+
+  let lastId = lastNumber(challenges.map((c) => c.id), 'ch')
+  let lastTagId = lastNumber(tags.map((t) => t.id), 'tag')
+
+  const find = (id: string) => challenges.find((c) => c.id === id)
+  const sameName = (a: string, b: string) =>
+    a.trim().toLocaleLowerCase('ru') === b.trim().toLocaleLowerCase('ru')
 
   const persist = () =>
     save(storage, {
@@ -252,6 +294,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       challenges,
       entries,
       logs: [...logs.values()],
+      tags,
       dayGroups,
     })
 
@@ -263,7 +306,9 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
 
   return {
     async listChallenges() {
-      return [...challenges].sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({ ...c }))
+      return [...challenges]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((c) => ({ ...c, tagIds: [...c.tagIds] }))
     },
     async listEntries() {
       return snapshotEntries()
@@ -274,11 +319,60 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
         .sort((a, b) => a.day.localeCompare(b.day))
     },
     async createChallenge(draft) {
-      const created: Challenge = { ...draft, id: `ch-${++lastId}` }
+      const created: Challenge = { ...draft, tagIds: [...draft.tagIds], id: `ch-${++lastId}` }
       challenges.push(created)
       entries[created.id] = {}
       persist()
       return { ...created }
+    },
+    async updateChallenge(id, patch) {
+      const index = challenges.findIndex((c) => c.id === id)
+      if (index < 0) return
+      challenges[index] = applyPatch(challenges[index]!, patch)
+      persist()
+    },
+    async setChallengeStatus(id, status) {
+      const c = find(id)
+      if (!c) return
+      c.status = status
+      persist()
+    },
+    async deleteChallenge(id) {
+      const c = find(id)
+      if (!c) return
+      /* Отметки не трогаем: удалённый челлендж по-прежнему участвует в статистике. */
+      c.deletedAt = new Date().toISOString()
+      persist()
+    },
+    async restoreChallenge(id) {
+      const c = find(id)
+      if (!c) return
+      c.deletedAt = null
+      persist()
+    },
+    async purgeChallenge(id) {
+      const index = challenges.findIndex((c) => c.id === id)
+      if (index >= 0) challenges.splice(index, 1)
+      delete entries[id]
+      persist()
+    },
+    async listTags() {
+      return tags.map((t) => ({ ...t })).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    },
+    async createTag(name) {
+      const clean = name.trim()
+      if (!clean) throw new Error('Имя тега не может быть пустым')
+      if (tags.some((t) => sameName(t.name, clean))) throw new Error(`Тег «${clean}» уже есть`)
+      const tag = { id: `tag-${++lastTagId}`, name: clean }
+      tags.push(tag)
+      persist()
+      return { ...tag }
+    },
+    async deleteTag(id) {
+      const index = tags.findIndex((t) => t.id === id)
+      if (index >= 0) tags.splice(index, 1)
+      for (const c of challenges) c.tagIds = c.tagIds.filter((t) => t !== id)
+      persist()
     },
     async setEntry(challengeId, day, value) {
       const map = (entries[challengeId] ??= {})

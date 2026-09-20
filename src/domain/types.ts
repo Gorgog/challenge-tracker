@@ -2,7 +2,8 @@
 export type ChallengeKind = 'do' | 'quit'
 /** Галочка за день или число с целью. */
 export type ChallengeMeasure = 'binary' | 'count'
-export type ChallengeStatus = 'active' | 'paused' | 'archived'
+/** Пауза — временно не на экране дня. Удаление — отдельно, через `deletedAt`. */
+export type ChallengeStatus = 'active' | 'paused'
 
 export type Challenge = {
   id: string
@@ -15,14 +16,24 @@ export type Challenge = {
   goal: number
   unit: string | null
   color: string
-  tag: string | null
+  /** Теги челленджа — ссылки на `Tag.id`. С тегами дня не пересекаются. */
+  tagIds: string[]
   /** Ключ дня начала: `2026-09-01`. */
   startDate: string
   /** Длина периода в днях; null — бессрочный челлендж. */
   lengthDays: number | null
   status: ChallengeStatus
+  /**
+   * Правила под замком: тип, измерение, цель и срок больше не меняются —
+   * иначе статистика задним числом поедет. Имя и теги менять можно.
+   */
+  rulesLocked: boolean
+  /** Мягкое удаление: челлендж пропадает с глаз, но остаётся в статистике. */
+  deletedAt: string | null
   sortOrder: number
 }
+
+export type Tag = { id: string; name: string }
 
 /** То, что человек заполняет в форме. Остальные поля челленджа вычисляются. */
 export type ChallengeDraft = {
@@ -33,7 +44,8 @@ export type ChallengeDraft = {
   measure: ChallengeMeasure
   goal: number
   unit: string
-  tag: string
+  tagIds: string[]
+  rulesLocked: boolean
   lengthDays: number | null
 }
 

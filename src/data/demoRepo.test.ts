@@ -180,10 +180,12 @@ describe('createChallenge', () => {
     goal: 1,
     unit: null,
     color: 'var(--chart-6)',
-    tag: null,
+    tagIds: [],
     startDate: '2026-09-21',
     lengthDays: null,
     status: 'active' as const,
+    rulesLocked: false,
+    deletedAt: null,
     sortOrder: 6,
   }
 
@@ -271,10 +273,12 @@ describe('хранение между перезагрузками', () => {
     goal: 1,
     unit: null,
     color: 'var(--chart-6)',
-    tag: null,
+    tagIds: [],
     startDate: '2026-09-21',
     lengthDays: null,
     status: 'active' as const,
+    rulesLocked: false,
+    deletedAt: null,
     sortOrder: 6,
   }
 

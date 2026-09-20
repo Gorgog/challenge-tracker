@@ -3,7 +3,8 @@ import { PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
-import { useChallenges, useCreateChallenge } from '@/data/queries'
+import { useChallenges, useCreateChallenge, useTags } from '@/data/queries'
+import { isLive } from '@/domain/challenges'
 import { formatHuman, parseDay } from '@/domain/date'
 import type { Challenge } from '@/domain/types'
 import { cn } from '@/lib/utils'
@@ -15,7 +16,10 @@ export function ChallengesPage() {
   const createChallenge = useCreateChallenge()
   const [formOpen, setFormOpen] = useState(false)
 
-  const list = challenges.data ?? []
+  const tags = useTags()
+  /* Удалённые из списка уходят, но остаются в статистике. */
+  const list = (challenges.data ?? []).filter(isLive)
+  const tagName = new Map((tags.data ?? []).map((t) => [t.id, t.name]))
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
@@ -43,7 +47,11 @@ export function ChallengesPage() {
       ) : (
         <div className="flex flex-col gap-2">
           {list.map((c) => (
-            <ChallengeRow key={c.id} challenge={c} />
+            <ChallengeRow
+              key={c.id}
+              challenge={c}
+              tagNames={c.tagIds.flatMap((id) => tagName.get(id) ?? [])}
+            />
           ))}
         </div>
       )}
@@ -64,7 +72,7 @@ export function ChallengesPage() {
   )
 }
 
-function ChallengeRow({ challenge: c }: { challenge: Challenge }) {
+function ChallengeRow({ challenge: c, tagNames }: { challenge: Challenge; tagNames: string[] }) {
   const what =
     c.kind === 'quit'
       ? 'отказ'
@@ -92,7 +100,7 @@ function ChallengeRow({ challenge: c }: { challenge: Challenge }) {
         <div className="truncate text-[14px] font-medium">{c.name}</div>
         <div className="font-mono text-[10.5px] text-muted-foreground">
           {what} · {term} · с {formatHuman(parseDay(c.startDate))}
-          {c.tag ? ` · «${c.tag}»` : ''}
+          {tagNames.length > 0 && ` · ${tagNames.map((t) => `«${t}»`).join(' ')}`}
         </div>
       </div>
 

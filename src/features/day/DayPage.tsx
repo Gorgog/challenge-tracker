@@ -29,6 +29,7 @@ import {
   useSetEntry,
 } from '@/data/queries'
 import { DOW_FULL, dayKey, formatHuman, isoDow, parseDay, todayKey } from '@/domain/date'
+import { onDay } from '@/domain/challenges'
 import { unratedDays } from '@/domain/stats'
 import { currentStreak, dayOutcome } from '@/domain/streaks'
 import {
@@ -96,7 +97,7 @@ export function DayPage() {
     return [...known, ...rest]
   }, [fetched, rowOrder])
 
-  const active = allChallenges.filter((c) => c.status === 'active')
+  const active = allChallenges.filter(onDay)
   const tasks = active.filter((c) => c.kind === 'do')
   const holds = active.filter((c) => c.kind === 'quit')
 

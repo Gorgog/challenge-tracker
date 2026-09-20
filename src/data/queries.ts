@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Challenge, DayGroup, DayLog, EntryMap } from '@/domain/types'
+import { applyPatch, type ChallengePatch } from '@/domain/challenges'
+import type { Challenge, ChallengeStatus, DayGroup, DayLog, EntryMap } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -14,6 +15,7 @@ export const queryKeys = {
   entries: ['entries'] as const,
   dayLogs: ['dayLogs'] as const,
   dayGroups: ['dayGroups'] as const,
+  tags: ['tags'] as const,
 }
 
 export function useChallenges() {
@@ -164,6 +166,111 @@ export function useSaveDayLog() {
 
     onSettled() {
       void client.invalidateQueries({ queryKey: queryKeys.dayLogs })
+    },
+  })
+}
+
+/**
+ * Правка одного челленджа: кэш меняется сразу, при ошибке откатывается.
+ * Кэш правится до отмены запросов — так правка видна в том же кадре, что и клик.
+ */
+function useChallengeMutation<Args>(
+  run: (args: Args) => Promise<void>,
+  optimistic: (list: Challenge[], args: Args) => Challenge[],
+) {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: run,
+
+    onMutate(args: Args) {
+      const previous = client.getQueryData<Challenge[]>(queryKeys.challenges)
+      client.setQueryData<Challenge[]>(queryKeys.challenges, (old) =>
+        old ? optimistic(old, args) : old,
+      )
+      void client.cancelQueries({ queryKey: queryKeys.challenges })
+      return { previous }
+    },
+
+    onError(_error, _args, context) {
+      if (context?.previous) client.setQueryData(queryKeys.challenges, context.previous)
+    },
+
+    onSettled() {
+      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+    },
+  })
+}
+
+const patchOne = (list: Challenge[], id: string, change: (c: Challenge) => Challenge) =>
+  list.map((c) => (c.id === id ? change(c) : c))
+
+export function useUpdateChallenge() {
+  return useChallengeMutation(
+    ({ id, patch }: { id: string; patch: ChallengePatch }) => repo.updateChallenge(id, patch),
+    (list, { id, patch }) => patchOne(list, id, (c) => applyPatch(c, patch)),
+  )
+}
+
+export function useSetChallengeStatus() {
+  return useChallengeMutation(
+    ({ id, status }: { id: string; status: ChallengeStatus }) => repo.setChallengeStatus(id, status),
+    (list, { id, status }) => patchOne(list, id, (c) => ({ ...c, status })),
+  )
+}
+
+export function useDeleteChallenge() {
+  return useChallengeMutation(
+    (id: string) => repo.deleteChallenge(id),
+    (list, id) => patchOne(list, id, (c) => ({ ...c, deletedAt: new Date().toISOString() })),
+  )
+}
+
+export function useRestoreChallenge() {
+  return useChallengeMutation(
+    (id: string) => repo.restoreChallenge(id),
+    (list, id) => patchOne(list, id, (c) => ({ ...c, deletedAt: null })),
+  )
+}
+
+/** Навсегда — без оптимизма: действие необратимое, пусть экран покажет его по факту. */
+export function usePurgeChallenge() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => repo.purgeChallenge(id),
+    onSuccess() {
+      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      void client.invalidateQueries({ queryKey: queryKeys.entries })
+    },
+  })
+}
+
+export function useTags() {
+  return useQuery({ queryKey: queryKeys.tags, queryFn: () => repo.listTags() })
+}
+
+/** Ошибку (пустое имя, дубль) хук не глотает: её показывает форма. */
+export function useCreateTag() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (name: string) => repo.createTag(name),
+    onSuccess() {
+      void client.invalidateQueries({ queryKey: queryKeys.tags })
+    },
+  })
+}
+
+export function useDeleteTag() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => repo.deleteTag(id),
+    onSuccess() {
+      void client.invalidateQueries({ queryKey: queryKeys.tags })
+      /* Тег снимается со всех челленджей — их тоже надо перечитать. */
+      void client.invalidateQueries({ queryKey: queryKeys.challenges })
     },
   })
 }

@@ -13,10 +13,12 @@ const binary: Challenge = {
   goal: 1,
   unit: null,
   color: 'var(--chart-3)',
-  tag: 'ум',
+  tagIds: [],
   startDate: '2026-07-02',
   lengthDays: null,
   status: 'active',
+  rulesLocked: false,
+  deletedAt: null,
   sortOrder: 2,
 }
 

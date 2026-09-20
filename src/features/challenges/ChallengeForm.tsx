@@ -31,7 +31,6 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
   const [measure, setMeasure] = useState<ChallengeMeasure>('binary')
   const [goalText, setGoalText] = useState('1')
   const [unit, setUnit] = useState('')
-  const [tag, setTag] = useState('')
   const [limited, setLimited] = useState(false)
   const [lengthText, setLengthText] = useState('30')
 
@@ -51,7 +50,8 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
           measure,
           goal: Number(goalText) || 1,
           unit,
-          tag,
+          tagIds: [],
+          rulesLocked: false,
           lengthDays: limited ? Number(lengthText) || 1 : null,
         },
         existing,
@@ -156,14 +156,6 @@ export function ChallengeForm({ open, existing, onCreate, onCancel }: ChallengeF
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field id="ch-tag" label="Тег">
-            <Input
-              id="ch-tag"
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              placeholder="тело, ум, еда"
-            />
-          </Field>
           <Field id="ch-code" label="Код">
             <Input
               id="ch-code"

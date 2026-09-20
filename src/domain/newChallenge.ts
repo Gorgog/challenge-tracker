@@ -43,10 +43,12 @@ export function buildChallenge(
     goal: counted ? draft.goal : 1,
     unit: counted ? draft.unit.trim() || null : null,
     color: pickColor(existing),
-    tag: draft.tag.trim() || null,
+    tagIds: [...draft.tagIds],
     startDate: today,
     lengthDays: draft.lengthDays,
     status: 'active',
+    rulesLocked: draft.rulesLocked,
+    deletedAt: null,
     sortOrder: existing.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1,
   }
 }

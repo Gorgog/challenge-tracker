@@ -15,10 +15,12 @@ function challenge(over: Partial<Challenge> = {}): Challenge {
     goal: 1,
     unit: null,
     color: 'var(--chart-1)',
-    tag: null,
+    tagIds: [],
     startDate: '2026-09-01',
     lengthDays: null,
     status: 'active',
+    rulesLocked: false,
+    deletedAt: null,
     sortOrder: 0,
     ...over,
   }
@@ -188,5 +190,17 @@ describe('fullDays', () => {
   it('день без единого активного челленджа не считается полным', () => {
     const a = challenge({ id: 'a', startDate: '2026-09-20' })
     expect(fullDays([a], { a: entriesFrom('2026-09-20', '1') }, TODAY, 7)).toBe(1)
+  })
+})
+
+describe('удалённый челлендж в статистике', () => {
+  it('по-прежнему участвует в подсчёте полных дней — статистика его помнит', () => {
+    const kept = challenge()
+    const deleted = challenge({ id: 'gone', deletedAt: '2026-09-15T00:00:00.000Z' })
+    const entries = { c1: entriesFrom('2026-09-20', '1'), gone: {} }
+
+    /* У удалённого 20 сентября пропуск, поэтому день не полный. Отфильтруй его
+       fullDays — вышла бы единица, и история задним числом стала бы лучше, чем была. */
+    expect(fullDays([kept, deleted], entries, TODAY, 1)).toBe(0)
   })
 })

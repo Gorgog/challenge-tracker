@@ -13,10 +13,12 @@ const challenge: Challenge = {
   goal: 1,
   unit: null,
   color: 'var(--chart-2)',
-  tag: 'здоровье',
+  tagIds: [],
   startDate: '2026-06-14',
   lengthDays: null,
   status: 'active',
+  rulesLocked: false,
+  deletedAt: null,
   sortOrder: 1,
 }
 

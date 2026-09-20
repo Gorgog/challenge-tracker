@@ -11,10 +11,12 @@ const existing = (over: Partial<Challenge> = {}): Challenge => ({
   goal: 1,
   unit: null,
   color: 'var(--chart-1)',
-  tag: null,
+  tagIds: [],
   startDate: '2026-09-01',
   lengthDays: null,
   status: 'active',
+  rulesLocked: false,
+  deletedAt: null,
   sortOrder: 0,
   ...over,
 })
@@ -26,7 +28,8 @@ const draft = (over: Partial<ChallengeDraft> = {}): ChallengeDraft => ({
   measure: 'binary',
   goal: 1,
   unit: '',
-  tag: '',
+  tagIds: [],
+  rulesLocked: false,
   lengthDays: null,
   ...over,
 })
@@ -95,8 +98,19 @@ describe('buildChallenge', () => {
     expect(c.goal).toBe(1)
   })
 
-  it('пустой тег превращается в null, а не в пустую строку', () => {
-    expect(buildChallenge(draft({ tag: '  ' }), [], '2026-09-21').tag).toBeNull()
+  it('копирует теги, а не делит с формой один массив', () => {
+    const tagIds = ['t1', 't2']
+    const c = buildChallenge(draft({ tagIds }), [], '2026-09-21')
+    expect(c.tagIds).toEqual(['t1', 't2'])
+    expect(c.tagIds).not.toBe(tagIds)
+  })
+
+  it('переносит замок правил из формы', () => {
+    expect(buildChallenge(draft({ rulesLocked: true }), [], '2026-09-21').rulesLocked).toBe(true)
+  })
+
+  it('новый челлендж не удалён', () => {
+    expect(buildChallenge(draft(), [], '2026-09-21').deletedAt).toBeNull()
   })
 
   it('код подставляется из названия, если не задан руками', () => {
