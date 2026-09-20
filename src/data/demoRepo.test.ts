@@ -6,8 +6,24 @@ import { createDemoRepo } from './demoRepo'
 
 const TODAY = parseDay('2026-09-21')
 
+/* `storage: null` — эти тесты проверяют сид, а не хранение между перезагрузками. */
 const repo = (over: { today?: Date; seed?: number } = {}) =>
-  createDemoRepo({ today: TODAY, seed: 20260921, ...over })
+  createDemoRepo({ today: TODAY, seed: 20260921, storage: null, ...over })
+
+/** Хранилище в памяти: настоящее localStorage из jsdom протекало бы между тестами. */
+function fakeStorage(): Storage {
+  const map = new Map<string, string>()
+  return {
+    get length() {
+      return map.size
+    },
+    clear: () => map.clear(),
+    getItem: (k: string) => map.get(k) ?? null,
+    key: (i: number) => [...map.keys()][i] ?? null,
+    removeItem: (k: string) => void map.delete(k),
+    setItem: (k: string, v: string) => void map.set(k, v),
+  } as Storage
+}
 
 describe('демо-репозиторий: челленджи', () => {
   it('отдаёт шесть челленджей прототипа', async () => {
@@ -192,5 +208,99 @@ describe('createChallenge', () => {
     const a = await r.createChallenge(fresh)
     const b = await r.createChallenge(fresh)
     expect(a.id).not.toBe(b.id)
+  })
+})
+
+describe('хранение между перезагрузками', () => {
+  const withStorage = (storage: Storage) =>
+    createDemoRepo({ today: TODAY, seed: 20260921, storage })
+
+  const fresh = {
+    name: 'Без кофе',
+    code: 'БК',
+    kind: 'quit' as const,
+    measure: 'binary' as const,
+    goal: 1,
+    unit: null,
+    color: 'var(--chart-6)',
+    tag: null,
+    startDate: '2026-09-21',
+    lengthDays: null,
+    status: 'active' as const,
+    sortOrder: 6,
+  }
+
+  it('заведённый челлендж переживает пересоздание репозитория', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).createChallenge(fresh)
+
+    const after = await withStorage(storage).listChallenges()
+    expect(after.map((c) => c.name)).toContain('Без кофе')
+  })
+
+  it('отметка переживает пересоздание', async () => {
+    const storage = fakeStorage()
+    const first = withStorage(storage)
+    const [c] = await first.listChallenges()
+    await first.setEntry(c!.id, '2026-09-20', 77)
+
+    expect((await withStorage(storage).listEntries())[c!.id]?.['2026-09-20']).toBe(77)
+  })
+
+  it('снятая отметка тоже сохраняется — а не воскресает из сида', async () => {
+    const storage = fakeStorage()
+    const first = withStorage(storage)
+    const [c] = await first.listChallenges()
+    await first.setEntry(c!.id, '2026-09-20', 77)
+    await first.setEntry(c!.id, '2026-09-20', undefined)
+
+    expect('2026-09-20' in ((await withStorage(storage).listEntries())[c!.id] ?? {})).toBe(false)
+  })
+
+  it('итог дня переживает пересоздание', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).saveDayLog({
+      day: '2026-09-20',
+      mood: 7,
+      wellbeing: 6,
+      productivity: 8,
+      tags: ['отдых'],
+      note: 'сохранилось',
+      closedAt: '2026-09-20T21:00:00.000Z',
+    })
+
+    const logs = await withStorage(storage).listDayLogs()
+    expect(logs.find((l) => l.day === '2026-09-20')?.note).toBe('сохранилось')
+  })
+
+  it('id не повторяются после перезагрузки', async () => {
+    const storage = fakeStorage()
+    const a = await withStorage(storage).createChallenge(fresh)
+    const b = await withStorage(storage).createChallenge(fresh)
+    expect(a.id).not.toBe(b.id)
+  })
+
+  it('битое содержимое хранилища не роняет — демо-данные пересобираются', async () => {
+    const storage = fakeStorage()
+    storage.setItem('tabel-demo', '{это не json')
+
+    const list = await withStorage(storage).listChallenges()
+    expect(list).toHaveLength(6)
+  })
+
+  it('недоступное хранилище не мешает работать в памяти', async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('доступ запрещён')
+      },
+      setItem: () => {
+        throw new Error('доступ запрещён')
+      },
+    } as unknown as Storage
+
+    const r = withStorage(broken)
+    const [c] = await r.listChallenges()
+    await r.setEntry(c!.id, '2026-09-20', 5)
+    expect((await r.listEntries())[c!.id]?.['2026-09-20']).toBe(5)
   })
 })
