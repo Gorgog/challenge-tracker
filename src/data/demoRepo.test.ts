@@ -211,6 +211,54 @@ describe('createChallenge', () => {
   })
 })
 
+describe('порядок челленджей', () => {
+  it('выстраивает челленджи в переданном порядке', async () => {
+    const r = repo()
+    const ids = (await r.listChallenges()).map((c) => c.id)
+    const reversed = [...ids].reverse()
+
+    await r.reorderChallenges(reversed)
+    expect((await r.listChallenges()).map((c) => c.id)).toEqual(reversed)
+  })
+
+  it('челлендж, не попавший в список порядка, не теряется', async () => {
+    const r = repo()
+    const ids = (await r.listChallenges()).map((c) => c.id)
+
+    await r.reorderChallenges([ids[2]!, ids[0]!])
+    const after = (await r.listChallenges()).map((c) => c.id)
+    expect(after).toHaveLength(ids.length)
+    expect(after.slice(0, 2)).toEqual([ids[2], ids[0]])
+  })
+
+  it('порядок переживает перезагрузку', async () => {
+    const storage = fakeStorage()
+    const first = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    const reversed = (await first.listChallenges()).map((c) => c.id).reverse()
+    await first.reorderChallenges(reversed)
+
+    const second = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    expect((await second.listChallenges()).map((c) => c.id)).toEqual(reversed)
+  })
+})
+
+describe('порядок блоков на экране дня', () => {
+  it('по умолчанию сначала привычки, потом отказы', async () => {
+    expect(await repo().getDayGroups()).toEqual(['tasks', 'holds'])
+  })
+
+  it('переставленные блоки переживают перезагрузку', async () => {
+    const storage = fakeStorage()
+    await createDemoRepo({ today: TODAY, seed: 20260921, storage }).saveDayGroups([
+      'holds',
+      'tasks',
+    ])
+
+    const second = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    expect(await second.getDayGroups()).toEqual(['holds', 'tasks'])
+  })
+})
+
 describe('хранение между перезагрузками', () => {
   const withStorage = (storage: Storage) =>
     createDemoRepo({ today: TODAY, seed: 20260921, storage })
