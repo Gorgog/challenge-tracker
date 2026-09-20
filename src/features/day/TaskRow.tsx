@@ -17,6 +17,8 @@ export type TaskRowProps = {
   streak: number
   /** Номер в списке — он же горячая клавиша. */
   index: number
+  /** День закрыт: отметки больше не меняются. */
+  frozen: boolean
   onToggle: () => void
   onSetValue: (value: number | undefined) => void
 }
@@ -27,6 +29,7 @@ export function TaskRow({
   done,
   streak,
   index,
+  frozen,
   onToggle,
   onSetValue,
 }: TaskRowProps) {
@@ -52,11 +55,15 @@ export function TaskRow({
         aria-pressed={done}
         aria-label={`Отметить: ${challenge.name}`}
         onClick={onToggle}
+        disabled={frozen}
         className={cn(
-          'grid size-9 place-items-center rounded-[10px] border-2 transition-transform active:scale-90',
+          'grid size-9 place-items-center rounded-[10px] border-2',
           done
             ? 'border-[var(--c)] bg-[var(--c)] text-white'
-            : 'border-input bg-secondary text-transparent hover:border-[var(--c)]',
+            : 'border-input bg-secondary text-transparent',
+          frozen
+            ? 'cursor-default'
+            : cn('transition-transform active:scale-90', !done && 'hover:border-[var(--c)]'),
         )}
       >
         <CheckIcon className="size-[17px]" strokeWidth={3} />
@@ -77,11 +84,11 @@ export function TaskRow({
 
       {counted ? (
         <div className="flex items-center gap-2">
-          <Hint index={index} />
+          <Hint index={index} frozen={frozen} />
           <StepButton
             label="Меньше"
             onClick={() => onSetValue(Math.max(0, (value ?? 0) - step))}
-            disabled={(value ?? 0) <= 0}
+            disabled={frozen || (value ?? 0) <= 0}
           >
             <MinusIcon className="size-3.5" />
           </StepButton>
@@ -90,25 +97,31 @@ export function TaskRow({
             inputMode="numeric"
             aria-label={`${challenge.name}: значение`}
             value={value ?? 0}
+            disabled={frozen}
             onChange={(e) => {
               const digits = e.target.value.replace(/\D/g, '')
               onSetValue(digits ? Number(digits) : 0)
             }}
-            className="w-16 rounded-lg border border-input bg-secondary px-1 py-1.5 text-center font-mono text-sm font-semibold"
+            className="w-16 rounded-lg border border-input bg-secondary px-1 py-1.5 text-center font-mono text-sm font-semibold disabled:opacity-60"
           />
-          <StepButton label="Больше" onClick={() => onSetValue((value ?? 0) + step)}>
+          <StepButton
+            label="Больше"
+            onClick={() => onSetValue((value ?? 0) + step)}
+            disabled={frozen}
+          >
             <PlusIcon className="size-3.5" />
           </StepButton>
         </div>
       ) : (
-        <Hint index={index} />
+        <Hint index={index} frozen={frozen} />
       )}
     </div>
   )
 }
 
-const Hint = ({ index }: { index: number }) =>
-  index <= 9 ? (
+/* Подсказка клавиши прячется у закрытого дня: цифра в нём ничего не делает. */
+const Hint = ({ index, frozen }: { index: number; frozen: boolean }) =>
+  index <= 9 && !frozen ? (
     <span className="rounded border border-border px-1.5 font-mono text-[10px] text-muted-foreground">
       {index}
     </span>

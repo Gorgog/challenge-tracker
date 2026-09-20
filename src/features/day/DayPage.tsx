@@ -43,6 +43,8 @@ export function DayPage() {
   const pendingCount = tasks.length - doneCount
   const debt = unratedDays(logs, today)
   const todayLog = logs.find((l) => l.day === todayK) ?? null
+  /* Закрытый день не правится задним числом: иначе оценка перестаёт что-либо значить. */
+  const frozen = Boolean(todayLog)
 
   /** Отметка применяется сразу, тост даёт вернуть прежнее значение. */
   const applyEntry = (c: Challenge, day: string, value: number | undefined, message: string) => {
@@ -76,7 +78,7 @@ export function DayPage() {
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (dialogDay || e.ctrlKey || e.metaKey || e.altKey) return
+      if (frozen || dialogDay || e.ctrlKey || e.metaKey || e.altKey) return
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       if (!/^[1-9]$/.test(e.key)) return
@@ -127,6 +129,7 @@ export function DayPage() {
             done={isDone(c)}
             streak={streakOf(c)}
             index={i + 1}
+            frozen={frozen}
             onToggle={() => toggleTask(c)}
             onSetValue={(value) => setEntry.mutate({ challengeId: c.id, day: todayK, value })}
           />
@@ -141,6 +144,7 @@ export function DayPage() {
               challenge={c}
               failed={entriesOf(c)[todayK] === 0}
               streak={streakOf(c)}
+              frozen={frozen}
               onToggleRelapse={() => toggleRelapse(c)}
             />
           ))}
@@ -166,6 +170,10 @@ export function DayPage() {
               Изменить оценку
             </Button>
           </div>
+
+          <p className="text-[11.5px] text-muted-foreground">
+            День закрыт — отметки заморожены. Поменять можно только оценку.
+          </p>
 
           {todayLog.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

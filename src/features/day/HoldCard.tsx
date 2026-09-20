@@ -9,6 +9,8 @@ export type HoldCardProps = {
   /** Срыв отмечен сегодня. */
   failed: boolean
   streak: number
+  /** День закрыт: отметки больше не меняются. */
+  frozen: boolean
   onToggleRelapse: () => void
 }
 
@@ -16,7 +18,7 @@ export type HoldCardProps = {
  * Отказ — не галочка, а счётчик непрерывности: день засчитывается сам,
  * нажимают только когда сорвались. Поэтому герой карточки — число, а не отметка.
  */
-export function HoldCard({ challenge, failed, streak, onToggleRelapse }: HoldCardProps) {
+export function HoldCard({ challenge, failed, streak, frozen, onToggleRelapse }: HoldCardProps) {
   return (
     <div
       style={{ '--c': challenge.color } as CSSProperties}
@@ -45,7 +47,12 @@ export function HoldCard({ challenge, failed, streak, onToggleRelapse }: HoldCar
         </div>
       </div>
 
-      <Button variant={failed ? 'secondary' : 'outline'} size="sm" onClick={onToggleRelapse}>
+      <Button
+        variant={failed ? 'secondary' : 'outline'}
+        size="sm"
+        disabled={frozen}
+        onClick={onToggleRelapse}
+      >
         {failed ? 'убрать срыв' : 'сорвался'}
       </Button>
     </div>
