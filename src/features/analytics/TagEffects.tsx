@@ -1,6 +1,6 @@
 import { ChevronDownIcon } from 'lucide-react'
 import { effectText, METRICS, type TagEffect } from '@/domain/effects'
-import { MIN_TAG_DAYS } from '@/domain/stats'
+import { MIN_EARLY } from '@/domain/stats'
 import { plural } from '@/lib/plural'
 import { ConfidenceBadge } from './ConfidenceBadge'
 import { WindowsTable } from './WindowsTable'
@@ -12,8 +12,8 @@ export function TagEffects({ tags }: { tags: TagEffect[] }) {
     return (
       <div className="rounded-xl border border-dashed border-border p-6 text-center">
         <p className="text-sm text-muted-foreground">
-          Тегов пока мало: вывод по тегу появляется, когда он стоит хотя бы в {MIN_TAG_DAYS}{' '}
-          {plural(MIN_TAG_DAYS, 'дне', 'днях', 'днях')}.
+          Тегов пока мало: вывод по тегу появляется, когда он стоит хотя бы в {MIN_EARLY}{' '}
+          {plural(MIN_EARLY, 'дне', 'днях', 'днях')}.
         </p>
       </div>
     )

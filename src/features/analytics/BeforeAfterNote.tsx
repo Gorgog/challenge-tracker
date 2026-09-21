@@ -1,23 +1,30 @@
 import type { ChallengeEffect } from '@/domain/effects'
-import { MIN_GROUP } from '@/domain/stats'
+import { MIN_EARLY } from '@/domain/stats'
 import type { Challenge } from '@/domain/types'
 import { plural } from '@/lib/plural'
 import { STRENGTH_WORD, daysText, signed } from './words'
 
 const codes = (list: Challenge[]) => list.map((c) => c.code).join(', ')
 
-/** Почему дни «с» и «без» не с чем сравнить — по тому, чего на самом деле не хватает. */
+/** Сколько дней в группе есть и сколько нужно: «Срывов пока 2 — …»; ни одного — без «пока 0». */
+function shortOf(group: string, none: string, count: number): string {
+  if (count === 0) return `${group} ${none} — дни не с чем сравнить.`
+  return `${group} пока ${count} — для сравнения нужно хотя бы ${MIN_EARLY}.`
+}
+
+/** Почему дни «с» и «без» не с чем сравнить — по тому, чего на самом деле не хватает, с числами. */
 function reason({ challenge, days, windows, beforeAfter }: ChallengeEffect): string {
   const { withDays, withoutDays } = windows.day.same
   const quit = challenge.kind === 'quit'
   if (days === 0 || beforeAfter?.sinceStart === 0) return 'Челлендж только начат — сравнивать пока не с чем.'
-  if (withoutDays < MIN_GROUP && withDays >= MIN_GROUP) {
-    return `${quit ? 'Срывов' : 'Пропусков'} почти нет — дни не с чем сравнить.`
+  if (withoutDays < MIN_EARLY && withDays >= MIN_EARLY) {
+    return shortOf(quit ? 'Срывов' : 'Пропусков', 'не было', withoutDays)
   }
-  if (withDays < MIN_GROUP && withoutDays >= MIN_GROUP) {
-    return `${quit ? 'Выдержанных дней' : 'Выполнений'} почти нет — дни не с чем сравнить.`
+  if (withDays < MIN_EARLY && withoutDays >= MIN_EARLY) {
+    return shortOf(quit ? 'Выдержанных дней' : 'Выполнений', 'пока нет', withDays)
   }
-  return 'Оценённых дней пока мало — дни не с чем сравнить.'
+  const groups = quit ? 'со срывом и без' : 'с выполнением и без'
+  return `Оценённых дней пока ${days} — для сравнения нужно хотя бы по ${MIN_EARLY} ${groups}.`
 }
 
 /** Запасное сравнение для челленджа, у которого дни «с» и «без» не набрать. */

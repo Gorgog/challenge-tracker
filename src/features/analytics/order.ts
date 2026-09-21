@@ -6,13 +6,14 @@ type Ranked = { verdict: Verdict; confidence: Confidence; windows: { day: Window
 /** Выводы про сам день — без уверенности, но что-то говорят. */
 const ABOUT_DAY: Verdict[] = ['coincidence', 'sameDayOnly', 'streak', 'rebound']
 
-/** Уровень вывода: уверенно, похоже, про сам день, без вывода, мало данных. */
+/** Уровень вывода: уверенно, похоже, возможно, про сам день, без вывода, мало данных. */
 function rank(e: Ranked): number {
   if (e.confidence === 'sure') return 0
   if (e.confidence === 'likely') return 1
-  if (ABOUT_DAY.includes(e.verdict)) return 2
-  if (e.verdict === 'insufficient') return 4
-  return 3
+  if (e.confidence === 'possible') return 2
+  if (ABOUT_DAY.includes(e.verdict)) return 3
+  if (e.verdict === 'insufficient') return 5
+  return 4
 }
 
 /** Сила вывода внутри уровня: у выводов «назавтра» и у полосы — разница назавтра, у остальных — дня. */
