@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
-import { challengeEffects } from '@/domain/effects'
+import { challengeEffects, type Estimate } from '@/domain/effects'
 import type { DayLog } from '@/domain/types'
 import { EffectCard } from './EffectCard'
 import { beforeAfterOf, challenge, effect, est } from './testing'
@@ -191,5 +191,67 @@ describe('EffectCard', () => {
     expect(screen.getByText('Следующий день лучше')).toBeInTheDocument()
     expect(dayRow()).toHaveTextContent('+0,9')
     expect(dayRow()).toHaveTextContent('возможно')
+  })
+})
+
+describe('EffectCard — утро', () => {
+  const morningRow = () => screen.getByRole('row', { name: /утро/i })
+  /** Карточка со строкой «Утро»: `same` — утро в дни выполнения, `next` — утро назавтра. */
+  const withMorning = (same: Estimate, next: Estimate, over = {}) =>
+    effect(est('flat', 0.2), est('likely', 1.5), { morning: { same, next }, ...over })
+
+  it('строка «Утро» — сразу под оценкой дня: утро назавтра и в дни выполнения', () => {
+    render(<EffectCard effect={withMorning(est('flat', 0.1), est('likely', 2.1))} />)
+    expect(morningRow()).toBeVisible()
+    expect(morningRow()).toHaveTextContent('+2,1')
+    expect(morningRow()).toHaveTextContent('похоже')
+  })
+
+  it('без утр строки «Утро» нет', () => {
+    render(<EffectCard effect={effect(est('flat', 0.2), est('likely', 1.5))} />)
+    expect(screen.queryByRole('row', { name: /утро/i })).toBeNull()
+  })
+
+  it('утро в дни выполнения и так лучше — «похоже»: заметка, что хорошие дни сами тянут выполнение', () => {
+    render(<EffectCard effect={withMorning(est('likely', 1.1), est('flat', 0.1))} />)
+    expect(
+      screen.getByText('Утро в дни выполнения и так лучше — на 1,1: похоже, в хорошие дни делаешь чаще.'),
+    ).toBeInTheDocument()
+  })
+
+  it('для заметки «возможно» мало — её нет', () => {
+    render(<EffectCard effect={withMorning(est('possible', 1.1), est('flat', 0.1))} />)
+    expect(screen.queryByText(/утро в дни выполнения/i)).toBeNull()
+  })
+
+  it('утро в дни выполнения хуже — берёшься за это в плохие дни', () => {
+    render(<EffectCard effect={withMorning(est('likely', -0.9), est('flat', 0.1))} />)
+    expect(screen.getByText('Утро в дни выполнения хуже — на 0,9: похоже, берёшься за это в плохие дни.')).toBeInTheDocument()
+  })
+
+  it('у отказа — дни без срыва', () => {
+    const quit = challenge({ id: 'sugar', kind: 'quit', code: 'БСХ', name: 'Без сахара' })
+    const { rerender } = render(
+      <EffectCard effect={withMorning(est('likely', 1.1), est('flat', 0.1), { challenge: quit })} />,
+    )
+    expect(
+      screen.getByText('Утро в дни без срыва и так лучше — на 1,1: похоже, в хорошие дни держаться легче.'),
+    ).toBeInTheDocument()
+    rerender(<EffectCard effect={withMorning(est('likely', -0.9), est('flat', 0.1), { challenge: quit })} />)
+    expect(screen.getByText('Утро в дни без срыва хуже — на 0,9.')).toBeInTheDocument()
+  })
+
+  it('окно «в тот же день» при том же утре — в фактах видно, по каким дням оно посчитано', () => {
+    render(
+      <EffectCard effect={effect(est('flat', 0.2, [28, 25]), est('likely', 1.5), { days: 60, morningBase: true })} />,
+    )
+    expect(screen.getByText(/учтено 60 дней · в тот же день — с утром: с — 28, без — 25/)).toBeInTheDocument()
+  })
+
+  it('при том же утре вывод «только сам день» — с оговоркой про совпадение', () => {
+    render(<EffectCard effect={effect(est('likely', 1.5), est('flat', 0.1), { morningBase: true })} />)
+    expect(
+      screen.getByText('При том же утре день лучше, назавтра следа нет — может быть и совпадением'),
+    ).toBeInTheDocument()
   })
 })

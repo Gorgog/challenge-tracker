@@ -48,3 +48,36 @@ describe('TagEffects — вид строки', () => {
     expect(screen.getByText('встречи').closest('summary')!.querySelector('svg')).not.toBeNull()
   })
 })
+
+describe('TagEffects — утро и сон', () => {
+  it('тег сна подписан «из утра»; строки «Утро» у него нет', async () => {
+    const user = userEvent.setup()
+    const sleep = tag('плохо спал', est('likely', -1.4, [22, 80]), est('unclear', -0.2), {
+      tagDays: 22,
+      fromMorning: true,
+    })
+    render(<TagEffects tags={[sleep]} />)
+
+    expect(screen.getByText('из утра · 22 дня')).toBeInTheDocument()
+    expect(screen.getByText('День хуже, про следующий пока неясно')).toBeInTheDocument()
+    await user.click(screen.getByText('плохо спал'))
+    expect(screen.queryByRole('row', { name: /утро/i })).toBeNull()
+  })
+
+  it('у вечернего тега с утрами — строка «Утро»: похмелье видно уже утром', async () => {
+    const user = userEvent.setup()
+    const drink = tag('алкоголь', est('flat', 0.1), est('likely', -1.6, [14, 90]), {
+      tagDays: 14,
+      morning: { same: est('flat', 0.1), next: est('likely', -1.9) },
+    })
+    render(<TagEffects tags={[drink]} />)
+
+    await user.click(screen.getByText('алкоголь'))
+    expect(screen.getByRole('row', { name: /утро/i })).toHaveTextContent('−1,9')
+  })
+
+  it('тег, связанный только с самим днём, говорит, в какую сторону', () => {
+    render(<TagEffects tags={[tag('дедлайн', est('likely', 1.2), est('flat', 0.1))]} />)
+    expect(screen.getByText('День лучше — назавтра следа нет')).toBeInTheDocument()
+  })
+})
