@@ -209,6 +209,19 @@ describe('сосед — челлендж, который делается вм�
     expect(eb!.partner?.id).toBe('a')
   })
 
+  it('короткое совпадение не перебивает долгое: соседом становится тот, с кем история общая', () => {
+    const w = simulate(27, { done: coin, score: (_d, y) => 6 + (y?.done ? 1.5 : 0) })
+    const bEntries = companion(w.entries, w.logs, 28, 0.75)
+    // C начат 20 дней назад и повторяет B день в день: φ = 1, но всего на двадцати днях
+    const recent = dayKey(addDays(TODAY, -20))
+    const cEntries = Object.fromEntries(Object.entries(bEntries).filter(([day]) => day >= recent))
+    const c = challenge({ id: 'c', code: 'ОТЖ', startDate: recent })
+    const [, eb] = challengeEffects([a, b, c], { a: w.entries, b: bEntries, c: cEntries }, w.logs, TODAY)
+
+    expect(eb!.partner?.id).toBe('a')
+    expect(STRONG).not.toContain(eb!.windows.day.next.strength)
+  })
+
   it('без заметной совместности соседа нет', () => {
     const w = simulate(22, { done: coin, score: () => 6 })
     const entries = { a: w.entries, b: companion(w.entries, w.logs, 23, 0) }
