@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { forecast, scoreSplit, tagStats, weekProfile } from './stats'
+import { forecast, unratedDays, weekProfile } from './stats'
 import type { Challenge, DayLog, EntryMap } from './types'
 
 const TODAY = parseDay('2026-09-21')
@@ -77,66 +77,6 @@ describe('weekProfile', () => {
   })
 })
 
-describe('scoreSplit', () => {
-  const c = challenge({ startDate: '2026-07-01' })
-
-  it('сравнивает среднюю оценку в дни с выполнением и без', () => {
-    const entries = entriesBack(60, (i) => i % 2 === 0)
-    const logs = Array.from({ length: 60 }, (_, k) => {
-      const day = addDays(TODAY, -(k + 1))
-      return log(dayKey(day), { mood: (k + 1) % 2 === 0 ? 8 : 4 })
-    })
-    const split = scoreSplit(c, entries, logs, 'mood', TODAY)
-    expect(split?.withHit).toBeCloseTo(8)
-    expect(split?.withoutHit).toBeCloseTo(4)
-    expect(split?.delta).toBeCloseTo(4)
-  })
-
-  it('не делает вывод, если в группе меньше десяти дней', () => {
-    const entries = entriesBack(12, (i) => i > 3) // без выполнения всего 3 дня
-    const logs = Array.from({ length: 12 }, (_, k) => log(dayKey(addDays(TODAY, -(k + 1)))))
-    expect(scoreSplit(c, entries, logs, 'mood', TODAY)).toBeNull()
-  })
-
-  it('дни без оценки в расчёт не идут', () => {
-    const entries = entriesBack(40, () => true)
-    expect(scoreSplit(c, entries, [], 'mood', TODAY)).toBeNull()
-  })
-})
-
-describe('tagStats', () => {
-  it('считает средние оценки по тегу и общее среднее', () => {
-    const logs = [
-      ...Array.from({ length: 5 }, (_, k) => log(`2026-09-0${k + 1}`, { tags: ['мало спал'], wellbeing: 3 })),
-      ...Array.from({ length: 5 }, (_, k) => log(`2026-09-1${k}`, { wellbeing: 7 })),
-    ]
-    const stats = tagStats(logs)
-    const sleep = stats.find((s) => s.tag === 'мало спал')
-    expect(sleep?.days).toBe(5)
-    expect(sleep?.wellbeing).toBe(3)
-    expect(sleep?.baseline.wellbeing).toBe(5)
-  })
-
-  it('редкие теги не показываются — выборка слишком мала', () => {
-    const logs = [
-      log('2026-09-01', { tags: ['ссора'] }),
-      log('2026-09-02', { tags: ['ссора'] }),
-      ...Array.from({ length: 6 }, (_, k) => log(`2026-09-1${k}`, { tags: ['выходной'] })),
-    ]
-    const tags = tagStats(logs).map((s) => s.tag)
-    expect(tags).toContain('выходной')
-    expect(tags).not.toContain('ссора')
-  })
-
-  it('сортирует по частоте', () => {
-    const logs = [
-      ...Array.from({ length: 4 }, (_, k) => log(`2026-09-0${k + 1}`, { tags: ['дедлайн'] })),
-      ...Array.from({ length: 8 }, (_, k) => log(`2026-09-1${k}`, { tags: ['выходной'] })),
-    ]
-    expect(tagStats(logs)[0]?.tag).toBe('выходной')
-  })
-})
-
 describe('forecast и пауза', () => {
   it('на незакрытой паузе прогноза нет — финиш неизвестен', () => {
     const paused = challenge({ lengthDays: 30, pauses: [{ from: '2026-09-15', to: null }] })
@@ -154,5 +94,23 @@ describe('forecast и пауза', () => {
     // выполнены все дни, кроме паузы: темп ровно единица, а не 15 из 20
     const outsidePause = (_i: number, day: Date) => dayKey(day) < '2026-09-10' || dayKey(day) > '2026-09-14'
     expect(forecast(paused, entriesBack(20, outsidePause), TODAY)?.pace).toBe(1)
+  })
+})
+
+describe('unratedDays — долг по оценкам', () => {
+  it('дни без закрытой оценки за последние две недели, самый ранний первым', () => {
+    const logs = Array.from({ length: 14 }, (_, k) => log(dayKey(addDays(TODAY, -(k + 1)))))
+      .filter((l) => l.day !== '2026-09-10' && l.day !== '2026-09-18')
+    expect(unratedDays(logs, TODAY)).toEqual(['2026-09-10', '2026-09-18'])
+  })
+
+  it('незакрытый итог — тоже долг', () => {
+    const logs = Array.from({ length: 14 }, (_, k) => log(dayKey(addDays(TODAY, -(k + 1)))))
+    logs[0] = { ...logs[0]!, closedAt: null }
+    expect(unratedDays(logs, TODAY)).toEqual(['2026-09-20'])
+  })
+
+  it('сегодняшний день в долг не входит — он ещё идёт', () => {
+    expect(unratedDays([], TODAY, 1)).toEqual(['2026-09-20'])
   })
 })
