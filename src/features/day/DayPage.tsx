@@ -22,26 +22,33 @@ import {
   useChallenges,
   useDayGroups,
   useDayLogs,
+  useDayStarts,
   useEntries,
   useReorderChallenges,
   useSaveDayGroups,
   useSaveDayLog,
   useSetEntry,
+  useSettings,
+  useStartDay,
 } from '@/data/queries'
 import { DOW_FULL, dayKey, formatHuman, isoDow, parseDay, todayKey } from '@/domain/date'
 import { onDay } from '@/domain/challenges'
+import { dayStage, morningOpen } from '@/domain/dayStart'
 import { unratedDays } from '@/domain/stats'
 import { currentStreak, dayOutcome } from '@/domain/streaks'
 import {
   DEFAULT_DAY_GROUPS,
+  DEFAULT_SETTINGS,
   type Challenge,
   type DayGroup,
   type DayLog,
   type EntryMap,
+  type Morning,
 } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
 import { DayCloseDialog } from './DayCloseDialog'
+import { DayStartDialog } from './DayStartDialog'
 import { SortableGroup, SortableRow } from './Sortable'
 import { groupId, groupOf } from './groups'
 import { HoldCard } from './HoldCard'
@@ -68,6 +75,9 @@ export function DayPage() {
   const saveDayLog = useSaveDayLog()
   const reorderChallenges = useReorderChallenges()
   const saveDayGroups = useSaveDayGroups()
+  const startsQuery = useDayStarts()
+  const settingsQuery = useSettings()
+  const startDay = useStartDay()
 
   const sensors = useSensors(
     /* Порог в 4 пикселя: без него клик по ручке уже считался бы перетаскиванием. */
@@ -76,6 +86,7 @@ export function DayPage() {
   )
 
   const [dialogDay, setDialogDay] = useState<string | null>(null)
+  const [startOpen, setStartOpen] = useState(false)
 
   /*
    * Порядок после броска применяется здесь, синхронно, а не ждёт мутацию:
@@ -111,6 +122,26 @@ export function DayPage() {
   const todayLog = logs.find((l) => l.day === todayK) ?? null
   /* Закрытый день не правится задним числом: иначе оценка перестаёт что-либо значить. */
   const frozen = Boolean(todayLog)
+  const starts = startsQuery.data ?? []
+  const settings = settingsQuery.data ?? DEFAULT_SETTINGS
+  const todayStart = starts.find((s) => s.day === todayK) ?? null
+  /* Не начатый день тоже под блюром: отметки — только после начала, утро — до дел дня. */
+  const notStarted = dayStage(todayK, starts, logs) === 'notStarted'
+  const locked = frozen || notStarted
+  const morningNow = morningOpen(new Date(), settings.morningUntil)
+
+  /** Утро записывается один раз; после утреннего часа — без оценок: днём это уже не утро. */
+  const start = (morning: Morning | null) => {
+    startDay.mutate({ day: todayK, morning, startedAt: new Date().toISOString() })
+    setStartOpen(false)
+    toast(morning ? 'День начат' : 'День начат без утренних оценок')
+  }
+
+  /* Час проверяется в момент нажатия: страница могла простоять открытой с утра. */
+  const beginDay = () => {
+    if (morningOpen(new Date(), settings.morningUntil)) setStartOpen(true)
+    else start(null)
+  }
 
   /** Отметка применяется сразу, тост даёт вернуть прежнее значение. */
   const applyEntry = (c: Challenge, day: string, value: number | undefined, message: string) => {
@@ -177,7 +208,7 @@ export function DayPage() {
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (frozen || dialogDay || e.ctrlKey || e.metaKey || e.altKey) return
+      if (locked || dialogDay || startOpen || e.ctrlKey || e.metaKey || e.altKey) return
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       if (!/^[1-9]$/.test(e.key)) return
@@ -217,10 +248,17 @@ export function DayPage() {
           {DOW_FULL[isoDow(today)]}, {formatHuman(today)} · {doneCount} из {tasks.length}{' '}
           {plural(tasks.length, 'задачи', 'задач', 'задач')} закрыто
         </p>
+        {todayStart && (
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            {todayStart.morning
+              ? `Утро: сон ${todayStart.morning.sleep} · самочувствие ${todayStart.morning.wellbeing} · настроение ${todayStart.morning.mood}`
+              : 'Утро без оценок'}
+          </p>
+        )}
       </div>
 
       <div className="relative">
-      <div className={cn(frozen && 'pointer-events-none select-none opacity-70 blur-[2.5px]')}>
+      <div className={cn(locked && 'pointer-events-none select-none opacity-70 blur-[2.5px]')}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -251,7 +289,7 @@ export function DayPage() {
                               done={isDone(c)}
                               streak={streakOf(c)}
                               index={i + 1}
-                              frozen={frozen}
+                              frozen={locked}
                               onToggle={() => toggleTask(c)}
                               onSetValue={(value) =>
                                 setEntry.mutate({ challengeId: c.id, day: todayK, value })
@@ -279,7 +317,7 @@ export function DayPage() {
                               challenge={c}
                               failed={entriesOf(c)[todayK] === 0}
                               streak={streakOf(c)}
-                              frozen={frozen}
+                              frozen={locked}
                               onToggleRelapse={() => toggleRelapse(c)}
                             />
                           </SortableRow>
@@ -295,12 +333,16 @@ export function DayPage() {
       </DndContext>
       </div>
 
-        {frozen && (
+        {locked && (
           <div className="absolute inset-0 grid place-items-center p-4">
             <div className="rounded-xl border border-border bg-card/95 px-5 py-3 text-center shadow-lg">
-              <div className="text-[15px] font-semibold">День закрыт</div>
+              <div className="text-[15px] font-semibold">{frozen ? 'День закрыт' : 'День не начат'}</div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Отметки заморожены до завтра. Поменять можно только оценку.
+                {frozen
+                  ? 'Отметки заморожены до завтра. Поменять можно только оценку.'
+                  : morningNow
+                    ? 'Три коротких вопроса: сон, самочувствие, настроение — можно пропустить.'
+                    : `Утренние вопросы — до ${settings.morningUntil}:00. Сейчас день начнётся без них.`}
               </p>
             </div>
           </div>
@@ -347,6 +389,17 @@ export function DayPage() {
             </p>
           )}
         </div>
+      ) : notStarted ? (
+        <div className="flex flex-col items-center gap-2 py-1">
+          <Button size="lg" onClick={beginDay}>
+            Начать день
+          </Button>
+          <span className="text-center text-xs text-muted-foreground">
+            {morningNow
+              ? 'Спросит сон, самочувствие и настроение. Можно пропустить.'
+              : 'Утро уже прошло — день начнётся без вопросов.'}
+          </span>
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-1">
           <Button size="lg" onClick={() => setDialogDay(todayK)}>
@@ -358,6 +411,16 @@ export function DayPage() {
             Незакрытые задачи останутся пропусками.
           </span>
         </div>
+      )}
+
+      {startOpen && (
+        <DayStartDialog
+          open
+          day={todayK}
+          onStart={(morning) => start(morning)}
+          onSkip={() => start(null)}
+          onCancel={() => setStartOpen(false)}
+        />
       )}
 
       {dialogDay && (
