@@ -26,6 +26,8 @@ export type DemoOptions = {
 }
 
 const STORAGE_KEY = 'tabel-demo'
+/** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
+export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
 const STORAGE_VERSION = 6
 
@@ -77,6 +79,20 @@ function save(storage: Storage | null, snapshot: Snapshot) {
   }
 }
 
+function readScenario(storage: Storage | null): DemoScenario | null {
+  try {
+    const value = storage?.getItem(SCENARIO_KEY)
+    return value === 'full' || value === 'burnout' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** Какая история выбрана — для кнопки сброса. Без выбора — полное демо. */
+export function demoScenario(storage: Storage | null = defaultStorage()): DemoScenario {
+  return readScenario(storage) ?? 'full'
+}
+
 /** Насыпает снимок выбранного сценария. */
 function seedSnapshot(today: Date, seed: number, scenario: DemoScenario): Snapshot {
   const seedOf = scenario === 'burnout' ? seedBurnout : seedFull
@@ -93,7 +109,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const storage = options.storage === undefined ? defaultStorage() : options.storage
 
   const restored = load(storage)
-  const state = restored ?? seedSnapshot(today, options.seed ?? 20260921, options.scenario ?? 'full')
+  const scenario = options.scenario ?? readScenario(storage) ?? 'full'
+  const state = restored ?? seedSnapshot(today, options.seed ?? 20260921, scenario)
 
   const challenges = state.challenges
   const entries = state.entries
