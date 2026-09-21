@@ -3,6 +3,7 @@ import { useChallenges, useDayLogs, useDayStarts, useEntries } from '@/data/quer
 import { parseDay, todayKey } from '@/domain/date'
 import { challengeEffects, tagEffects } from '@/domain/effects'
 import { averages, coverage, scoreSeries, sleepAverages, sleepSeries } from '@/domain/trend'
+import type { DayStart } from '@/domain/types'
 import { plural } from '@/lib/plural'
 import { EffectCard } from './EffectCard'
 import { cardsOf, tagsOf } from './order'
@@ -13,6 +14,8 @@ import { TagEffects } from './TagEffects'
 const SECTION_TITLE = 'text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground'
 /** Меньше двух недель оценок — выводов почти нет, а те, что есть, ранние: об этом стоит сказать сразу. */
 const FEW_RATED = 14
+/** Начала дней не загрузились — считаем без утра, как до утра в аналитике: утро необязательно. */
+const NO_STARTS: DayStart[] = []
 
 export function AnalyticsPage() {
   const challenges = useChallenges()
@@ -24,7 +27,7 @@ export function AnalyticsPage() {
   const all = challenges.data
   const entriesById = entries.data
   const dayLogs = logs.data
-  const dayStarts = starts.data
+  const dayStarts = starts.data ?? (starts.isError ? NO_STARTS : undefined)
 
   /* Расчёт — по всем челленджам, с удалёнными: они участвуют как соседи. Скрываются на экране.
      Без начал дней не считаем: иначе экран сначала показал бы выводы без утра, а потом перестроился. */

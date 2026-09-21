@@ -175,9 +175,9 @@ export const morningScore = (m: Morning) => (m.wellbeing + m.mood) / 2
 /**
  * Модели при том же утре нужен запас — столько строк сверх её столбцов. С меньшим на 15-м дне
  * «выгорания» она добавляла ложное «в тот же день» (у ЧТН 28% миров против 26% без утра), с пятью —
- * почти нет, а на месяце и полном демо польза та же (разведка этапа 2, 800 свежих миров). С таким
- * запасом степени свободы по меньшей группе (`strengthOf`) не превышают строк сверх столбцов: без
- * соседа столбцов не больше восьми, а меньшая группа — не больше половины строк; соседу нужно 20 дней.
+ * почти нет, а на месяце и полном демо польза та же (разведка этапа 2, 800 свежих миров). Степени
+ * свободы окна — не больше этого запаса (`dfCap` у `strengthOf`): с соседом строк с утром бывает
+ * немного, а дней в меньшей группе — больше, чем запас.
  */
 export const MIN_BASE_RESIDUAL = 5
 
@@ -234,7 +234,8 @@ const few = (withDays: number, withoutDays: number) => blank('few', withDays, wi
  * не бывает. Назавтра: накануне оценки тоже заметно выше и разница с ним не значима на том же
  * уровне — полоса. «Уверенно» — 99% интервал (для шкалы строже), значимое отличие от накануне и
  * не меньше десяти дней в группе; для «похоже» отличие от накануне не требуется, иначе инерция
- * настроения глушила бы и настоящее.
+ * настроения глушила бы и настоящее. Степени свободы — по меньшей группе; `dfCap` ограничивает их
+ * у модели при том же утре: строк сверх её столбцов бывает меньше, чем дней в группе.
  */
 export function strengthOf(
   est: Coef,
@@ -242,11 +243,12 @@ export function strengthOf(
   withoutDays: number,
   minGroup: number,
   next: { lead: Coef; diffSe: number; level: number } | null,
+  dfCap = Infinity,
 ): Estimate {
   const smaller = Math.min(withDays, withoutDays)
   if (smaller < MIN_EARLY) return few(withDays, withoutDays)
 
-  const df = Math.max(3, smaller - 1)
+  const df = Math.min(Math.max(3, smaller - 1), dfCap)
   const t95 = tQuantile(0.975, df)
   const half = t95 * est.se
   const base = { delta: est.delta, low: est.delta - half, high: est.delta + half, withDays, withoutDays }
@@ -416,44 +418,59 @@ function analyze(subject: Subject, logs: DayLog[], options: Options = NO_MORNING
   }
 
   /* Дни с утром — для окна при том же утре и для строки «Утро». Столбцы у обеих моделей — те, что
-     остались у обычной: своих решений они не принимают, иначе окна описывали бы разные модели. */
+     остались у обычной, кроме постоянных на днях с утром (утро только в будни — «выходные» там одни
+     нули): на этих днях такой столбец ничего не поправляет, и без него оценки остальных те же.
+     Других решений эти модели не принимают, иначе окна описывали бы разные модели. */
   const morningRows = rows.flatMap((r, i) => (r.morning ? [i] : []))
   const subset = morningRows.map((i) => rows[i]!)
   const subsetDays = subset.map((r) => r.day)
+  const kept = used.filter((c) => new Set(morningRows.map((i) => c.values[i])).size > 1)
+  const sx = morningRows.map((i) => [1, ...kept.map((c) => c.values[i]!)])
+  const keptColumn = (name: string) => {
+    const i = kept.findIndex((c) => c.name === name)
+    return i < 0 ? -1 : i + 1
+  }
+  const sNow = keptColumn('now')
+  const sBefore = keptColumn('before')
+  const sAfter = keptColumn('after')
 
   /** Окно «в тот же день» при том же утре — или null, если утр мало и окно остаётся обычным. */
   const sameGivenMorning = (): Record<Metric, Estimate> | null => {
-    if (!solvable || iNow < 0 || morningRows.length < BASE_COVERAGE * rows.length) return null
+    if (!solvable || sNow < 0 || morningRows.length < BASE_COVERAGE * rows.length) return null
     /* Утро — в долях шкалы от «как обычно»: сырые баллы перевешивали бы остальные столбцы. */
     const base = subset.map((r) => (morningScore(r.morning!) - 5) / 10)
+    const k = kept.length + 2
     /* Постоянное утро модель и так не решит; проверка — чтобы не полагаться на порог вырожденности. */
-    if (new Set(base).size < 2 || subset.length - (x[0]!.length + 1) < MIN_BASE_RESIDUAL) return null
-    const xb = morningRows.map((i, j) => [...x[i]!, base[j]!])
+    if (new Set(base).size < 2 || subset.length - k < MIN_BASE_RESIDUAL) return null
+    const xb = sx.map((row, j) => [...row, base[j]!])
     const [withDays, withoutDays] = countIn(subset, (r) => r.now)
     const out = {} as Record<Metric, Estimate>
     for (const metric of METRICS) {
       const fit = fitLinear(xb, subset.map((r) => scoreOf(r.log, metric)))
       if (!fit) return null
       const { coef } = coefsOf(fit, subsetDays)
-      out[metric] = strengthOf(coef(iNow), withDays, withoutDays, subject.minGroup, null)
+      out[metric] = strengthOf(coef(sNow), withDays, withoutDays, subject.minGroup, null, subset.length - k)
     }
     return out.day.strength === 'few' || out.day.strength === 'tangled' ? null : out
   }
 
-  /** Строка «Утро»: те же столбцы, исход — утро. Справочно, не сильнее «похоже». */
-  const morningWindows = (): Windows => {
+  /**
+   * Строка «Утро»: те же столбцы, исход — утро. Справочно, не сильнее «похоже». Модель не решается —
+   * строки нет: «мало данных» при полных группах было бы неправдой (решение Georgy от 22.09).
+   */
+  const morningWindows = (): Windows | null => {
+    const fit = solvable ? fitLinear(sx, subset.map((r) => morningScore(r.morning!))) : null
+    if (!fit) return null
     const [sw, swo] = countIn(subset, (r) => r.now)
     const [nw, nwo] = countIn(subset, (r) => r.before)
-    const fit = solvable ? fitLinear(morningRows.map((i) => x[i]!), subset.map((r) => morningScore(r.morning!))) : null
-    if (!fit) return { same: few(sw, swo), next: few(nw, nwo) }
     const { coef, diffSe } = coefsOf(fit, subsetDays)
-    const same = iNow < 0 ? few(sw, swo) : strengthOf(coef(iNow), sw, swo, subject.minGroup, null)
+    const same = sNow < 0 ? few(sw, swo) : strengthOf(coef(sNow), sw, swo, subject.minGroup, null)
     const next =
-      iBefore < 0
+      sBefore < 0
         ? few(nw, nwo)
-        : strengthOf(coef(iBefore), nw, nwo, subject.minGroup, {
-            lead: coef(iAfter),
-            diffSe: diffSe(iBefore, iAfter),
+        : strengthOf(coef(sBefore), nw, nwo, subject.minGroup, {
+            lead: coef(sAfter),
+            diffSe: diffSe(sBefore, sAfter),
             level: strictLevel('day'),
           })
     return { same: atMostLikely(same), next: atMostLikely(next) }

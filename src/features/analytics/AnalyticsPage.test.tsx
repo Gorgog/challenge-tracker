@@ -151,6 +151,7 @@ describe('AnalyticsPage — утро доходит до выводов', () => 
     expect(within(card).getByRole('row', { name: /утро/i })).toBeInTheDocument()
     expect(screen.getByText('плохо спал')).toBeInTheDocument()
     expect(screen.getByText('из утра · 8 дней')).toBeInTheDocument()
+    expect(screen.getByText('сон, утром')).toBeInTheDocument()
   })
 
   it('начала дней пришли позже остальных данных — выводы пересчитаны с утром', () => {

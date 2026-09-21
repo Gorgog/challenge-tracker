@@ -1138,6 +1138,16 @@ describe('тег «плохо спал» — из утренней шкалы с
     expect(t.tagDays).toBe(bad.size - 1)
   })
 
+  it('незакрытый итог дня — не день тега: плохой сон считается по закрытым дням', () => {
+    const bad = tagged(70, () => 0.3)
+    const w = nights(70, (i) => (bad.has(i) ? 3 : 7))
+    const k = [...bad].find((i) => i > 50)!
+    const logs = w.logs.map((l, i) => (i === k ? { ...l, closedAt: null } : l))
+    const t = sleepTag(tagEffects(logs, w.starts))!
+    expect(t.days).toBe(FULL - 1)
+    expect(t.tagDays).toBe(bad.size - 1)
+  })
+
   it('без утр тега сна нет; вечером такой тег не ставят', () => {
     const w = nights(55, () => 3)
     expect(sleepTag(tagEffects(w.logs))).toBeUndefined()
@@ -1324,6 +1334,36 @@ describe('утро — дни с утром как отдельная выбор
     }
     expect(run(need)).toBe(true)
     expect(run(need - 1)).toBe(false)
+  })
+
+  it('с соседом строк с утром мало — степени свободы окна по запасу строк, а не по группе', () => {
+    // Мир из пробы ревьюера (зерно 105): два челленджа вместе, 23–24 дня, утро примерно в двух днях
+    // из трёх. Столбцов с соседом и утром 9, строк с утром 14: запас 5, а меньшая группа — 7 дней.
+    // С пределом интервал шире в t(0,975; 5) / t(0,975; 6) раз: 1,723006 против 1,640112 без него.
+    const rnd = mulberry32(105)
+    const length = 23 + Math.floor(rnd() * 2)
+    const start = dayKey(addDays(TODAY, -length))
+    const pair = [challenge({ id: 'a', code: 'ААА', startDate: start }), challenge({ id: 'b', code: 'БББ', startDate: start })]
+    const ea: EntryMap = {}
+    const eb: EntryMap = {}
+    const logs: DayLog[] = []
+    const starts: DayStart[] = []
+    for (let i = length; i >= 1; i--) {
+      const day = dayKey(addDays(TODAY, -i))
+      const xa = rnd() < 0.5
+      const xb = rnd() < 0.8 ? xa : rnd() < 0.5
+      if (xa) ea[day] = 1
+      if (xb) eb[day] = 1
+      const s = 5 + 2 * rnd()
+      logs.push({ day, mood: s, wellbeing: s + rnd(), productivity: s - rnd(), tags: [], note: '', closedAt: `${day}T21:00:00.000Z` })
+      const morning = rnd() < 0.68 ? { sleep: 7, wellbeing: 4 + 4 * rnd(), mood: 4 + 4 * rnd() } : null
+      starts.push({ day, morning, startedAt: `${day}T08:00:00.000Z` })
+    }
+    const a = challengeEffects(pair, { a: ea, b: eb }, logs, TODAY, starts)[0]!
+    expect(a.morningBase).toBe(true)
+    expect(a.partner?.code).toBe('БББ')
+    expect(a.windows.day.same.withDays + a.windows.day.same.withoutDays).toBe(14)
+    expect(a.windows.day.same.high - a.windows.day.same.low).toBeCloseTo(1.723006, 5)
   })
 
   it('у челленджа нет дней с утром, хотя утра есть, — строки «Утро» нет', () => {
