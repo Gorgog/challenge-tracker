@@ -8,10 +8,13 @@ import { challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } fr
  * пятнадцать дней. Проверяется, что методика не выдумывает (нет ложного «уверенно» у нейтральных
  * челленджей, ложное «возможно» — в пределах своей цены), не путает знак там, где говорит, и что
  * ранние выводы появляются: решение Georgy от 21.09 — выводы нужны с первых двух недель, даже
- * ценой ошибок. Пороги заданы до прогона.
+ * ценой ошибок. Верные и ложные слова считаются отдельно (решение Georgy от 21.09, этап 2): «хоть
+ * одно слово» засчитывало и ложные. Пороги заданы до прогона — по частотам свежих миров.
  */
 const TODAY = parseDay('2026-09-21')
 const SEEDS = Array.from({ length: 40 }, (_, i) => 20260921 + i * 7919)
+/** Первые 15 дней — на 100 мирах: частоты там ниже, и на 40 мирах шум съедал запас порога. */
+const EARLY_SEEDS = Array.from({ length: 100 }, (_, i) => 20260921 + i * 7919)
 const STRONG = ['likely', 'strong']
 /** «Возможно» и сильнее. */
 const WORDED: string[] = ['possible', 'likely', 'strong']
@@ -19,9 +22,16 @@ const WORDED: string[] = ['possible', 'likely', 'strong']
 type World = {
   byCode: (code: string) => ChallengeEffect
   tag: (name: string) => TagEffect | undefined
-  /** Хоть одно слово уверенности на экране — у карточки челленджа или у тега. */
-  anyWord: boolean
+  /** Хоть одно верное слово уверенности: заложены прогулки (назавтра лучше) и пиво (назавтра хуже). */
+  trueWord: boolean
+  /** Сколько на экране остальных слов уверенности — у карточек и тегов: все они ложные. */
+  falseWords: number
 }
+
+/** Слово уверенности о заложенном эффекте — и с верным знаком. */
+const isTrue = (subject: string, e: ChallengeEffect | TagEffect) =>
+  e.confidence !== null &&
+  ((subject === 'ШАГ' && e.windows.day.next.delta > 0) || (subject === 'алкоголь' && e.windows.day.next.delta < 0))
 
 /** Мир на день `day` истории: сегодня — этот день, оценки — только до него. */
 async function build(seed: number, day = 30): Promise<World> {
@@ -37,10 +47,15 @@ async function build(seed: number, day = 30): Promise<World> {
   const starts = allStarts.filter((s) => s.day < dayKey(today))
   const effects = challengeEffects(challenges, entries, logs, today, starts)
   const tags = tagEffects(logs, starts)
+  const said = [
+    ...effects.map((e) => [e.challenge.code, e] as const),
+    ...tags.map((t) => [t.tag, t] as const),
+  ].filter(([, e]) => e.confidence !== null)
   return {
     byCode: (code) => effects.find((e) => e.challenge.code === code)!,
     tag: (name) => tags.find((t) => t.tag === name),
-    anyWord: [...effects, ...tags].some((e) => e.confidence !== null),
+    trueWord: said.some(([subject, e]) => isTrue(subject, e)),
+    falseWords: said.filter(([subject, e]) => !isTrue(subject, e)).length,
   }
 }
 
@@ -49,7 +64,7 @@ let early: World[] = []
 beforeAll(async () => {
   ;[month, early] = await Promise.all([
     Promise.all(SEEDS.map((seed) => build(seed))),
-    Promise.all(SEEDS.map((seed) => build(seed, 15))),
+    Promise.all(EARLY_SEEDS.map((seed) => build(seed, 15))),
   ])
 }, 120_000)
 
@@ -122,17 +137,39 @@ describe('ранние выводы на месяце', () => {
     expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.same.strength))).toBeLessThanOrEqual(0.35)
   })
 
-  it('хоть одно слово уверенности на экране — не реже чем в 80% миров', () => {
-    expect(share(month, (w) => w.anyWord)).toBeGreaterThanOrEqual(0.8)
+  it('хоть одно верное слово на экране — не реже чем в 70% миров', () => {
+    // Свежие 1200 миров: 83,4%, σ = 5,9 п.п. Прежняя проверка «хоть одно слово ≥ 80%» засчитывала и
+    // ложные слова — например, «назавтра» у тега сна, которого в сиде нет.
+    expect(share(month, (w) => w.trueWord)).toBeGreaterThanOrEqual(0.7)
   })
 })
 
-describe('первые 15 дней той же истории', () => {
-  it('хоть одно слово уверенности на экране — не реже чем в 50% миров', () => {
-    // Запас тонкий: без тега «мало спал» на 400 свежих мирах 58,75%, и при смене сида или методики
-    // проверка покраснеет на шуме примерно в каждом десятом случае. Решение Georgy от 21.09 — порог
-    // пересмотреть на этапе 2, вместе с проверками сна; красный цвет до этого — не повод его двигать.
-    expect(share(early, (w) => w.anyWord)).toBeGreaterThanOrEqual(0.5)
+describe('первые 15 дней той же истории: 100 миров', () => {
+  it('хоть одно верное слово на экране — не реже чем в 33% миров', () => {
+    // Свежие 1200 миров: 43,6%, σ = 5,0 п.п. на 100 мирах. Вместо прежней «хоть одно слово ≥ 50%»:
+    // она засчитывала ложные слова, а запас её на свежих мирах был около 1,7σ.
+    expect(share(early, (w) => w.trueWord)).toBeGreaterThanOrEqual(0.33)
+  })
+
+  it('ложных слов на экране — в среднем не больше 0,65', () => {
+    // Свежие 1200 миров: 0,50, SE = 0,066 на 100 мирах. Цена ранних выводов: «возможно» на двух
+    // неделях верно примерно через раз.
+    expect(early.reduce((sum, w) => sum + w.falseWords, 0) / early.length).toBeLessThanOrEqual(0.65)
+  })
+
+  it('«плохо спал»: хуже в тот же день, «возможно» и сильнее — не реже чем в 15% миров', () => {
+    // Свежие 1200 миров: 26,8%, σ = 4,4 п.п. У прежнего вечернего тега порог был 30%: утренний тег
+    // теряет около трети строк на пропущенных утрах — сон неизвестен, а не «нормальный» (Georgy принял).
+    const found = share(early, (w) => {
+      const same = w.tag('плохо спал')?.windows.day.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.15)
+  })
+
+  it('чтение при том же утре: «в тот же день» решено не чаще чем в 40% миров', () => {
+    // Свежие 800 миров: около 26% (без утра — 26,0%), σ = 4,5 п.п.
+    expect(share(early, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.same.strength))).toBeLessThanOrEqual(0.4)
   })
 
   it('чтение: слово уверенности назавтра — не чаще чем в 40% миров', () => {
