@@ -631,7 +631,8 @@ describe('демо «Выход из выгорания» — 30 дней', () =
         return [walks(0, 15), walks(15, 30)] as const
       }),
     )
-    expect(mean(halves.map((h) => h[1]))).toBeGreaterThan(mean(halves.map((h) => h[0])))
+    // заметно: больше чем на полторы прогулки за полмесяца, а не случайный перевес
+    expect(mean(halves.map((h) => h[1])) - mean(halves.map((h) => h[0]))).toBeGreaterThan(1.5)
   })
 
   it('из выгорания выходит: последняя неделя лучше первой, продуктивность — заметнее всего', async () => {
