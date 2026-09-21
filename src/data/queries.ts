@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { applyPatch, type ChallengePatch } from '@/domain/challenges'
-import type { Challenge, ChallengeStatus, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
+import { applyPatch, pause, resume, type ChallengePatch } from '@/domain/challenges'
+import { parseDay } from '@/domain/date'
+import type { Challenge, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -212,10 +213,17 @@ export function useUpdateChallenge() {
   )
 }
 
-export function useSetChallengeStatus() {
+/** `today` приходит снаружи, чтобы кэш и хранилище посчитали паузу от одного и того же дня. */
+export function useSetPaused() {
+  const client = useQueryClient()
   return useChallengeMutation(
-    ({ id, status }: { id: string; status: ChallengeStatus }) => repo.setChallengeStatus(id, status),
-    (list, { id, status }) => patchOne(list, id, (c) => ({ ...c, status })),
+    ({ id, paused, today }: { id: string; paused: boolean; today: string }) =>
+      repo.setPaused(id, paused, today),
+    (list, { id, paused, today }) => {
+      const day = parseDay(today)
+      const entries = client.getQueryData<Record<string, EntryMap>>(queryKeys.entries)?.[id] ?? {}
+      return patchOne(list, id, (c) => (paused ? pause(c, entries, day) : resume(c, day)))
+    },
   )
 }
 

@@ -10,7 +10,7 @@ import type { Challenge, EntryMap } from './types'
 export const isLive = (c: Challenge) => c.deletedAt === null
 
 /** На экране дня — только живые и не на паузе. */
-export const onDay = (c: Challenge) => isLive(c) && c.status === 'active'
+export const onDay = (c: Challenge) => isLive(c) && !isPaused(c)
 
 /** Поля, которые правятся всегда: они не влияют на то, как считается история. */
 type FreeFields = Pick<Challenge, 'name' | 'code' | 'color' | 'tagIds'>

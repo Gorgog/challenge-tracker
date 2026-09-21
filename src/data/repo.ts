@@ -1,5 +1,5 @@
 import type { ChallengePatch } from '@/domain/challenges'
-import type { Challenge, ChallengeStatus, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
+import type { Challenge, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
 
 /**
  * Договор доступа к данным. Компоненты не знают, что за ним стоит: сейчас демо-данные
@@ -14,8 +14,11 @@ export type Repo = {
   createChallenge(challenge: Omit<Challenge, 'id'>): Promise<Challenge>
   /** Правка с учётом замка правил — см. `applyPatch`. */
   updateChallenge(id: string, patch: ChallengePatch): Promise<void>
-  /** Пауза и снятие паузы. */
-  setChallengeStatus(id: string, status: ChallengeStatus): Promise<void>
+  /**
+   * Пауза и снятие паузы в день `today` — см. `pause` и `resume`: пауза хранится
+   * периодом, чтобы её дни не считались пропусками.
+   */
+  setPaused(id: string, paused: boolean, today: string): Promise<void>
   /** Мягко: челлендж пропадает с глаз, а отметки и место в статистике остаются. */
   deleteChallenge(id: string): Promise<void>
   restoreChallenge(id: string): Promise<void>

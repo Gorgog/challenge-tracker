@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { LockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatHuman, parseDay } from '@/domain/date'
+import { isPaused } from '@/domain/pauses'
 import type { Challenge } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
@@ -23,7 +24,7 @@ export function ChallengeRow({
   onEdit,
   onDelete,
 }: ChallengeRowProps) {
-  const paused = c.status === 'paused'
+  const paused = isPaused(c)
 
   const what =
     c.kind === 'quit'

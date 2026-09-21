@@ -10,11 +10,13 @@ import {
   useDeleteTag,
   usePurgeChallenge,
   useRestoreChallenge,
-  useSetChallengeStatus,
+  useSetPaused,
   useTags,
   useUpdateChallenge,
 } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
+import { todayKey } from '@/domain/date'
+import { isPaused } from '@/domain/pauses'
 import type { Challenge } from '@/domain/types'
 import { plural } from '@/lib/plural'
 import { ChallengeForm } from './ChallengeForm'
@@ -26,7 +28,7 @@ export function ChallengesPage() {
   const challenges = useChallenges()
   const tags = useTags()
   const createChallenge = useCreateChallenge()
-  const setStatus = useSetChallengeStatus()
+  const setPaused = useSetPaused()
   const deleteChallenge = useDeleteChallenge()
   const restoreChallenge = useRestoreChallenge()
   const purgeChallenge = usePurgeChallenge()
@@ -92,7 +94,7 @@ export function ChallengesPage() {
               challenge={c}
               tagNames={namesOf(c)}
               onToggleStatus={() =>
-                setStatus.mutate({ id: c.id, status: c.status === 'paused' ? 'active' : 'paused' })
+                setPaused.mutate({ id: c.id, paused: !isPaused(c), today: todayKey() })
               }
               onEdit={() => setEditing(c)}
               onDelete={() => remove(c)}

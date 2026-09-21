@@ -46,7 +46,6 @@ export function buildChallenge(
     tagIds: [...draft.tagIds],
     startDate: today,
     lengthDays: draft.lengthDays,
-    status: 'active',
     pauses: [],
     rulesLocked: draft.rulesLocked,
     deletedAt: null,

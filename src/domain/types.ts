@@ -2,10 +2,10 @@
 export type ChallengeKind = 'do' | 'quit'
 /** Галочка за день или число с целью. */
 export type ChallengeMeasure = 'binary' | 'count'
-/** Пауза — временно не на экране дня. Удаление — отдельно, через `deletedAt`. */
-export type ChallengeStatus = 'active' | 'paused'
-
-/** Период паузы: ключи дней включительно, `to: null` — пауза ещё идёт. */
+/**
+ * Период паузы: ключи дней включительно, `to: null` — пауза ещё идёт.
+ * Челлендж на паузе не показывается на экране дня. Удаление — отдельно, через `deletedAt`.
+ */
 export type Pause = { from: string; to: string | null }
 
 export type Challenge = {
@@ -25,7 +25,6 @@ export type Challenge = {
   startDate: string
   /** Длина периода в днях; null — бессрочный челлендж. */
   lengthDays: number | null
-  status: ChallengeStatus
   /**
    * Периоды пауз. Дни внутри — вне челленджа: не пропуск и не выполнение. Серия на них
    * замирает, а финиш срочного челленджа отодвигается на длину паузы.

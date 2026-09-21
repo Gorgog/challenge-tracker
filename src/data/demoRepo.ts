@@ -1,5 +1,6 @@
 import { addDays, dayKey, isoDow, parseDay, todayKey } from '@/domain/date'
-import { applyPatch } from '@/domain/challenges'
+import { applyPatch, pause, resume } from '@/domain/challenges'
+import { pausedOn } from '@/domain/pauses'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import {
   DEFAULT_DAY_GROUPS,
@@ -17,19 +18,21 @@ const DAYS_BACK = 120
 /**
  * Челленджи прототипа. `startsAgo` — за сколько дней до «сегодня» начался челлендж,
  * `tag` — имя тега: при сиде из них собирается список тегов, а челлендж получает ссылку.
+ * `pausedAgo` — сколько дней назад челлендж поставили на паузу, которая идёт до сих пор.
  */
 type Blueprint = Omit<Challenge, 'startDate' | 'tagIds' | 'pauses' | 'rulesLocked' | 'deletedAt'> & {
   startsAgo: number
   tag: string
+  pausedAgo?: number
 }
 
 const BLUEPRINT: Blueprint[] = [
-  { id: 'push', code: 'ОТЖ', name: '30 дней отжимаюсь', kind: 'do', measure: 'count', goal: 30, unit: 'раз', color: 'var(--chart-1)', tag: 'тело', lengthDays: 30, status: 'active', sortOrder: 0, startsAgo: 20 },
-  { id: 'smoke', code: 'БСГ', name: 'Без сигарет', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-2)', tag: 'здоровье', lengthDays: null, status: 'active', sortOrder: 1, startsAgo: 99 },
-  { id: 'read', code: 'ЧТН', name: 'Читать 20 страниц', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-3)', tag: 'ум', lengthDays: null, status: 'active', sortOrder: 2, startsAgo: 81 },
-  { id: 'step', code: 'ШАГ', name: '10 000 шагов', kind: 'do', measure: 'count', goal: 10000, unit: 'шагов', color: 'var(--chart-4)', tag: 'тело', lengthDays: null, status: 'active', sortOrder: 3, startsAgo: 81 },
-  { id: 'sugar', code: 'БСХ', name: 'Без сахара', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-5)', tag: 'еда', lengthDays: null, status: 'active', sortOrder: 4, startsAgo: 42 },
-  { id: 'eng', code: 'АНГ', name: 'Английский 30 минут', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-6)', tag: 'ум', lengthDays: null, status: 'paused', sortOrder: 5, startsAgo: 112 },
+  { id: 'push', code: 'ОТЖ', name: '30 дней отжимаюсь', kind: 'do', measure: 'count', goal: 30, unit: 'раз', color: 'var(--chart-1)', tag: 'тело', lengthDays: 30, sortOrder: 0, startsAgo: 20 },
+  { id: 'smoke', code: 'БСГ', name: 'Без сигарет', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-2)', tag: 'здоровье', lengthDays: null, sortOrder: 1, startsAgo: 99 },
+  { id: 'read', code: 'ЧТН', name: 'Читать 20 страниц', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-3)', tag: 'ум', lengthDays: null, sortOrder: 2, startsAgo: 81 },
+  { id: 'step', code: 'ШАГ', name: '10 000 шагов', kind: 'do', measure: 'count', goal: 10000, unit: 'шагов', color: 'var(--chart-4)', tag: 'тело', lengthDays: null, sortOrder: 3, startsAgo: 81 },
+  { id: 'sugar', code: 'БСХ', name: 'Без сахара', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-5)', tag: 'еда', lengthDays: null, sortOrder: 4, startsAgo: 42 },
+  { id: 'eng', code: 'АНГ', name: 'Английский 30 минут', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-6)', tag: 'ум', lengthDays: null, sortOrder: 5, startsAgo: 112, pausedAgo: 25 },
 ]
 
 const NOTES = {
@@ -83,7 +86,7 @@ export type DemoOptions = {
 
 const STORAGE_KEY = 'tabel-demo'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 3
+const STORAGE_VERSION = 4
 
 type Snapshot = {
   version: number
@@ -148,11 +151,11 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     return tag.id
   }
 
-  const challenges: Challenge[] = BLUEPRINT.map(({ startsAgo, tag, ...rest }) => ({
+  const challenges: Challenge[] = BLUEPRINT.map(({ startsAgo, tag, pausedAgo, ...rest }) => ({
     ...rest,
     tagIds: [tagIdOf(tag)],
     startDate: dayKey(addDays(today, -startsAgo)),
-    pauses: [],
+    pauses: pausedAgo === undefined ? [] : [{ from: dayKey(addDays(today, -pausedAgo)), to: null }],
     rulesLocked: false,
     deletedAt: null,
   })).sort((a, b) => a.sortOrder - b.sortOrder)
@@ -172,8 +175,8 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
       const start = parseDay(c.startDate)
       if (date < start) continue
       if (c.lengthDays && date >= addDays(start, c.lengthDays)) continue
-      /* Пауза включена недавно — до неё история есть, после неё отметок нет. */
-      if (c.status === 'paused' && back < 26) continue
+      /* Дни паузы — без отметок: в них челлендж не участвует. */
+      if (pausedOn(c, key)) continue
 
       /* Отказ: запись появляется ТОЛЬКО при срыве. Выдержанный день — пустота, а не единица. */
       if (c.kind === 'quit') {
@@ -333,10 +336,12 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       challenges[index] = applyPatch(challenges[index]!, patch)
       persist()
     },
-    async setChallengeStatus(id, status) {
-      const c = find(id)
-      if (!c) return
-      c.status = status
+    async setPaused(id, paused, today) {
+      const index = challenges.findIndex((c) => c.id === id)
+      if (index < 0) return
+      const day = parseDay(today)
+      const c = challenges[index]!
+      challenges[index] = paused ? pause(c, entries[id] ?? {}, day) : resume(c, day)
       persist()
     },
     async deleteChallenge(id) {
