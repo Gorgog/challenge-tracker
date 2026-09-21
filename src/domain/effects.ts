@@ -549,8 +549,17 @@ export function verdictOf(day: Windows): { verdict: Verdict; confidence: Confide
   return { verdict: bothFew ? 'insufficient' : 'unclear', confidence }
 }
 
-/** Вывод словами — для заголовка карточки. Направление берётся из окна, на котором он стоит. */
-export function effectText(verdict: Verdict, day: Windows, subject: 'challenge' | 'tag'): string {
+/**
+ * Вывод словами — для заголовка карточки. Направление берётся из окна, на котором он стоит.
+ * `morningBase` — окно «в тот же день» посчитано при том же утре: «хорошие дни тянут выполнение»
+ * уже учтено, но утро знает о дне не всё — поэтому оговорка про совпадение остаётся.
+ */
+export function effectText(
+  verdict: Verdict,
+  day: Windows,
+  subject: 'challenge' | 'tag',
+  morningBase = false,
+): string {
   const better = (delta: number) => (delta > 0 ? 'лучше' : 'хуже')
   switch (verdict) {
     case 'persists':
@@ -565,9 +574,14 @@ export function effectText(verdict: Verdict, day: Windows, subject: 'challenge' 
         ? 'накануне оценки тоже выше — это может быть полоса хороших дней'
         : 'накануне оценки тоже ниже — это может быть полоса плохих дней'
     case 'coincidence':
-      if (subject === 'tag') return 'связано только с самим днём'
+      if (subject === 'tag') return `день ${better(day.same.delta)} — назавтра следа нет`
+      if (morningBase) return `при том же утре день ${better(day.same.delta)}, назавтра следа нет — может быть и совпадением`
       return `скорее совпадение: в ${day.same.delta > 0 ? 'хорошие' : 'плохие'} дни делаешь чаще, назавтра следа нет`
     case 'sameDayOnly':
+      if (subject === 'tag') return `день ${better(day.same.delta)}, про следующий пока неясно`
+      if (morningBase) {
+        return `при том же утре день ${better(day.same.delta)} — может быть и совпадением; про следующий пока неясно`
+      }
       return 'связано с самим днём, про следующий пока неясно'
     case 'noEffect':
       return 'заметной связи нет'
