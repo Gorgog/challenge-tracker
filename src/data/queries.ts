@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
-import type { Challenge, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
+import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 import type { Repo } from './repo'
 
@@ -17,6 +17,8 @@ export const queryKeys = {
   dayLogs: ['dayLogs'] as const,
   dayGroups: ['dayGroups'] as const,
   tags: ['tags'] as const,
+  dayStarts: ['dayStarts'] as const,
+  settings: ['settings'] as const,
 }
 
 export function useChallenges() {
@@ -33,6 +35,66 @@ export function useDayLogs() {
 
 export function useDayGroups() {
   return useQuery({ queryKey: queryKeys.dayGroups, queryFn: () => repo.getDayGroups() })
+}
+
+export function useDayStarts() {
+  return useQuery({ queryKey: queryKeys.dayStarts, queryFn: () => repo.listDayStarts() })
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: queryKeys.settings, queryFn: () => repo.getSettings() })
+}
+
+/** Начало дня видно сразу — блюр снимается в том же кадре, что и клик; при ошибке откат. */
+export function useStartDay() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (start: DayStart) => repo.startDay(start),
+
+    async onMutate(start) {
+      await client.cancelQueries({ queryKey: queryKeys.dayStarts })
+      const previous = client.getQueryData<DayStart[]>(queryKeys.dayStarts)
+
+      client.setQueryData<DayStart[]>(queryKeys.dayStarts, (old) => {
+        const rest = (old ?? []).filter((s) => s.day !== start.day)
+        return [...rest, start].sort((a, b) => a.day.localeCompare(b.day))
+      })
+
+      return { previous }
+    },
+
+    onError(_error, _start, context) {
+      if (context?.previous) client.setQueryData(queryKeys.dayStarts, context.previous)
+    },
+
+    onSettled() {
+      void client.invalidateQueries({ queryKey: queryKeys.dayStarts })
+    },
+  })
+}
+
+export function useSaveSettings() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (settings: Settings) => repo.saveSettings(settings),
+
+    async onMutate(settings) {
+      await client.cancelQueries({ queryKey: queryKeys.settings })
+      const previous = client.getQueryData<Settings>(queryKeys.settings)
+      client.setQueryData<Settings>(queryKeys.settings, settings)
+      return { previous }
+    },
+
+    onError(_error, _settings, context) {
+      if (context?.previous) client.setQueryData(queryKeys.settings, context.previous)
+    },
+
+    onSettled() {
+      void client.invalidateQueries({ queryKey: queryKeys.settings })
+    },
+  })
 }
 
 /** Перетаскивание должно оставлять карточку там, куда её бросили, — поэтому оптимистично. */

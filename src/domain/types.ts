@@ -69,6 +69,20 @@ export type DayLog = {
   closedAt: string | null
 }
 
+/** Утренние оценки 0–10 — сон, самочувствие и настроение до дел дня. */
+export type Morning = { sleep: number; wellbeing: number; mood: number }
+
+/**
+ * Начало дня — отдельная запись: утро измерено до сегодняшних дел и служит базой дня.
+ * `morning: null` — утро пропущено или день начат после утреннего часа. Утро не правится.
+ */
+export type DayStart = { day: string; morning: Morning | null; startedAt: string }
+
+/** Настройки. `morningUntil` — час, до которого спрашивается утро; сам час уже не утро. */
+export type Settings = { morningUntil: number }
+
+export const DEFAULT_SETTINGS: Settings = { morningUntil: 15 }
+
 /** Итог дня по одному челленджу. */
 export type Outcome =
   /** цель взята */

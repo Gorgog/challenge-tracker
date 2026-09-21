@@ -2,10 +2,13 @@ import { parseDay, todayKey } from '@/domain/date'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
 import {
   DEFAULT_DAY_GROUPS,
+  DEFAULT_SETTINGS,
   type Challenge,
   type DayGroup,
   type DayLog,
+  type DayStart,
   type EntryMap,
+  type Settings,
   type Tag,
 } from '@/domain/types'
 import type { Repo } from './repo'
@@ -29,7 +32,7 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 6
+const STORAGE_VERSION = 7
 
 type Snapshot = {
   version: number
@@ -39,6 +42,9 @@ type Snapshot = {
   tags: Tag[]
   /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
   dayGroups?: DayGroup[]
+  /** Начала дней — с версии 7. */
+  starts: DayStart[]
+  settings: Settings
 }
 
 /** Обращение к localStorage бросает в приватном окне и при запрете хранилища для сайта. */
@@ -61,6 +67,8 @@ function load(storage: Storage | null): Snapshot | null {
       Array.isArray(parsed.challenges) &&
       Array.isArray(parsed.logs) &&
       Array.isArray(parsed.tags) &&
+      Array.isArray(parsed.starts) &&
+      typeof parsed.settings?.morningUntil === 'number' &&
       !!parsed.entries &&
       typeof parsed.entries === 'object'
     return valid ? parsed : null
@@ -96,7 +104,13 @@ export function demoScenario(storage: Storage | null = defaultStorage()): DemoSc
 /** Насыпает снимок выбранного сценария. */
 function seedSnapshot(today: Date, seed: number, scenario: DemoScenario): Snapshot {
   const seedOf = scenario === 'burnout' ? seedBurnout : seedFull
-  return { version: STORAGE_VERSION, ...seedOf(today, seed), dayGroups: [...DEFAULT_DAY_GROUPS] }
+  return {
+    version: STORAGE_VERSION,
+    starts: [],
+    ...seedOf(today, seed),
+    dayGroups: [...DEFAULT_DAY_GROUPS],
+    settings: { ...DEFAULT_SETTINGS },
+  }
 }
 
 /**
@@ -117,6 +131,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const logs = new Map(state.logs.map((l) => [l.day, l]))
   const tags = state.tags
   let dayGroups: DayGroup[] = state.dayGroups ?? [...DEFAULT_DAY_GROUPS]
+  const starts = new Map(state.starts.map((s) => [s.day, s]))
+  let settings: Settings = { ...state.settings }
 
   /* Нумерация продолжается после перезагрузки, иначе новый челлендж займёт чужой id. */
   const lastNumber = (ids: string[], prefix: string) =>
@@ -140,6 +156,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       logs: [...logs.values()],
       tags,
       dayGroups,
+      starts: [...starts.values()],
+      settings,
     })
 
   if (!restored) persist()
@@ -230,6 +248,23 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     },
     async saveDayLog(log) {
       logs.set(log.day, { ...log, tags: [...log.tags] })
+      persist()
+    },
+    async listDayStarts() {
+      return [...starts.values()]
+        .map((s) => ({ ...s, morning: s.morning ? { ...s.morning } : null }))
+        .sort((a, b) => a.day.localeCompare(b.day))
+    },
+    async startDay(start) {
+      if (starts.has(start.day)) throw new Error(`День ${start.day} уже начат: утро не правится`)
+      starts.set(start.day, { ...start, morning: start.morning ? { ...start.morning } : null })
+      persist()
+    },
+    async getSettings() {
+      return { ...settings }
+    },
+    async saveSettings(next) {
+      settings = { ...next }
       persist()
     },
     async reorderChallenges(orderedIds) {

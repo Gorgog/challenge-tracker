@@ -1,5 +1,5 @@
 import type { ChallengePatch } from '@/domain/challenges'
-import type { Challenge, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
+import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
 
 /**
  * Договор доступа к данным. Компоненты не знают, что за ним стоит: сейчас демо-данные
@@ -37,6 +37,14 @@ export type Repo = {
   setEntry(challengeId: string, day: string, value: number | undefined): Promise<void>
   /** Сохранить итог дня. Запись за день одна: повторный вызов перезаписывает её. */
   saveDayLog(log: DayLog): Promise<void>
+  listDayStarts(): Promise<DayStart[]>
+  /**
+   * Начать день. Утро не правится: второй вызов за тот же день бросает, а первая запись
+   * остаётся — проверка здесь, а не только в кнопке.
+   */
+  startDay(start: DayStart): Promise<void>
+  getSettings(): Promise<Settings>
+  saveSettings(settings: Settings): Promise<void>
   /**
    * Выстроить челленджи в заданном порядке. Не упомянутые остаются в хвосте
    * в прежнем порядке — список не должен терять челленджи из-за неполного вызова.
