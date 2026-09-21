@@ -34,8 +34,8 @@ export const PRACTICAL = 0.5
  * few — меньше `MIN_EARLY` дней в группе; tangled — окна не разделить (привычка через день);
  * flat — весь интервал внутри полубалла; unclear — неясно: 70% интервал задевает ноль, разница
  * меньше полубалла или назавтра не отличить от накануне; echo — только «назавтра»: накануне оценки
- * тоже заметно выше, это полоса; possible — возможно, ранний вывод по 70% интервалу; likely —
- * похоже; strong — уверенно, бывает только «назавтра».
+ * тоже заметно выше, это полоса; possible — возможно, ранний вывод по 70% интервалу, пока в меньшей
+ * группе меньше `MIN_GROUP` дней; likely — похоже; strong — уверенно, бывает только «назавтра».
  */
 export type Strength = 'few' | 'tangled' | 'flat' | 'unclear' | 'echo' | 'possible' | 'likely' | 'strong'
 
@@ -146,9 +146,10 @@ export const scoreOf = (log: DayLog, metric: Metric) =>
 export const strictLevel = (metric: Metric) => (metric === 'day' ? 0.995 : 1 - 0.01 / 3 / 2)
 
 /**
- * Уровень для «возможно» — 70% интервал, ранний вывод. На демо «выгорание» он верен примерно через
- * раз на двух неделях и в четырёх случаях из пяти к концу месяца: решение Georgy от 21.09 — ранние
- * выводы важнее того, что они часто ошибаются.
+ * Уровень для «возможно» — 70% интервал, ранний вывод, и только пока в меньшей группе меньше
+ * `MIN_GROUP` дней: на длинной истории настоящее уже дорастает до «похоже», а на 70% остаётся шум.
+ * На демо «выгорание» ранний вывод верен примерно через раз на двух неделях: решение Georgy от
+ * 21.09 — ранние выводы важнее того, что они часто ошибаются.
  */
 export const POSSIBLE_LEVEL = 0.85
 
@@ -183,11 +184,12 @@ const few = (withDays: number, withoutDays: number) => blank('few', withDays, wi
 /**
  * Класс оценки окна. «Без разницы» — только когда весь 95% интервал внутри полубалла: широкий
  * интервал вокруг нуля — это «неясно». Вывод — когда разница не меньше полубалла и интервал не
- * задевает ноль: по 95% — «похоже», если в меньшей группе хотя бы `minGroup` дней, иначе и по 70% —
- * «возможно». В тот же день (`next` = null) сильнее «похоже» не бывает. Назавтра: накануне оценки
- * тоже заметно выше и разница с ним не значима на том же уровне — полоса. «Уверенно» — 99% интервал
- * (для шкалы строже), значимое отличие от накануне и не меньше десяти дней в группе; для «похоже»
- * отличие от накануне не требуется, иначе инерция настроения глушила бы и настоящее.
+ * задевает ноль: по 95% — «похоже», если в меньшей группе хотя бы `minGroup` дней; по 70% —
+ * «возможно», пока в ней меньше `MIN_GROUP` дней. В тот же день (`next` = null) сильнее «похоже»
+ * не бывает. Назавтра: накануне оценки тоже заметно выше и разница с ним не значима на том же
+ * уровне — полоса. «Уверенно» — 99% интервал (для шкалы строже), значимое отличие от накануне и
+ * не меньше десяти дней в группе; для «похоже» отличие от накануне не требуется, иначе инерция
+ * настроения глушила бы и настоящее.
  */
 export function strengthOf(
   est: Coef,
@@ -209,7 +211,8 @@ export function strengthOf(
   /* Интервал уровня с квантилем `t` не задевает ноль. */
   const beyond = (t: number) => Math.abs(est.delta) > t * est.se
   const t70 = tQuantile(POSSIBLE_LEVEL, df)
-  const level = beyond(t95) && smaller >= minGroup ? 'likely' : beyond(t70) ? 'possible' : null
+  const early = smaller < MIN_GROUP
+  const level = beyond(t95) && smaller >= minGroup ? 'likely' : beyond(t70) && early ? 'possible' : null
   if (!level) return { ...base, strength: 'unclear' }
   if (!next) return { ...base, strength: level }
 
@@ -514,7 +517,10 @@ export function challengeEffects(
   })
 }
 
-/** Сравнение двух наборов дней по Уэлчу с поправкой на полосы; не сильнее «похоже» и без «возможно». */
+/**
+ * Сравнение двух наборов дней по Уэлчу с поправкой на полосы; не сильнее «похоже». «Возможно» здесь
+ * не бывает: окна — от `MIN_GROUP` дней, а ранний вывод ставится только на меньших группах.
+ */
 function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable: boolean): Estimate {
   if (Math.min(before.length, after.length) < MIN_GROUP) return few(after.length, before.length)
 
@@ -528,8 +534,6 @@ function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable:
   const r = lag1(fit.residuals, rows.map((row) => row.log.day))
   const se = Math.sqrt(fit.cov[1]![1]!) * Math.sqrt((1 + r) / (1 - r))
   const est = strengthOf({ delta: fit.beta[1]!, se }, after.length, before.length, MIN_GROUP, null)
-  /* Раннего вывода здесь нет: сравнение и так смещено возвратом к норме. */
-  if (est.strength === 'possible') return { ...est, strength: 'unclear' }
   /* Другой челлендж начат одновременно — чей это эффект, не сказать. */
   if (inseparable && est.strength === 'likely') return { ...est, strength: 'unclear' }
   return est
