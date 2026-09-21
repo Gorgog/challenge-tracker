@@ -15,7 +15,7 @@ import { DAY_TAGS } from '@/domain/tags'
 import type { DayLog, ScoreField } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
-import { SCORE_MAX, SCORE_MIN, snapScore } from './score'
+import { SCORE_MAX, SCORE_MIN, snapScore } from '@/domain/score'
 
 type Scale = { field: ScoreField; label: string; low: string; high: string }
 

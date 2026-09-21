@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
 import { dayOutcome } from '@/domain/streaks'
+import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
 import { createDemoRepo } from './demoRepo'
 
@@ -99,11 +100,11 @@ describe('демо-репозиторий: сид', () => {
     expect(unratedDays(logs, TODAY).length).toBeGreaterThan(0)
   })
 
-  it('оценки дня лежат в диапазоне 1–10', async () => {
+  it('оценки дня лежат в диапазоне шкалы', async () => {
     for (const log of await repo().listDayLogs()) {
       for (const v of [log.mood, log.wellbeing, log.productivity]) {
-        expect(v).toBeGreaterThanOrEqual(1)
-        expect(v).toBeLessThanOrEqual(10)
+        expect(v).toBeGreaterThanOrEqual(SCORE_MIN)
+        expect(v).toBeLessThanOrEqual(SCORE_MAX)
       }
     }
   })
