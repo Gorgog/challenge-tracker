@@ -275,3 +275,67 @@ describe('пауза', () => {
     expect(completionRate(c, entriesFrom('2026-09-17', '11'), TODAY)).toBe(1)
   })
 })
+
+describe('пауза и финиш — крайние случаи', () => {
+  it('пауза с первого дня отодвигает финиш так же, как любая другая', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 5, pauses: [{ from: '2026-09-01', to: '2026-09-02' }] })
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-07')
+  })
+
+  it('пауза, накрывшая финиш, переносит его за своё окончание', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 5, pauses: [{ from: '2026-09-04', to: '2026-09-10' }] })
+    // 1–3 сентября, пауза 4–10, ещё два дня: 11 и 12
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-12')
+  })
+
+  it('две паузы складываются', () => {
+    const c = challenge({
+      startDate: '2026-09-01',
+      lengthDays: 4,
+      pauses: [
+        { from: '2026-09-02', to: '2026-09-02' },
+        { from: '2026-09-04', to: '2026-09-05' },
+      ],
+    })
+    // активные дни: 1, 3, 6, 7
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-07')
+  })
+
+  it('пауза, назначенная на завтра, тоже снимает финиш, пока не закрыта', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 30, pauses: [{ from: '2026-09-22', to: null }] })
+    expect(lastDay(c)).toBeNull()
+  })
+
+  it('незакрытая пауза после финиша финиш не трогает — челлендж уже закончился', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 5, pauses: [{ from: '2026-09-10', to: null }] })
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-05')
+  })
+
+  it('огромный срок считается без перебора дней — опечатка в сроке не вешает экран', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 3_000_000 })
+    expect(currentStreak(c, entriesFrom('2026-09-01', '1'.repeat(20)), TODAY)).toBe(20)
+    expect(dayKey(lastDay(c) as Date)).toBe(dayKey(new Date(2026, 8, 1 + 2_999_999)))
+  })
+
+  it('кривой срок из испорченных данных считается бессрочным, а не зацикливает', () => {
+    expect(lastDay(challenge({ lengthDays: 2.5 }))).toBeNull()
+    expect(lastDay(challenge({ lengthDays: -3 }))).toBeNull()
+  })
+
+  it('серия отказа тоже замирает на паузе', () => {
+    const quit = challenge({
+      kind: 'quit',
+      startDate: '2026-09-01',
+      pauses: [{ from: '2026-09-10', to: '2026-09-15' }],
+    })
+    // срыв 5-го; выдержаны 6–9 и 16–21 — десять дней, пауза между ними не в счёт
+    expect(currentStreak(quit, { '2026-09-05': 0 }, TODAY)).toBe(10)
+  })
+
+  it('окно процента — последние N календарных дней, а не N дней челленджа', () => {
+    const c = challenge({ startDate: '2026-08-01', pauses: [{ from: '2026-09-10', to: '2026-09-19' }] })
+    // за последнюю неделю (14–20 сентября) челлендж шёл только 20-го, и он выполнен;
+    // окно «7 дней челленджа» утащило бы невыполненные дни начала сентября
+    expect(completionRate(c, entriesFrom('2026-09-20', '1'), TODAY, 7)).toBe(1)
+  })
+})

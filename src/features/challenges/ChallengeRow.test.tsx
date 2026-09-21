@@ -24,19 +24,19 @@ const challenge = (over: Partial<Challenge> = {}): Challenge => ({
 })
 
 const setup = (c: Challenge = challenge()) => {
-  const onToggleStatus = vi.fn()
+  const onTogglePause = vi.fn()
   const onDelete = vi.fn()
   const onEdit = vi.fn()
   render(
     <ChallengeRow
       challenge={c}
       tagNames={['ум']}
-      onToggleStatus={onToggleStatus}
+      onTogglePause={onTogglePause}
       onDelete={onDelete}
       onEdit={onEdit}
     />,
   )
-  return { onToggleStatus, onDelete, onEdit, user: userEvent.setup() }
+  return { onTogglePause, onDelete, onEdit, user: userEvent.setup() }
 }
 
 describe('строка челленджа', () => {
@@ -46,9 +46,9 @@ describe('строка челленджа', () => {
   })
 
   it('у активного кнопка ставит на паузу', async () => {
-    const { user, onToggleStatus } = setup()
+    const { user, onTogglePause } = setup()
     await user.click(screen.getByRole('button', { name: /поставить на паузу/i }))
-    expect(onToggleStatus).toHaveBeenCalledTimes(1)
+    expect(onTogglePause).toHaveBeenCalledTimes(1)
   })
 
   it('у челленджа на паузе та же кнопка снимает паузу', () => {

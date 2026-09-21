@@ -136,6 +136,11 @@ describe('pause', () => {
     expect(pause(make({ kind: 'quit' }), { '2026-09-21': 0 }, TODAY).pauses[0]?.from).toBe('2026-09-22')
   })
 
+  it('закрытый день уже решён: пропуск остаётся пропуском, пауза с завтра', () => {
+    expect(pause(make(), {}, TODAY, true).pauses[0]?.from).toBe('2026-09-22')
+    expect(pause(make({ kind: 'quit' }), {}, TODAY, true).pauses[0]?.from).toBe('2026-09-22')
+  })
+
   it('прошлые паузы остаются в истории', () => {
     const c = make({ pauses: [{ from: '2026-09-05', to: '2026-09-07' }] })
     expect(pause(c, {}, TODAY).pauses).toEqual([

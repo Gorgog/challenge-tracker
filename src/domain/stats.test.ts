@@ -152,6 +152,7 @@ describe('forecast и пауза', () => {
   it('дни паузы в темп не входят', () => {
     const paused = challenge({ lengthDays: 30, pauses: [{ from: '2026-09-10', to: '2026-09-14' }] })
     // выполнены все дни, кроме паузы: темп ровно единица, а не 15 из 20
-    expect(forecast(paused, entriesBack(20, () => true), TODAY)?.pace).toBe(1)
+    const outsidePause = (_i: number, day: Date) => dayKey(day) < '2026-09-10' || dayKey(day) > '2026-09-14'
+    expect(forecast(paused, entriesBack(20, outsidePause), TODAY)?.pace).toBe(1)
   })
 })

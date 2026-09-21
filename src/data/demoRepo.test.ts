@@ -391,6 +391,28 @@ describe('управление челленджем', () => {
     expect(after.pauses).toEqual([{ from: '2026-09-25', to: '2026-09-27' }])
   })
 
+  it('пауза после «Завершить день» начинается завтра — закрытый день не переписать', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    await r.saveDayLog({
+      day: '2026-09-25', mood: 5, wellbeing: 5, productivity: 5, tags: [], note: '',
+      closedAt: '2026-09-25T21:00:00.000Z',
+    })
+
+    await r.setPaused(c.id, true, '2026-09-25')
+    expect((await byCode(r, 'ЧТН')).pauses).toEqual([{ from: '2026-09-26', to: null }])
+  })
+
+  it('отдаёт копию пауз — правка снаружи хранилище не трогает', async () => {
+    const r = repo()
+    const eng = await byCode(r, 'АНГ')
+    eng.pauses[0]!.to = '2026-09-01'
+    eng.pauses.push({ from: '2026-09-02', to: null })
+
+    expect((await byCode(r, 'АНГ')).pauses).toHaveLength(1)
+    expect((await byCode(r, 'АНГ')).pauses[0]?.to).toBeNull()
+  })
+
   it('пауза в день, когда привычка уже выполнена, начинается завтра', async () => {
     const r = repo()
     const c = await byCode(r, 'ЧТН')
