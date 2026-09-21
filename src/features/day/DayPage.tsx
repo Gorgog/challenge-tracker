@@ -53,9 +53,16 @@ import { SortableGroup, SortableRow } from './Sortable'
 import { groupId, groupOf } from './groups'
 import { HoldCard } from './HoldCard'
 import { TaskRow } from './TaskRow'
+import { useClock } from './useClock'
 
 /* Стабильная пустая ссылка: иначе useMemo ниже пересчитывался бы каждый рендер. */
 const NO_CHALLENGES: Challenge[] = []
+
+/**
+ * Столько «Завершить день» не срабатывает после начала дня: кнопка появляется на месте «Начать
+ * день», и двойное нажатие открыло бы окно итога, которое нельзя закрыть.
+ */
+const START_GRACE_MS = 1000
 
 const SCORE_LABELS: { field: keyof Pick<DayLog, 'mood' | 'wellbeing' | 'productivity'>; label: string }[] = [
   { field: 'mood', label: 'Настроение' },
@@ -64,8 +71,9 @@ const SCORE_LABELS: { field: keyof Pick<DayLog, 'mood' | 'wellbeing' | 'producti
 ]
 
 export function DayPage() {
-  const today = useMemo(() => parseDay(todayKey()), [])
-  const todayK = dayKey(today)
+  const { now, refresh } = useClock()
+  const todayK = dayKey(now)
+  const today = useMemo(() => parseDay(todayK), [todayK])
 
   const challenges = useChallenges()
   const entriesQuery = useEntries()
@@ -87,6 +95,8 @@ export function DayPage() {
 
   const [dialogDay, setDialogDay] = useState<string | null>(null)
   const [startOpen, setStartOpen] = useState(false)
+  /** Когда день начат на этой странице — для паузы у «Завершить день». */
+  const [startedMs, setStartedMs] = useState(0)
 
   /*
    * Порядок после броска применяется здесь, синхронно, а не ждёт мутацию:
@@ -128,19 +138,52 @@ export function DayPage() {
   /* Не начатый день тоже под блюром: отметки — только после начала, утро — до дел дня. */
   const notStarted = dayStage(todayK, starts, logs) === 'notStarted'
   const locked = frozen || notStarted
-  const morningNow = morningOpen(new Date(), settings.morningUntil)
+  const morningNow = morningOpen(now, settings.morningUntil)
 
-  /** Утро записывается один раз; после утреннего часа — без оценок: днём это уже не утро. */
+  /**
+   * Утро записывается один раз и не правится. День и час сверяются в момент записи: страница могла
+   * простоять открытой с вечера — новый день не пишется под вчерашним; окно утра могли открыть до
+   * утреннего часа, а отправить после — тогда это уже не утро.
+   */
   const start = (morning: Morning | null) => {
-    startDay.mutate({ day: todayK, morning, startedAt: new Date().toISOString() })
     setStartOpen(false)
-    toast(morning ? 'День начат' : 'День начат без утренних оценок')
+    if (todayKey() !== todayK) {
+      refresh()
+      return
+    }
+    if (startDay.isPending) return
+    const late = morning !== null && !morningOpen(new Date(), settings.morningUntil)
+    const recorded = late ? null : morning
+    setStartedMs(Date.now())
+    startDay.mutate(
+      { day: todayK, morning: recorded, startedAt: new Date().toISOString() },
+      {
+        onSuccess: () =>
+          toast(
+            recorded
+              ? 'День начат'
+              : late
+                ? 'Утро уже прошло — день начат без утренних оценок'
+                : 'День начат без утренних оценок',
+          ),
+        onError: (error) => toast.error(`Не получилось начать день: ${error.message}`),
+      },
+    )
   }
 
-  /* Час проверяется в момент нажатия: страница могла простоять открытой с утра. */
+  /* Час проверяется в момент нажатия: плашка могла устареть с утра. */
   const beginDay = () => {
+    if (todayKey() !== todayK) {
+      refresh()
+      return
+    }
     if (morningOpen(new Date(), settings.morningUntil)) setStartOpen(true)
     else start(null)
+  }
+
+  const finishDay = () => {
+    if (Date.now() - startedMs < START_GRACE_MS) return
+    setDialogDay(todayK)
   }
 
   /** Отметка применяется сразу, тост даёт вернуть прежнее значение. */
@@ -222,7 +265,8 @@ export function DayPage() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  if (challenges.isPending) {
+  /* Пока неизвестно, начат ли день, он не «не начат»: иначе мелькнули бы блюр и «Начать день». */
+  if (challenges.isPending || startsQuery.isPending || settingsQuery.isPending) {
     return <p className="p-8 text-center text-sm text-muted-foreground">Загружаю…</p>
   }
 
@@ -349,8 +393,9 @@ export function DayPage() {
         )}
       </div>
 
+      {/* Разные ключи: новая кнопка не наследует фокус прежней, и второй Enter никуда не попадёт. */}
       {todayLog ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-good/35 bg-good/5 px-4 py-4">
+        <div key="closed" className="flex flex-col gap-3 rounded-xl border border-good/35 bg-good/5 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-5">
               {SCORE_LABELS.map((s) => (
@@ -390,7 +435,7 @@ export function DayPage() {
           )}
         </div>
       ) : notStarted ? (
-        <div className="flex flex-col items-center gap-2 py-1">
+        <div key="start" className="flex flex-col items-center gap-2 py-1">
           <Button size="lg" onClick={beginDay}>
             Начать день
           </Button>
@@ -401,8 +446,8 @@ export function DayPage() {
           </span>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-2 py-1">
-          <Button size="lg" onClick={() => setDialogDay(todayK)}>
+        <div key="finish" className="flex flex-col items-center gap-2 py-1">
+          <Button size="lg" onClick={finishDay}>
             Завершить день
           </Button>
           <span className="text-center text-xs text-muted-foreground">

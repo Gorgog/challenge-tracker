@@ -45,22 +45,23 @@ export function useSettings() {
   return useQuery({ queryKey: queryKeys.settings, queryFn: () => repo.getSettings() })
 }
 
-/** Начало дня видно сразу — блюр снимается в том же кадре, что и клик; при ошибке откат. */
+/**
+ * Начало дня видно сразу, при ошибке откат. Кэш правится до отмены запросов — блюр снимается
+ * в том же кадре, что и клик.
+ */
 export function useStartDay() {
   const client = useQueryClient()
 
   return useMutation({
     mutationFn: (start: DayStart) => repo.startDay(start),
 
-    async onMutate(start) {
-      await client.cancelQueries({ queryKey: queryKeys.dayStarts })
+    onMutate(start) {
       const previous = client.getQueryData<DayStart[]>(queryKeys.dayStarts)
-
       client.setQueryData<DayStart[]>(queryKeys.dayStarts, (old) => {
         const rest = (old ?? []).filter((s) => s.day !== start.day)
         return [...rest, start].sort((a, b) => a.day.localeCompare(b.day))
       })
-
+      void client.cancelQueries({ queryKey: queryKeys.dayStarts })
       return { previous }
     },
 
