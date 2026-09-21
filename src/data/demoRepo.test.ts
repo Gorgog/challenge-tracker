@@ -403,6 +403,18 @@ describe('управление челленджем', () => {
     expect((await byCode(r, 'ЧТН')).pauses).toEqual([{ from: '2026-09-26', to: null }])
   })
 
+  it('снятие паузы после «Завершить день» оставляет закрытый день днём паузы', async () => {
+    const r = repo()
+    const eng = await byCode(r, 'АНГ')
+    await r.saveDayLog({
+      day: '2026-09-25', mood: 5, wellbeing: 5, productivity: 5, tags: [], note: '',
+      closedAt: '2026-09-25T21:00:00.000Z',
+    })
+
+    await r.setPaused(eng.id, false, '2026-09-25')
+    expect((await byCode(r, 'АНГ')).pauses.at(-1)?.to).toBe('2026-09-25')
+  })
+
   it('отдаёт копию пауз — правка снаружи хранилище не трогает', async () => {
     const r = repo()
     const eng = await byCode(r, 'АНГ')

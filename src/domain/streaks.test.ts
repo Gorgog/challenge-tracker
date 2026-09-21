@@ -339,3 +339,53 @@ describe('пауза и финиш — крайние случаи', () => {
     expect(completionRate(c, entriesFrom('2026-09-20', '1'), TODAY, 7)).toBe(1)
   })
 })
+
+describe('финиш по паузам — ветки расчёта', () => {
+  const five = (pauses: { from: string; to: string | null }[]) =>
+    challenge({ startDate: '2026-09-01', lengthDays: 5, pauses })
+  const finish = (c: Challenge) => {
+    const end = lastDay(c)
+    return end ? dayKey(end) : null
+  }
+
+  it('перекрытые паузы не сдвигают финиш дважды', () => {
+    expect(finish(five([{ from: '2026-09-02', to: '2026-09-06' }, { from: '2026-09-04', to: '2026-09-08' }]))).toBe('2026-09-12')
+  })
+
+  it('пауза внутри другой паузы ничего не добавляет', () => {
+    expect(finish(five([{ from: '2026-09-02', to: '2026-09-08' }, { from: '2026-09-04', to: '2026-09-05' }]))).toBe('2026-09-12')
+  })
+
+  it('пауза целиком до старта срок не трогает', () => {
+    expect(finish(five([{ from: '2026-08-20', to: '2026-08-25' }]))).toBe('2026-09-05')
+  })
+
+  it('порядок пауз в данных не важен — хранилище может отдать их как угодно', () => {
+    expect(finish(five([{ from: '2026-09-06', to: '2026-09-06' }, { from: '2026-09-02', to: '2026-09-03' }]))).toBe('2026-09-08')
+  })
+
+  it('незакрытая пауза с самого дня финиша снимает финиш', () => {
+    expect(finish(five([{ from: '2026-09-05', to: null }]))).toBeNull()
+  })
+
+  it('сдвинутый финиш догоняет следующую паузу — и она тоже сдвигает', () => {
+    const c = challenge({
+      startDate: '2026-09-01',
+      lengthDays: 4,
+      pauses: [
+        { from: '2026-09-02', to: '2026-09-02' },
+        { from: '2026-09-05', to: '2026-09-05' },
+      ],
+    })
+    expect(finish(c)).toBe('2026-09-06')
+  })
+
+  it('огромный срок: пауза сдвигает финиш и там, где год уже пятизначный', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 3_000_000, pauses: [{ from: '2026-09-10', to: '2026-09-19' }] })
+    expect(finish(c)).toBe(dayKey(new Date(2026, 8, 1 + 2_999_999 + 10)))
+  })
+
+  it('срок за пределами календаря считается бессрочным, а не даёт битую дату', () => {
+    expect(lastDay(challenge({ startDate: '2026-09-01', lengthDays: 1e9 }))).toBeNull()
+  })
+})

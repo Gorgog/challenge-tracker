@@ -194,4 +194,14 @@ describe('resume', () => {
     const c = make()
     expect(resume(c, TODAY)).toEqual(c)
   })
+
+  it('после «Завершить день» пауза заканчивается сегодня — закрытый день не становится пропуском', () => {
+    const c = make({ pauses: [{ from: '2026-09-15', to: null }] })
+    expect(resume(c, TODAY, true).pauses).toEqual([{ from: '2026-09-15', to: '2026-09-21' }])
+  })
+
+  it('поставил утром, закрыл день, снял вечером — сегодняшний день остаётся днём паузы', () => {
+    const c = make({ pauses: [{ from: '2026-09-21', to: null }] })
+    expect(resume(c, TODAY, true).pauses).toEqual([{ from: '2026-09-21', to: '2026-09-21' }])
+  })
 })
