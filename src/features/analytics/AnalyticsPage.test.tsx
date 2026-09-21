@@ -80,11 +80,11 @@ describe('AnalyticsPage — утро', () => {
     expect(screen.getByText('Загружаю…')).toBeInTheDocument()
   })
 
-  it('подпись объясняет утро: «в тот же день» — при том же утре, строка «Утро» слов не даёт, откуда «плохо спал»', () => {
+  it('подпись объясняет утро: «в тот же день» — при том же утре, строка «Утро» на вывод не влияет, откуда «плохо спал»', () => {
     render(<AnalyticsPage />)
     expect(screen.getByText(/окно «в тот же день» сравнивает дни с одинаковым утром/i)).toBeInTheDocument()
     expect(screen.getByText(/дни без утра в это окно не идут/i)).toBeInTheDocument()
-    expect(screen.getByText(/строка «утро».*слов уверенности она не даёт/i)).toBeInTheDocument()
+    expect(screen.getByText(/строка «утро».*на вывод и слово карточки она не влияет/i)).toBeInTheDocument()
     expect(screen.getByText(/«плохо спал» — дни, когда сон утром был от 0 до 4/i)).toBeInTheDocument()
   })
 })
