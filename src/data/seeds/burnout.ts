@@ -185,5 +185,9 @@ export function seedBurnout(today: Date, seed: number): Seed {
     logs.push({ day: key, mood, wellbeing, productivity, tags: dayTags, note, closedAt: `${key}T21:00:00.000Z` })
   }
 
+  /* Сегодня день не начат, а отмечать можно только в начатый день — сегодняшних отметок нет.
+     Числа на них всё равно вытянуты: основная последовательность не сдвигается. */
+  for (const map of Object.values(entries)) delete map[dayKey(today)]
+
   return { challenges, entries, logs, starts, tags }
 }

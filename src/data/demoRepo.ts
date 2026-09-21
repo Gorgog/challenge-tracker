@@ -32,7 +32,7 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 7
+const STORAGE_VERSION = 8
 
 type Snapshot = {
   version: number
@@ -42,7 +42,7 @@ type Snapshot = {
   tags: Tag[]
   /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
   dayGroups?: DayGroup[]
-  /** Начала дней — с версии 7. */
+  /** Начала дней — с версии 7; с версии 8 в сиде нет сегодняшних отметок. */
   starts: DayStart[]
   settings: Settings
 }
