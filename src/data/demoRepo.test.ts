@@ -723,6 +723,14 @@ describe('начало дня', () => {
     expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning?.sleep).toBe(7)
   })
 
+  it('хранит копию: правка переданного объекта после записи утро не меняет', async () => {
+    const r = repo()
+    const given = { ...start, morning: { ...morning } }
+    await r.startDay(given)
+    given.morning.sleep = 0
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning?.sleep).toBe(7)
+  })
+
   it('начало дня переживает пересоздание', async () => {
     const storage = fakeStorage()
     await withStorage(storage).startDay(start)
@@ -744,13 +752,33 @@ describe('настройки', () => {
     expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 12 })
   })
 
-  it('снимок прежней версии пересобирается: в нём нет ни начал дней, ни настроек', async () => {
+  it('хранит копию: правка переданного объекта после записи настройки не меняет', async () => {
+    const r = repo()
+    const given = { morningUntil: 12 }
+    await r.saveSettings(given)
+    given.morningUntil = 9
+    expect(await r.getSettings()).toEqual({ morningUntil: 12 })
+  })
+
+  it('снимок прежней версии пересобирается', async () => {
     const storage = fakeStorage()
     await withStorage(storage).saveSettings({ morningUntil: 12 })
     const raw = JSON.parse(storage.getItem('tabel-demo')!) as Record<string, unknown>
     storage.setItem('tabel-demo', JSON.stringify({ ...raw, version: 6 }))
 
     expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 15 })
+  })
+
+  it.each(['starts', 'settings'])('снимок нынешней версии без «%s» — битый, пересобирается', async (field) => {
+    const storage = fakeStorage()
+    await withStorage(storage).saveSettings({ morningUntil: 12 })
+    const raw = JSON.parse(storage.getItem('tabel-demo')!) as Record<string, unknown>
+    delete raw[field]
+    storage.setItem('tabel-demo', JSON.stringify(raw))
+
+    const r = withStorage(storage)
+    expect(await r.getSettings()).toEqual({ morningUntil: 15 })
+    expect(Array.isArray(await r.listDayStarts())).toBe(true)
   })
 })
 
@@ -809,6 +837,19 @@ describe('утро в демо', () => {
       const { logs } = await load(scenario, seed)
       expect(logs.some((l) => l.tags.includes('мало спал'))).toBe(false)
     }
+  })
+
+  it.each(SCENARIOS)('%s: после плохого сна и утреннее самочувствие ниже', async (scenario) => {
+    const gaps = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const { starts } = await load(scenario, seed)
+        const mornings = starts.flatMap((s) => (s.morning ? [s.morning] : []))
+        const poor = mornings.filter((m) => m.sleep <= 4).map((m) => m.wellbeing)
+        const fine = mornings.filter((m) => m.sleep >= 5).map((m) => m.wellbeing)
+        return mean(fine) - mean(poor)
+      }),
+    )
+    expect(mean(gaps)).toBeGreaterThan(1)
   })
 
   it.each(SCENARIOS)('%s: после плохого сна вечернее самочувствие ниже', async (scenario) => {
