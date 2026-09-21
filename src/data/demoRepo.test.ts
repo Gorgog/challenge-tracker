@@ -772,6 +772,13 @@ describe('утро в демо', () => {
     }
   })
 
+  it.each(SCENARIOS)('%s: сегодня отметок нет — день не начат, а отмечать можно только в начатый день', async (scenario) => {
+    for (const seed of SEEDS) {
+      const entries = await createDemoRepo({ today: TODAY, seed, storage: null, scenario }).listEntries()
+      expect(Object.values(entries).some((map) => dayKey(TODAY) in map)).toBe(false)
+    }
+  })
+
   it.each(SCENARIOS)('%s: утро пропущено примерно в каждом восьмом дне — не никогда и не часто', async (scenario) => {
     const shares = await Promise.all(
       SEEDS.map(async (seed) => {
