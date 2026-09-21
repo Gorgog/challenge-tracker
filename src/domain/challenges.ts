@@ -1,6 +1,6 @@
-import { addDays, dayKey } from './date'
+import { addDays, dayKey, parseDay } from './date'
 import { isPaused } from './pauses'
-import { dayOutcome } from './streaks'
+import { dayOutcome, deletedDay } from './streaks'
 import type { Challenge, EntryMap } from './types'
 
 /**
@@ -71,4 +71,19 @@ export function resume(c: Challenge, today: Date, closed = false): Challenge {
     .map((p) => (p.to === null ? { ...p, to } : p))
     .filter((p) => p.to !== null && p.to >= p.from)
   return { ...c, pauses }
+}
+
+/**
+ * Возвращает из корзины. Дни, пока челлендж был удалён, становятся паузой — иначе они
+ * «ожили» бы пропусками у привычки или «выдержан» у отказа. Как и со снятием паузы: закрытый
+ * итогом день тоже остаётся паузой, и челлендж идёт с завтра. Был на паузе, когда удалили, —
+ * пауза и так идёт.
+ */
+export function restore(c: Challenge, today: Date, closed = false): Challenge {
+  const gone = deletedDay(c)
+  if (!gone) return c
+  const from = dayKey(addDays(parseDay(gone), 1))
+  const to = dayKey(closed ? today : addDays(today, -1))
+  const alreadyPaused = isPaused(c) || to < from
+  return { ...c, deletedAt: null, pauses: alreadyPaused ? c.pauses : [...c.pauses, { from, to }] }
 }
