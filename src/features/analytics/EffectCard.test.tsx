@@ -80,7 +80,8 @@ describe('EffectCard', () => {
     const quit = challenge({ id: 'smoke', kind: 'quit', code: 'БСГ', name: 'Без сигарет' })
 
     it('объясняет, что дни не с чем сравнить, и показывает месяц до старта против месяца после', () => {
-      render(<EffectCard effect={effect(est('few'), est('few'), { challenge: quit, beforeAfter: beforeAfterOf() })} />)
+      const noRelapses = est('few', 0, [30, 3])
+      render(<EffectCard effect={effect(noRelapses, noRelapses, { challenge: quit, beforeAfter: beforeAfterOf() })} />)
 
       expect(screen.getByText('Мало данных')).toBeInTheDocument()
       expect(screen.getByText(/срывов почти нет/i)).toBeInTheDocument()
