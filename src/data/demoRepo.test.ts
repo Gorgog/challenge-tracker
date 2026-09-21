@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
+import { isPaused } from '@/domain/pauses'
 import { dayOutcome } from '@/domain/streaks'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
@@ -38,7 +39,7 @@ describe('демо-репозиторий: челленджи', () => {
   })
 
   it('один челлендж на паузе — чтобы фильтр «активные/все» было на чём проверить', async () => {
-    const paused = (await repo().listChallenges()).filter((c) => c.status === 'paused')
+    const paused = (await repo().listChallenges()).filter(isPaused)
     expect(paused).toHaveLength(1)
   })
 
@@ -184,7 +185,6 @@ describe('createChallenge', () => {
     tagIds: [],
     startDate: '2026-09-21',
     lengthDays: null,
-    status: 'active' as const,
     pauses: [],
     rulesLocked: false,
     deletedAt: null,
@@ -278,7 +278,6 @@ describe('хранение между перезагрузками', () => {
     tagIds: [],
     startDate: '2026-09-21',
     lengthDays: null,
-    status: 'active' as const,
     pauses: [],
     rulesLocked: false,
     deletedAt: null,
@@ -379,15 +378,26 @@ describe('управление челленджем', () => {
     expect((await byCode(r, 'ОТЖ')).goal).toBe(30)
   })
 
-  it('ставит на паузу и снимает с неё', async () => {
+  it('ставит на паузу и снимает с неё — пауза остаётся в истории', async () => {
     const r = repo()
     const c = await byCode(r, 'ЧТН')
 
-    await r.setChallengeStatus(c.id, 'paused')
-    expect((await byCode(r, 'ЧТН')).status).toBe('paused')
+    await r.setPaused(c.id, true, '2026-09-25')
+    expect(isPaused(await byCode(r, 'ЧТН'))).toBe(true)
 
-    await r.setChallengeStatus(c.id, 'active')
-    expect((await byCode(r, 'ЧТН')).status).toBe('active')
+    await r.setPaused(c.id, false, '2026-09-28')
+    const after = await byCode(r, 'ЧТН')
+    expect(isPaused(after)).toBe(false)
+    expect(after.pauses).toEqual([{ from: '2026-09-25', to: '2026-09-27' }])
+  })
+
+  it('пауза в день, когда привычка уже выполнена, начинается завтра', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    await r.setEntry(c.id, '2026-09-25', 1)
+
+    await r.setPaused(c.id, true, '2026-09-25')
+    expect((await byCode(r, 'ЧТН')).pauses).toEqual([{ from: '2026-09-26', to: null }])
   })
 
   it('мягкое удаление проставляет дату и не трогает отметки', async () => {
@@ -476,5 +486,20 @@ describe('теги челленджей', () => {
     await createDemoRepo({ today: TODAY, seed: 20260921, storage }).createTag('сон')
     const tags = await createDemoRepo({ today: TODAY, seed: 20260921, storage }).listTags()
     expect(tags.some((t) => t.name === 'сон')).toBe(true)
+  })
+})
+
+describe('демо-репозиторий: пауза в сиде', () => {
+  it('АНГ на паузе последние 26 дней: отметок нет, и это не пропуски', async () => {
+    const r = repo()
+    const eng = (await r.listChallenges()).find((c) => c.code === 'АНГ')!
+    const entries = (await r.listEntries())[eng.id] ?? {}
+
+    for (let back = 0; back < 26; back++) {
+      const day = addDays(TODAY, -back)
+      expect(entries[dayKey(day)]).toBeUndefined()
+      expect(dayOutcome(eng, entries, day, TODAY)).toBe('outside')
+    }
+    expect(dayOutcome(eng, entries, addDays(TODAY, -26), TODAY)).not.toBe('outside')
   })
 })

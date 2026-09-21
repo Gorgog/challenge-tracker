@@ -73,7 +73,7 @@ describe('форма нового челленджа', () => {
     expect(c.kind).toBe('quit')
     expect(c.measure).toBe('binary')
     expect(c.startDate).toBe(todayKey())
-    expect(c.status).toBe('active')
+    expect(c.pauses).toEqual([])
   })
 
   it('создаёт счётный челлендж с целью и единицей', async () => {
@@ -143,7 +143,6 @@ describe('форма правки челленджа', () => {
     tagIds: ['t1'],
     startDate: '2026-09-01',
     lengthDays: 30,
-    status: 'active',
     pauses: [],
     rulesLocked: false,
     deletedAt: null,

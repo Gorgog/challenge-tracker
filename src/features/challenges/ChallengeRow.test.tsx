@@ -16,7 +16,6 @@ const challenge = (over: Partial<Challenge> = {}): Challenge => ({
   tagIds: [],
   startDate: '2026-07-02',
   lengthDays: null,
-  status: 'active',
   pauses: [],
   rulesLocked: false,
   deletedAt: null,
@@ -53,7 +52,7 @@ describe('строка челленджа', () => {
   })
 
   it('у челленджа на паузе та же кнопка снимает паузу', () => {
-    setup(challenge({ status: 'paused' }))
+    setup(challenge({ pauses: [{ from: '2026-09-15', to: null }] }))
     expect(screen.getByRole('button', { name: /снять с паузы/i })).toBeInTheDocument()
     expect(screen.getByText(/на паузе/i)).toBeInTheDocument()
   })

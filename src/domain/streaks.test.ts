@@ -18,7 +18,6 @@ function challenge(over: Partial<Challenge> = {}): Challenge {
     tagIds: [],
     startDate: '2026-09-01',
     lengthDays: null,
-    status: 'active',
     pauses: [],
     rulesLocked: false,
     deletedAt: null,

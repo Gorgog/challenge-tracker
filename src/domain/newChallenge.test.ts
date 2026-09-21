@@ -14,7 +14,6 @@ const existing = (over: Partial<Challenge> = {}): Challenge => ({
   tagIds: [],
   startDate: '2026-09-01',
   lengthDays: null,
-  status: 'active',
   pauses: [],
   rulesLocked: false,
   deletedAt: null,
@@ -70,10 +69,9 @@ describe('pickColor', () => {
 })
 
 describe('buildChallenge', () => {
-  it('ставит дату старта, активный статус и следующий порядок', () => {
+  it('ставит дату старта, без пауз и следующий порядок', () => {
     const c = buildChallenge(draft(), [existing({ sortOrder: 4 })], '2026-09-21')
     expect(c.startDate).toBe('2026-09-21')
-    expect(c.status).toBe('active')
     expect(c.pauses).toEqual([])
     expect(c.sortOrder).toBe(5)
   })

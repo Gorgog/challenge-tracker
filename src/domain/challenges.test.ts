@@ -17,7 +17,6 @@ const make = (over: Partial<Challenge> = {}): Challenge => ({
   tagIds: [],
   startDate: '2026-09-01',
   lengthDays: null,
-  status: 'active',
   pauses: [],
   rulesLocked: false,
   deletedAt: null,
@@ -28,7 +27,7 @@ const make = (over: Partial<Challenge> = {}): Challenge => ({
 describe('isLive', () => {
   it('живой, пока не удалён', () => {
     expect(isLive(make())).toBe(true)
-    expect(isLive(make({ status: 'paused' }))).toBe(true)
+    expect(isLive(make({ pauses: [{ from: '2026-09-15', to: null }] }))).toBe(true)
   })
 
   it('удалённый — не живой', () => {
@@ -39,8 +38,12 @@ describe('isLive', () => {
 describe('onDay', () => {
   it('на экране дня только активные и не удалённые', () => {
     expect(onDay(make())).toBe(true)
-    expect(onDay(make({ status: 'paused' }))).toBe(false)
+    expect(onDay(make({ pauses: [{ from: '2026-09-15', to: null }] }))).toBe(false)
     expect(onDay(make({ deletedAt: '2026-09-21T10:00:00.000Z' }))).toBe(false)
+  })
+
+  it('пауза в прошлом уже закрыта — челлендж снова на экране дня', () => {
+    expect(onDay(make({ pauses: [{ from: '2026-09-05', to: '2026-09-07' }] }))).toBe(true)
   })
 })
 

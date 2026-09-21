@@ -16,7 +16,6 @@ const challenge: Challenge = {
   tagIds: [],
   startDate: '2026-06-14',
   lengthDays: null,
-  status: 'active',
   pauses: [],
   rulesLocked: false,
   deletedAt: null,

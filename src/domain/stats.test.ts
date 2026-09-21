@@ -9,7 +9,7 @@ function challenge(over: Partial<Challenge> = {}): Challenge {
   return {
     id: 'c1', name: 'Отжимания', code: 'ОТЖ', kind: 'do', measure: 'binary', goal: 1,
     unit: null, color: 'var(--chart-1)', tagIds: [], startDate: '2026-09-01',
-    lengthDays: null, status: 'active', pauses: [], rulesLocked: false, deletedAt: null, sortOrder: 0,
+    lengthDays: null, pauses: [], rulesLocked: false, deletedAt: null, sortOrder: 0,
     ...over,
   }
 }

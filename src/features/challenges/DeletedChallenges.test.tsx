@@ -16,7 +16,6 @@ const deleted = (over: Partial<Challenge> = {}): Challenge => ({
   tagIds: [],
   startDate: '2026-07-02',
   lengthDays: null,
-  status: 'active',
   pauses: [],
   rulesLocked: false,
   deletedAt: '2026-09-20T10:00:00.000Z',
