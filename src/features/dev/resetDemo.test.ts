@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SCENARIO_KEY } from '@/data/demoRepo'
 import { resetDemoData } from './resetDemo'
 
 function fakeStorage(entries: Record<string, string>): Storage {
@@ -47,5 +48,22 @@ describe('сброс демо-данных', () => {
 
   it('на пустом хранилище не падает', () => {
     expect(resetDemoData(fakeStorage({}))).toEqual([])
+  })
+})
+
+describe('сброс на выбранную историю', () => {
+  it('запоминает выбранную историю — после перезагрузки насыплется она', () => {
+    const storage = fakeStorage({ 'tabel-demo': '{}', 'sb-x-auth-token': 'с' })
+    resetDemoData(storage, 'burnout')
+
+    expect(storage.getItem(SCENARIO_KEY)).toBe('burnout')
+    expect(storage.getItem('tabel-demo')).toBeNull()
+    expect(storage.getItem('sb-x-auth-token')).toBe('с')
+  })
+
+  it('новый выбор заменяет прежний', () => {
+    const storage = fakeStorage({ [SCENARIO_KEY]: 'burnout' })
+    resetDemoData(storage, 'full')
+    expect(storage.getItem(SCENARIO_KEY)).toBe('full')
   })
 })

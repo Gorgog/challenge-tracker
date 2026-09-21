@@ -5,7 +5,7 @@ import { activeDays, dayOutcome } from '@/domain/streaks'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
 import type { DayLog, ScoreField } from '@/domain/types'
-import { createDemoRepo } from './demoRepo'
+import { SCENARIO_KEY, createDemoRepo, demoScenario } from './demoRepo'
 
 const TODAY = parseDay('2026-09-21')
 
@@ -655,5 +655,28 @@ describe('демо «Выход из выгорания» — 30 дней', () =
   it('без выбора сценария — полное демо, как раньше', async () => {
     const codes = (await repo().listChallenges()).map((c) => c.code)
     expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ'])
+  })
+})
+
+describe('сценарий демо из хранилища', () => {
+  it('выбранная история переживает перезагрузку', async () => {
+    const storage = fakeStorage()
+    storage.setItem(SCENARIO_KEY, 'burnout')
+    const r = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    expect((await r.listChallenges()).map((c) => c.code)).toEqual(['ОТЖ', 'ШАГ', 'ЧТН', 'АНГ'])
+  })
+
+  it('непонятное значение в хранилище — полное демо', async () => {
+    const storage = fakeStorage()
+    storage.setItem(SCENARIO_KEY, 'что-то старое')
+    const r = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+    expect((await r.listChallenges()).map((c) => c.code)).toContain('БСГ')
+  })
+
+  it('кнопке сброса видно, какая история выбрана', () => {
+    const storage = fakeStorage()
+    expect(demoScenario(storage)).toBe('full')
+    storage.setItem(SCENARIO_KEY, 'burnout')
+    expect(demoScenario(storage)).toBe('burnout')
   })
 })
