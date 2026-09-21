@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseDay } from './date'
-import { activeDays, bestStreak, completionRate, currentStreak, dayOutcome, fullDays } from './streaks'
+import { dayKey, parseDay } from './date'
+import { activeDays, bestStreak, completionRate, currentStreak, dayOutcome, fullDays, lastDay } from './streaks'
 import type { Challenge, EntryMap } from './types'
 
 const TODAY = parseDay('2026-09-21')
@@ -19,6 +19,7 @@ function challenge(over: Partial<Challenge> = {}): Challenge {
     startDate: '2026-09-01',
     lengthDays: null,
     status: 'active',
+    pauses: [],
     rulesLocked: false,
     deletedAt: null,
     sortOrder: 0,
@@ -202,5 +203,76 @@ describe('удалённый челлендж в статистике', () => {
     /* У удалённого 20 сентября пропуск, поэтому день не полный. Отфильтруй его
        fullDays — вышла бы единица, и история задним числом стала бы лучше, чем была. */
     expect(fullDays([kept, deleted], entries, TODAY, 1)).toBe(0)
+  })
+})
+
+describe('пауза', () => {
+  it('день паузы у привычки — вне челленджа, а не пропуск', () => {
+    const c = challenge({ pauses: [{ from: '2026-09-10', to: '2026-09-12' }] })
+    expect(dayOutcome(c, {}, parseDay('2026-09-11'), TODAY)).toBe('outside')
+    expect(dayOutcome(c, {}, parseDay('2026-09-13'), TODAY)).toBe('miss')
+  })
+
+  it('день паузы у отказа — вне челленджа, а не выдержанный день', () => {
+    const quit = challenge({ kind: 'quit', pauses: [{ from: '2026-09-10', to: '2026-09-12' }] })
+    expect(dayOutcome(quit, {}, parseDay('2026-09-11'), TODAY)).toBe('outside')
+  })
+
+  it('незакрытая пауза выключает и сегодняшний день', () => {
+    const c = challenge({ pauses: [{ from: '2026-09-15', to: null }] })
+    expect(dayOutcome(c, {}, TODAY, TODAY)).toBe('outside')
+  })
+
+  it('дни паузы не входят в прошедшие дни челленджа', () => {
+    const c = challenge({ startDate: '2026-09-15', pauses: [{ from: '2026-09-17', to: '2026-09-18' }] })
+    expect(activeDays(c, TODAY)).toEqual(['2026-09-15', '2026-09-16', '2026-09-19', '2026-09-20'])
+  })
+
+  it('пауза отодвигает финиш ограниченного челленджа на свою длину', () => {
+    const c = challenge({
+      startDate: '2026-09-01',
+      lengthDays: 10,
+      pauses: [{ from: '2026-09-04', to: '2026-09-08' }],
+    })
+    // 10 дней челленджа + 5 дней паузы
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-15')
+    expect(dayOutcome(c, {}, parseDay('2026-09-15'), TODAY)).toBe('miss')
+    expect(dayOutcome(c, {}, parseDay('2026-09-16'), TODAY)).toBe('outside')
+  })
+
+  it('пауза после финиша срок не меняет', () => {
+    const c = challenge({
+      startDate: '2026-09-01',
+      lengthDays: 5,
+      pauses: [{ from: '2026-09-10', to: '2026-09-12' }],
+    })
+    expect(dayKey(lastDay(c) as Date)).toBe('2026-09-05')
+  })
+
+  it('пока пауза не закрыта, финиша у ограниченного челленджа нет', () => {
+    const c = challenge({ startDate: '2026-09-01', lengthDays: 30, pauses: [{ from: '2026-09-10', to: null }] })
+    expect(lastDay(c)).toBeNull()
+  })
+
+  it('пауза замораживает серию: 12 дней, пауза, ещё день — 13', () => {
+    const c = challenge({ startDate: '2026-09-01', pauses: [{ from: '2026-09-13', to: '2026-09-19' }] })
+    const entries = { ...entriesFrom('2026-09-01', '111111111111'), ...entriesFrom('2026-09-20', '1') }
+    expect(currentStreak(c, entries, TODAY)).toBe(13)
+  })
+
+  it('на незакрытой паузе серия стоит на месте', () => {
+    const c = challenge({ startDate: '2026-09-01', pauses: [{ from: '2026-09-11', to: null }] })
+    expect(currentStreak(c, entriesFrom('2026-09-01', '1111111111'), TODAY)).toBe(10)
+  })
+
+  it('лучшая серия склеивается через паузу', () => {
+    const c = challenge({ startDate: '2026-09-01', pauses: [{ from: '2026-09-04', to: '2026-09-06' }] })
+    const entries = { ...entriesFrom('2026-09-01', '111'), ...entriesFrom('2026-09-07', '11') }
+    expect(bestStreak(c, entries, TODAY)).toBe(5)
+  })
+
+  it('пауза не снижает процент выполнения', () => {
+    const c = challenge({ startDate: '2026-09-17', pauses: [{ from: '2026-09-19', to: '2026-09-20' }] })
+    expect(completionRate(c, entriesFrom('2026-09-17', '11'), TODAY)).toBe(1)
   })
 })

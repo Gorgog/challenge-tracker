@@ -144,6 +144,7 @@ describe('форма правки челленджа', () => {
     startDate: '2026-09-01',
     lengthDays: 30,
     status: 'active',
+    pauses: [],
     rulesLocked: false,
     deletedAt: null,
     sortOrder: 0,

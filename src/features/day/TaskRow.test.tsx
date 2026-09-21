@@ -17,6 +17,7 @@ const binary: Challenge = {
   startDate: '2026-07-02',
   lengthDays: null,
   status: 'active',
+  pauses: [],
   rulesLocked: false,
   deletedAt: null,
   sortOrder: 2,

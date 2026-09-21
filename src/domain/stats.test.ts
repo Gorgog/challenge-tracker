@@ -9,7 +9,7 @@ function challenge(over: Partial<Challenge> = {}): Challenge {
   return {
     id: 'c1', name: 'Отжимания', code: 'ОТЖ', kind: 'do', measure: 'binary', goal: 1,
     unit: null, color: 'var(--chart-1)', tagIds: [], startDate: '2026-09-01',
-    lengthDays: null, status: 'active', rulesLocked: false, deletedAt: null, sortOrder: 0,
+    lengthDays: null, status: 'active', pauses: [], rulesLocked: false, deletedAt: null, sortOrder: 0,
     ...over,
   }
 }
@@ -134,5 +134,24 @@ describe('tagStats', () => {
       ...Array.from({ length: 8 }, (_, k) => log(`2026-09-1${k}`, { tags: ['выходной'] })),
     ]
     expect(tagStats(logs)[0]?.tag).toBe('выходной')
+  })
+})
+
+describe('forecast и пауза', () => {
+  it('на незакрытой паузе прогноза нет — финиш неизвестен', () => {
+    const paused = challenge({ lengthDays: 30, pauses: [{ from: '2026-09-15', to: null }] })
+    expect(forecast(paused, entriesBack(20, () => true), TODAY)).toBeNull()
+  })
+
+  it('закрытая пауза отодвигает финиш — дней до него становится больше', () => {
+    const paused = challenge({ lengthDays: 30, pauses: [{ from: '2026-09-10', to: '2026-09-14' }] })
+    // финиш 5 октября вместо 30 сентября
+    expect(forecast(paused, {}, TODAY)?.daysLeft).toBe(15)
+  })
+
+  it('дни паузы в темп не входят', () => {
+    const paused = challenge({ lengthDays: 30, pauses: [{ from: '2026-09-10', to: '2026-09-14' }] })
+    // выполнены все дни, кроме паузы: темп ровно единица, а не 15 из 20
+    expect(forecast(paused, entriesBack(20, () => true), TODAY)?.pace).toBe(1)
   })
 })

@@ -15,6 +15,7 @@ const existing = (over: Partial<Challenge> = {}): Challenge => ({
   startDate: '2026-09-01',
   lengthDays: null,
   status: 'active',
+  pauses: [],
   rulesLocked: false,
   deletedAt: null,
   sortOrder: 0,
@@ -73,6 +74,7 @@ describe('buildChallenge', () => {
     const c = buildChallenge(draft(), [existing({ sortOrder: 4 })], '2026-09-21')
     expect(c.startDate).toBe('2026-09-21')
     expect(c.status).toBe('active')
+    expect(c.pauses).toEqual([])
     expect(c.sortOrder).toBe(5)
   })
 

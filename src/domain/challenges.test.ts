@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyPatch, isLive, onDay } from './challenges'
+import { applyPatch, isLive, onDay, pause, resume } from './challenges'
+import { parseDay } from './date'
 import type { Challenge } from './types'
+
+const TODAY = parseDay('2026-09-21')
 
 const make = (over: Partial<Challenge> = {}): Challenge => ({
   id: 'c1',
@@ -15,6 +18,7 @@ const make = (over: Partial<Challenge> = {}): Challenge => ({
   startDate: '2026-09-01',
   lengthDays: null,
   status: 'active',
+  pauses: [],
   rulesLocked: false,
   deletedAt: null,
   sortOrder: 0,
@@ -104,5 +108,82 @@ describe('applyPatch', () => {
     const c = make()
     applyPatch(c, { name: 'Новое' })
     expect(c.name).toBe('Читать 20 страниц')
+  })
+})
+
+describe('pause', () => {
+  it('нерешённый день — пауза начинается сегодня', () => {
+    expect(pause(make(), {}, TODAY).pauses).toEqual([{ from: '2026-09-21', to: null }])
+  })
+
+  it('выполненная сегодня привычка остаётся выполненной — пауза с завтра', () => {
+    expect(pause(make(), { '2026-09-21': 1 }, TODAY).pauses).toEqual([{ from: '2026-09-22', to: null }])
+  })
+
+  it('недобор по счётной привычке день не решает — пауза с сегодня', () => {
+    const steps = make({ measure: 'count', goal: 10000 })
+    expect(pause(steps, { '2026-09-21': 4000 }, TODAY).pauses[0]?.from).toBe('2026-09-21')
+  })
+
+  it('отказ без срыва — пауза с сегодня', () => {
+    expect(pause(make({ kind: 'quit' }), {}, TODAY).pauses[0]?.from).toBe('2026-09-21')
+  })
+
+  it('срыв сегодня паузой не стереть — пауза с завтра', () => {
+    expect(pause(make({ kind: 'quit' }), { '2026-09-21': 0 }, TODAY).pauses[0]?.from).toBe('2026-09-22')
+  })
+
+  it('прошлые паузы остаются в истории', () => {
+    const c = make({ pauses: [{ from: '2026-09-05', to: '2026-09-07' }] })
+    expect(pause(c, {}, TODAY).pauses).toEqual([
+      { from: '2026-09-05', to: '2026-09-07' },
+      { from: '2026-09-21', to: null },
+    ])
+  })
+
+  it('на паузе повторная пауза ничего не меняет', () => {
+    const c = make({ pauses: [{ from: '2026-09-15', to: null }] })
+    expect(pause(c, {}, TODAY)).toEqual(c)
+  })
+
+  it('не меняет исходный объект', () => {
+    const c = make()
+    pause(c, {}, TODAY)
+    expect(c.pauses).toEqual([])
+  })
+})
+
+describe('resume', () => {
+  it('закрывает паузу вчерашним днём — сегодня челлендж снова идёт', () => {
+    const c = make({ pauses: [{ from: '2026-09-15', to: null }] })
+    expect(resume(c, TODAY).pauses).toEqual([{ from: '2026-09-15', to: '2026-09-20' }])
+  })
+
+  it('возобновление в день постановки убирает паузу совсем', () => {
+    const c = make({ pauses: [{ from: '2026-09-21', to: null }] })
+    expect(resume(c, TODAY).pauses).toEqual([])
+  })
+
+  it('пауза, назначенная на завтра, при возобновлении сегодня исчезает', () => {
+    const c = make({ pauses: [{ from: '2026-09-22', to: null }] })
+    expect(resume(c, TODAY).pauses).toEqual([])
+  })
+
+  it('прошлые паузы остаются в истории', () => {
+    const c = make({
+      pauses: [
+        { from: '2026-09-05', to: '2026-09-07' },
+        { from: '2026-09-15', to: null },
+      ],
+    })
+    expect(resume(c, TODAY).pauses).toEqual([
+      { from: '2026-09-05', to: '2026-09-07' },
+      { from: '2026-09-15', to: '2026-09-20' },
+    ])
+  })
+
+  it('не на паузе — ничего не меняет', () => {
+    const c = make()
+    expect(resume(c, TODAY)).toEqual(c)
   })
 })
