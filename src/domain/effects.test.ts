@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
-import { challengeEffects, effectText, tagEffects, verdictOf, type Estimate, type Strength } from './effects'
+import { beforeAfter, challengeEffects, effectText, tagEffects, verdictOf, type Estimate, type Strength } from './effects'
 import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
 
 const TODAY = parseDay('2026-09-21')
@@ -391,5 +391,77 @@ describe('теги дня в двух окнах', () => {
 
     // каждый пропуск выбивает сам день и соседние — там неизвестны «вчера» или «завтра»
     expect(tagEffects(logs).find((e) => e.tag === 'встречи')!.days).toBe(FULL - 15)
+  })
+})
+
+describe('до и после старта — когда дни сравнить не с чем', () => {
+  /** Отказ, начатый на 60-й день истории: срывов нет, поэтому окна «с/без» пусты. */
+  const quit = (over: Partial<Challenge> = {}) =>
+    challenge({ id: 'q', code: 'БСГ', kind: 'quit', startDate: dayKey(addDays(TODAY, 60 - DAYS)), ...over })
+  /** Мир-ступенька: до старта оценки одни, после — другие. */
+  const step = (seed: number, jump: number, tags?: (i: number) => string[]) =>
+    simulate(seed, { done: coin, score: (d) => 5 + (d.i >= 60 ? jump : 0), tags })
+
+  it('без пропусков сравнивает месяц до старта с месяцем после — и не сильнее «похоже»', () => {
+    const w = step(50, 2)
+    const [e] = challengeEffects([quit()], { q: {} }, w.logs, TODAY)
+
+    expect(e!.verdict).toBe('insufficient')
+    expect(e!.beforeAfter!.span).toBe(30)
+    expect(e!.beforeAfter!.byMetric.day.strength).toBe('likely')
+    expect(e!.beforeAfter!.byMetric.day.delta).toBeCloseTo(2, 0)
+  })
+
+  it('пока есть с чем сравнить дни, «до/после» не считается', () => {
+    const w = step(51, 2)
+    const c = challenge({ startDate: dayKey(addDays(TODAY, 60 - DAYS)) })
+    const [e] = challengeEffects([c], { c1: w.entries }, w.logs, TODAY)
+
+    expect(e!.verdict).not.toBe('insufficient')
+    expect(e!.beforeAfter).toBeNull()
+  })
+
+  it('без оценок до старта сравнивать не с чем', () => {
+    const w = step(52, 2)
+    const logs = w.logs.filter((_l, i) => i >= 60)
+
+    expect(beforeAfter(quit(), [quit()], logs, TODAY).byMetric.day.strength).toBe('few')
+  })
+
+  it('окно не длиннее того, что прошло после старта', () => {
+    const w = step(53, 2)
+    const late = quit({ startDate: dayKey(addDays(TODAY, -12)) })
+
+    // прошло 12 дней: окна по 12 дней с каждой стороны
+    expect(beforeAfter(late, [late], w.logs, TODAY).span).toBe(12)
+  })
+
+  it('начатые почти одновременно не разделить — вывод не сильнее «неясно»', () => {
+    const w = step(54, 2)
+    const other = challenge({ id: 'o', code: 'ШАГ', startDate: dayKey(addDays(TODAY, 58 - DAYS)) })
+    const ba = beforeAfter(quit(), [quit(), other], w.logs, TODAY)
+
+    expect(ba.inseparableFrom.map((c) => c.id)).toEqual(['o'])
+    expect(ba.byMetric.day.strength).toBe('unclear')
+  })
+
+  it('старт другого челленджа внутри окна отмечается, но вывод не гасит', () => {
+    const w = step(55, 2)
+    const other = challenge({ id: 'o', code: 'ЧТН', startDate: dayKey(addDays(TODAY, 45 - DAYS)) })
+    const ba = beforeAfter(quit(), [quit(), other], w.logs, TODAY)
+
+    expect(ba.overlaps.map((c) => c.id)).toEqual(['o'])
+    expect(ba.inseparableFrom).toEqual([])
+    expect(ba.byMetric.day.strength).toBe('likely')
+  })
+
+  it('дни болезни в сравнение не идут', () => {
+    const sick = new Set([40, 70])
+    const w = step(56, 2, (i) => (sick.has(i) ? ['болел'] : []))
+    const ba = beforeAfter(quit(), [quit()], w.logs, TODAY)
+
+    // каждая болезнь выбивает свой день и следующий
+    expect(ba.daysBefore).toBe(28)
+    expect(ba.daysAfter).toBe(28)
   })
 })
