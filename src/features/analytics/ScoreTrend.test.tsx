@@ -38,7 +38,7 @@ describe('ScoreTrend', () => {
 
     const tip = screen.getByRole('status')
     expect(tip).toHaveTextContent('14 сентября')
-    expect(tip).toHaveTextContent('6,0')
+    expect(tip).toHaveTextContent('6,5') // 14-е — тринадцатый день: 6 + 1 × 0,5
   })
 
   it('день без оценки в подсказке так и назван', () => {
