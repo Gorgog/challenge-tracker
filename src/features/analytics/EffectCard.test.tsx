@@ -56,6 +56,12 @@ describe('EffectCard', () => {
     expect(screen.getByText(/делается вместе с ЧТН/)).toBeInTheDocument()
   })
 
+  it('близнец назван: делаются почти всегда вместе, и чей это эффект — не сказать', () => {
+    const twin = challenge({ id: 'read', code: 'ЧТН', name: 'Читать 20 страниц' })
+    render(<EffectCard effect={effect(est('flat', 0.1), est('likely', 1.2), { twin })} />)
+    expect(screen.getByText(/почти всегда вместе с ЧТН — чей эффект, не сказать/)).toBeInTheDocument()
+  })
+
   it('челлендж на паузе помечен', () => {
     const paused = challenge({ pauses: [{ from: '2026-09-01', to: null }] })
     render(<EffectCard effect={effect(est('flat', 0.1), est('flat', 0.1), { challenge: paused })} />)

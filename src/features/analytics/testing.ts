@@ -55,6 +55,7 @@ export function effect(same: Estimate, next: Estimate, over: Partial<ChallengeEf
     windows: w,
     ...verdictOf(w.day),
     partner: null,
+    twin: null,
     days: 60,
     sickDays: 0,
     beforeAfter: null,

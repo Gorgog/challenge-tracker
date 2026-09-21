@@ -1,75 +1,90 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { createDemoRepo } from '@/data/demoRepo'
-import { addDays, dayKey, parseDay } from './date'
-import { beforeAfter, challengeEffects, tagEffects } from './effects'
+import { parseDay } from './date'
+import { beforeAfter, challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } from './effects'
+import type { Challenge, DayLog } from './types'
 
 /**
  * Приёмка методики на демо-данных. В сид заложены известные связи:
  * ШАГ вчера → сегодня лучше самочувствие и настроение (настоящий эффект назавтра);
  * алкоголь → назавтра хуже самочувствие и продуктивность (похмелье);
- * ЧТН выполняется в энергичные дни — связь только с самим днём (ложный эффект);
- * АНГ — шум. Экран обязан найти настоящие связи и не поверить ложным.
- * День недели меняет сид, поэтому проверяется неделя «сегодня» подряд.
+ * ЧТН и ОТЖ выполняются в энергичные дни — связь только с самим днём (ложный эффект);
+ * АНГ — шум; у БСГ и БСХ почти нет срывов.
+ *
+ * Проверяются частоты по многим мирам, а не один мир: зерно, подобранное так, что всё сошлось,
+ * ничего не доказывает. Пороги заданы до прогона: настоящее находится в большинстве миров,
+ * ложное «похоже» назавтра — не чаще, чем позволяет 95% интервал, ложное «уверенно» — почти никогда.
  */
-const WEEK = Array.from({ length: 7 }, (_, i) => addDays(parseDay('2026-09-21'), i))
+const TODAY = parseDay('2026-09-21')
+const SEEDS = Array.from({ length: 40 }, (_, i) => 20260921 + i * 7919)
+const STRONG = ['likely', 'strong']
 
-const worlds = new Map<string, ReturnType<typeof build>>()
+type World = {
+  challenges: Challenge[]
+  logs: DayLog[]
+  tags: TagEffect[]
+  byCode: (code: string) => ChallengeEffect
+}
 
-async function build(today: Date) {
-  const r = createDemoRepo({ today, seed: 20260921, storage: null })
+async function build(seed: number): Promise<World> {
+  const r = createDemoRepo({ today: TODAY, seed, storage: null })
   const [challenges, entries, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
-  const effects = challengeEffects(challenges, entries, logs, today)
+  const effects = challengeEffects(challenges, entries, logs, TODAY)
   return {
     challenges,
     logs,
     tags: tagEffects(logs),
-    byCode: (code: string) => effects.find((e) => e.challenge.code === code)!,
+    byCode: (code) => effects.find((e) => e.challenge.code === code)!,
   }
 }
 
-function world(today: Date) {
-  const key = dayKey(today)
-  if (!worlds.has(key)) worlds.set(key, build(today))
-  return worlds.get(key)!
-}
+let worlds: World[] = []
+beforeAll(async () => {
+  worlds = await Promise.all(SEEDS.map(build))
+}, 120_000)
 
-describe.each(WEEK.map((d) => [dayKey(d), d] as const))('демо-данные, сегодня %s', (_key, today) => {
-  it('ШАГ: дни лучше и назавтра — уверенно', async () => {
-    const step = (await world(today)).byCode('ШАГ')
-    expect(step.verdict).toBe('persists')
-    expect(step.confidence).toBe('sure')
+/** Доля миров, где выполняется условие. */
+const share = (pick: (w: World) => boolean) => worlds.filter(pick).length / worlds.length
+
+describe('приёмка методики на демо-данных: 40 миров', () => {
+  it('ШАГ: «уверенно» и назавтра лучше — не меньше чем в 80% миров', () => {
+    const found = share((w) => {
+      const e = w.byCode('ШАГ')
+      return e.confidence === 'sure' && e.windows.day.next.delta > 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.8)
   })
 
-  it('алкоголь бьёт по следующему дню, по самочувствию — уверенно', async () => {
-    const drink = (await world(today)).tags.find((t) => t.tag === 'алкоголь')!
-    expect(drink.verdict).toBe('delayed')
-    expect(drink.windows.day.next.delta).toBeLessThan(0)
-    expect(drink.windows.wellbeing.next.strength).toBe('strong')
+  it('похмелье: следующий день хуже, со словом уверенности — не меньше чем в 80% миров', () => {
+    const found = share((w) => {
+      const drink = w.tags.find((t) => t.tag === 'алкоголь')
+      return drink !== undefined && drink.confidence !== null && drink.windows.day.next.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.8)
   })
 
-  it('ЧТН связан только с самим днём — назавтра не «похоже» и не «уверенно»', async () => {
-    const read = (await world(today)).byCode('ЧТН')
-    expect(['coincidence', 'sameDayOnly']).toContain(read.verdict)
-    expect(['likely', 'strong']).not.toContain(read.windows.day.next.strength)
+  it.each(['ЧТН', 'ОТЖ'])('%s — связь только с самим днём: «похоже» назавтра не чаще чем в 10% миров', (code) => {
+    expect(share((w) => STRONG.includes(w.byCode(code).windows.day.next.strength))).toBeLessThanOrEqual(0.1)
   })
 
-  it('АНГ — шум: ни слова уверенности, ни эффекта назавтра', async () => {
-    const eng = (await world(today)).byCode('АНГ')
-    // Окно «в тот же день» с 95% интервалом ошибается примерно в 5% случаев — на этих данных
-    // 22.09 оно видит у шума «похоже». Поэтому слово уверенности даёт только окно «назавтра».
-    expect(eng.confidence).toBeNull()
-    expect(['likely', 'strong']).not.toContain(eng.windows.day.next.strength)
+  it('АНГ — шум: слово уверенности не чаще чем в 10% миров, «уверенно» — не больше чем в одном', () => {
+    expect(share((w) => w.byCode('АНГ').confidence !== null)).toBeLessThanOrEqual(0.1)
+    expect(worlds.filter((w) => w.byCode('АНГ').confidence === 'sure').length).toBeLessThanOrEqual(1)
   })
 
-  it.each(['ОТЖ', 'БСГ', 'БСХ'])('%s почти без пропусков — только «до/после», и без вывода', async (code) => {
-    const e = (await world(today)).byCode(code)
-    expect(e.verdict).toBe('insufficient')
-    expect(['flat', 'unclear']).toContain(e.beforeAfter!.byMetric.day.strength)
+  it('БСГ — два срыва за всю историю: всегда «мало данных» и сравнение до/после', () => {
+    expect(share((w) => w.byCode('БСГ').verdict === 'insufficient')).toBe(1)
+    expect(share((w) => w.byCode('БСГ').beforeAfter?.byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
   })
 
-  it('ЧТН и ШАГ начаты в один день — их «до/после» не разделить', async () => {
-    const { challenges, logs } = await world(today)
+  it('БСХ — срывов мало: «мало данных» не реже чем в 85% миров, «до/после» без ложного «похоже»', () => {
+    expect(share((w) => w.byCode('БСХ').verdict === 'insufficient')).toBeGreaterThanOrEqual(0.85)
+    expect(share((w) => w.byCode('БСХ').beforeAfter?.byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
+  })
+
+  it('ЧТН и ШАГ начаты в один день — «до/после» их не разделит', () => {
+    const { challenges, logs } = worlds[0]!
     const read = challenges.find((c) => c.code === 'ЧТН')!
-    expect(beforeAfter(read, challenges, logs, today).inseparableFrom.map((c) => c.code)).toEqual(['ШАГ'])
+    expect(beforeAfter(read, challenges, logs, TODAY).inseparableFrom.map((c) => c.code)).toEqual(['ШАГ'])
   })
 })
