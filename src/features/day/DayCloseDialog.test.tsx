@@ -25,6 +25,19 @@ describe('окно итога дня', () => {
     expect(screen.getAllByText('не выбрано')).toHaveLength(3)
   })
 
+  it('якорь «5» стоит там, где значение 5, а не в середине дорожки', () => {
+    setup()
+    const anchor = screen.getAllByText(/5 — как обычно/)[0]!
+    /* (5 − 1) / (10 − 1) = 44,4 %. Ровно 50 % — это 5,5, а не 5. */
+    expect(anchor.style.left.startsWith('44.4')).toBe(true)
+  })
+
+  it('крайние якоря прижаты к краям дорожки', () => {
+    setup()
+    expect(screen.getAllByText(/1 — дно/)[0]!.style.left).toBe('0%')
+    expect(screen.getAllByText(/10 — отличное/)[0]!.style.left).toBe('100%')
+  })
+
   it('кнопка неактивна, пока выставлены не все три оценки', async () => {
     const { user } = setup()
     expect(saveButton()).toBeDisabled()
