@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -8,19 +8,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
 import { DAY_TAGS } from '@/domain/tags'
 import type { DayLog, ScoreField } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
-import { SCORE_MAX, SCORE_MIN, snapScore } from '@/domain/score'
+import { ScoreScale, type Scale } from './ScoreScale'
 
-type Scale = { field: ScoreField; label: string; low: string; high: string }
-
-/** Шкала без якорей — это просто число: 7 у одного и 7 у другого означали бы разное. */
-const SCALES: Scale[] = [
+const SCALES: (Scale & { field: ScoreField })[] = [
   { field: 'mood', label: 'Настроение', low: 'дно', high: 'отличное' },
   { field: 'wellbeing', label: 'Самочувствие', low: 'разбит', high: 'полон сил' },
   { field: 'productivity', label: 'Продуктивность', low: 'ничего', high: 'максимум' },
@@ -38,13 +34,6 @@ export type DayCloseDialogProps = {
   /** Передаётся только там, где отказаться можно: при правке уже закрытого дня. */
   onCancel?: () => void
 }
-
-/** Сколько бегунок доезжает до засечки после отпускания. */
-const SNAP_MS = 150
-
-/** Доля дорожки, на которой стоит значение. На шкале 0–10 пятёрка — ровно половина. */
-const anchorAt = (value: number) =>
-  `${((value - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100}%`
 
 type Draft = Record<ScoreField, number | null>
 
@@ -65,44 +54,6 @@ export function DayCloseDialog({
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
   const [tags, setTags] = useState<string[]>(() => [...(existing?.tags ?? [])])
   const [note, setNote] = useState(() => existing?.note ?? '')
-
-  /*
-   * Пока ползунок ведут, он идёт за пальцем с мелким шагом — иначе бегунок скачет
-   * по десяти позициям и отстаёт от руки. Отпустили — оценка округляется до целого,
-   * и бегунок доезжает до засечки: за это отвечает data-snapping.
-   */
-  const [dragging, setDragging] = useState<Partial<Record<ScoreField, number>>>({})
-  const [snapping, setSnapping] = useState<ScoreField | null>(null)
-
-  const commit = (field: ScoreField, raw: number) => {
-    setScores((prev) => ({ ...prev, [field]: snapScore(raw) }))
-    setDragging((prev) => {
-      const next = { ...prev }
-      delete next[field]
-      return next
-    })
-    setSnapping(field)
-    window.setTimeout(() => setSnapping((f) => (f === field ? null : f)), SNAP_MS)
-  }
-
-  /** Стрелки и Home/End двигают на целое: мелкий шаг нужен только пальцу. */
-  const onScaleKeyDown = (field: ScoreField, e: ReactKeyboardEvent) => {
-    const steps: Record<string, number> = {
-      ArrowRight: 1,
-      ArrowUp: 1,
-      PageUp: 1,
-      ArrowLeft: -1,
-      ArrowDown: -1,
-      PageDown: -1,
-    }
-    const step = steps[e.key]
-    const jump = e.key === 'Home' ? SCORE_MIN : e.key === 'End' ? SCORE_MAX : null
-    if (step === undefined && jump === null) return
-
-    e.preventDefault()
-    const base = scores[field] ?? 5
-    setScores((prev) => ({ ...prev, [field]: jump ?? snapScore(base + step!) }))
-  }
 
   const date = parseDay(day)
   const ready = SCALES.every((s) => scores[s.field] !== null)
@@ -153,62 +104,14 @@ export function DayCloseDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {SCALES.map((scale) => {
-          const value = scores[scale.field]
-          const live = dragging[scale.field]
-          /* Под пальцем цифра показывает, во что округлится оценка при отпускании. */
-          const shown = live !== undefined ? snapScore(live) : value
-          return (
-            <div key={scale.field} className="flex flex-col gap-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <b className="text-[13.5px] font-semibold">{scale.label}</b>
-                <em className="font-mono text-xs not-italic text-muted-foreground tabular-nums">
-                  {shown === null ? 'не выбрано' : `${shown} из ${SCORE_MAX}`}
-                </em>
-              </div>
-
-              <Slider
-                min={SCORE_MIN}
-                max={SCORE_MAX}
-                step={0.01}
-                value={[live ?? value ?? 5]}
-                thumbLabel={`${scale.label} от ${SCORE_MIN} до ${SCORE_MAX}`}
-                data-snapping={snapping === scale.field ? '' : undefined}
-                onValueChange={([next]) =>
-                  setDragging((prev) => ({ ...prev, [scale.field]: next ?? 5 }))
-                }
-                onValueCommit={([next]) => commit(scale.field, next ?? 5)}
-                onKeyDown={(e) => onScaleKeyDown(scale.field, e)}
-                className={cn(
-                  shown === null &&
-                    '[&_[data-slot=slider-range]]:bg-transparent [&_[data-slot=slider-thumb]]:border-input [&_[data-slot=slider-thumb]]:bg-input',
-                )}
-              />
-
-              {/*
-                Якоря стоят на позициях своих значений, а не по краям и середине:
-                середина дорожки — это 5,5, и подпись «5» с бегунком расходилась.
-              */}
-              <div className="relative h-4 font-mono text-[10.5px] text-muted-foreground">
-                <span className="absolute whitespace-nowrap" style={{ left: anchorAt(SCORE_MIN) }}>
-                  {SCORE_MIN} — {scale.low}
-                </span>
-                <span
-                  className="absolute -translate-x-1/2 whitespace-nowrap"
-                  style={{ left: anchorAt(5) }}
-                >
-                  5 — как обычно
-                </span>
-                <span
-                  className="absolute -translate-x-full whitespace-nowrap"
-                  style={{ left: anchorAt(SCORE_MAX) }}
-                >
-                  {SCORE_MAX} — {scale.high}
-                </span>
-              </div>
-            </div>
-          )
-        })}
+        {SCALES.map((scale) => (
+          <ScoreScale
+            key={scale.field}
+            scale={scale}
+            value={scores[scale.field]}
+            onChange={(value) => setScores((prev) => ({ ...prev, [scale.field]: value }))}
+          />
+        ))}
 
         <div className="flex flex-col gap-2">
           <b className="text-[13.5px] font-semibold">Что было в этом дне</b>
