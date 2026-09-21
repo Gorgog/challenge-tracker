@@ -103,6 +103,8 @@ const effectOf = (w: { entries: EntryMap; logs: DayLog[] }, c = challenge()) =>
 
 const coin = (_d: SimDay, rnd: () => number) => rnd() < 0.5
 const STRONG = ['likely', 'strong']
+/** «Возможно» и сильнее. */
+const WORDED = ['possible', 'likely', 'strong']
 
 describe('окна эффекта челленджа', () => {
   it('эффект на следующий день находится в окне «назавтра», а в тот же день разницы нет', () => {
@@ -253,6 +255,31 @@ function companion(entries: EntryMap, logs: DayLog[], seed: number, together: nu
   }
   return out
 }
+
+describe('общий подъём или спад оценок', () => {
+  /** Выход из выгорания: оценки за историю растут на четыре балла. */
+  const rise = (d: SimDay) => 3 + (4 * d.i) / DAYS
+
+  it('привычка учащается, пока оценки растут, — это не её эффект ни в тот же день, ни назавтра', () => {
+    const w = simulate(80, { done: (d, rnd) => rnd() < 0.1 + (0.8 * d.i) / DAYS, score: rise })
+    const { day } = effectOf(w).windows
+
+    expect(WORDED).not.toContain(day.same.strength)
+    expect(WORDED).not.toContain(day.next.strength)
+  })
+
+  it('настоящий эффект назавтра находится и при общем подъёме, даже если привычка учащается', () => {
+    const w = simulate(81, {
+      done: (d, rnd) => rnd() < 0.2 + (0.4 * d.i) / DAYS,
+      score: (d, y) => rise(d) + (y?.done ? 1.5 : 0),
+    })
+    const { day } = effectOf(w).windows
+
+    expect(STRONG).toContain(day.next.strength)
+    expect(day.next.delta).toBeCloseTo(1.5, 0)
+    expect(WORDED).not.toContain(day.same.strength)
+  })
+})
 
 describe('сосед — челлендж, который делается вместе', () => {
   const a = challenge({ id: 'a', code: 'ШАГ' })
