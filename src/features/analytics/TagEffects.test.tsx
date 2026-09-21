@@ -31,3 +31,10 @@ describe('TagEffects', () => {
     expect(screen.getByText(/тегов пока мало/i)).toBeInTheDocument()
   })
 })
+
+describe('TagEffects — вид строки', () => {
+  it('строка тега показывает, что раскрывается', () => {
+    render(<TagEffects tags={[tag('встречи', est('flat', 0.1), est('flat', 0.1))]} />)
+    expect(screen.getByText('встречи').closest('summary')!.querySelector('svg')).not.toBeNull()
+  })
+})

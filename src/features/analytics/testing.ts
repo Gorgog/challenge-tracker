@@ -72,6 +72,8 @@ export const beforeAfterOf = (over: Partial<BeforeAfter> = {}): BeforeAfter => {
   const day = est('flat', 0.3, [28, 29])
   return {
     span: 30,
+    sinceStart: 60,
+    beforeStart: 60,
     daysBefore: 29,
     daysAfter: 28,
     byMetric: { day, mood: day, wellbeing: day, productivity: day },

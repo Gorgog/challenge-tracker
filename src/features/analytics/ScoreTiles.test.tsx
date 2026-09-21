@@ -26,6 +26,11 @@ describe('ScoreTiles', () => {
     expect(screen.getByRole('group', { name: /оценка дня/i })).toHaveTextContent('—')
   })
 
+  it('сдвиг на маленькой выборке не показывается — меньше десяти дней в группе это шум', () => {
+    render(<ScoreTiles averages={{ current: all(7), previous: all(5), currentDays: 28, previousDays: 3 }} />)
+    expect(screen.getByRole('group', { name: /оценка дня/i })).not.toHaveTextContent(/[+−]/)
+  })
+
   it('без прошлого месяца сдвиг не показывается', () => {
     render(<ScoreTiles averages={{ current: all(7), previous: all(null), currentDays: 20, previousDays: 0 }} />)
     expect(screen.getByRole('group', { name: /оценка дня/i })).not.toHaveTextContent(/[+−]/)

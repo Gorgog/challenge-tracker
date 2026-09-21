@@ -19,7 +19,7 @@ const dayPath = (container: HTMLElement) => container.querySelector('[data-line=
 describe('ScoreTrend', () => {
   it('описан для читалки: что за график и за какой срок', () => {
     render(<ScoreTrend series={series()} />)
-    expect(screen.getByRole('img', { name: /оценка дня за 20 дней/i })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: /оценка дня за 20 дней/i })).toBeInTheDocument()
   })
 
   it('линия оценки дня рвётся там, где оценок не было', () => {
@@ -54,5 +54,34 @@ describe('ScoreTrend', () => {
     await user.tab()
     await user.keyboard('{ArrowLeft}')
     expect(screen.getByRole('status')).toHaveTextContent('19 сентября')
+  })
+})
+
+describe('ScoreTrend — мышь, палец и читалка', () => {
+  it('клик по дню показывает этот день, а не вчерашний', async () => {
+    const user = userEvent.setup()
+    render(<ScoreTrend series={series()} />)
+
+    await user.click(screen.getByTestId('day-2026-09-05'))
+    expect(screen.getByRole('status')).toHaveTextContent('5 сентября')
+  })
+
+  it('тап пальцем показывает день и не гаснет, когда палец убран; следующий тап — следующий день', async () => {
+    const user = userEvent.setup()
+    render(<ScoreTrend series={series()} />)
+
+    await user.pointer({ keys: '[TouchA]', target: screen.getByTestId('day-2026-09-05') })
+    expect(screen.getByRole('status')).toHaveTextContent('5 сентября')
+    await user.pointer({ keys: '[TouchA]', target: screen.getByTestId('day-2026-09-10') })
+    expect(screen.getByRole('status')).toHaveTextContent('10 сентября')
+  })
+
+  it('читалке значение дня отдаётся через aria-valuetext', async () => {
+    const user = userEvent.setup()
+    render(<ScoreTrend series={series()} />)
+
+    await user.tab()
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', expect.stringMatching(/19 сентября/))
   })
 })

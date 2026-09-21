@@ -684,3 +684,23 @@ describe('порог показа тегов', () => {
     expect(tagEffects(w.logs).map((e) => e.tag)).toContain('дорога')
   })
 })
+
+describe('до и после старта — почему сравнивать не с чем', () => {
+  it('начат сегодня: прошедших дней нет, а оценки до старта есть', () => {
+    const w = simulate(67, { done: coin, score: () => 6 })
+    const fresh = challenge({ id: 'n', kind: 'quit', startDate: dayKey(TODAY) })
+    const ba = beforeAfter(fresh, [fresh], w.logs, TODAY)
+
+    expect(ba.sinceStart).toBe(0)
+    expect(ba.beforeStart).toBeGreaterThan(0)
+  })
+
+  it('до старта оценок нет: прошедшие дни есть, а сравнивать не с чем', () => {
+    const w = simulate(68, { done: coin, score: () => 6 })
+    const first = challenge({ id: 'f', kind: 'quit', startDate: dayKey(addDays(TODAY, -DAYS)) })
+    const ba = beforeAfter(first, [first], w.logs, TODAY)
+
+    expect(ba.sinceStart).toBeGreaterThan(0)
+    expect(ba.beforeStart).toBe(0)
+  })
+})

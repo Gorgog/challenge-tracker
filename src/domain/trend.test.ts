@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { averages, scoreSeries } from './trend'
+import { averages, coverage, scoreSeries } from './trend'
 import type { DayLog } from './types'
 
 const TODAY = parseDay('2026-09-21')
@@ -70,5 +70,52 @@ describe('averages — средние за месяц и сдвиг к прош�
     const a = averages([log(1, 8)], TODAY, 30)
     expect(a.previous.day).toBeNull()
     expect(a.previousDays).toBe(0)
+  })
+})
+
+describe('scoreSeries и averages — границы окон', () => {
+  it('сглаживание захватывает дни до начала ряда: девятка накануне и пятёрка в первый день дают семь', () => {
+    const logs = [log(11, 9), log(10, 5)]
+    expect(scoreSeries(logs, TODAY, 10)[0]!.smooth.day).toBe(7)
+  })
+
+  it('окно сглаживания — ровно неделя: седьмой день назад входит, восьмой — нет', () => {
+    expect(scoreSeries([log(7, 10), log(1, 4)], TODAY, 1)[0]!.smooth.day).toBe(7)
+    expect(scoreSeries([log(8, 10), log(1, 4)], TODAY, 1)[0]!.smooth.day).toBe(4)
+  })
+
+  it('последние 30 дней не включают сегодня — он ещё идёт', () => {
+    const logs = [log(0, 10), log(1, 4)]
+    expect(averages(logs, TODAY, 30).current.day).toBe(4)
+  })
+
+  it('прошлые 30 — ровно с 31-го по 60-й день назад, без перекрытия с текущими', () => {
+    const logs = [log(30, 8), log(31, 2), log(60, 2), log(61, 9)]
+    const a = averages(logs, TODAY, 30)
+
+    expect(a.current.day).toBe(8)
+    expect(a.previous.day).toBe(2)
+    expect(a.previousDays).toBe(2)
+  })
+
+  it('незакрытый день в средние не идёт', () => {
+    const logs = [log(1, 10, { closedAt: null }), log(2, 4)]
+    expect(averages(logs, TODAY, 30).current.day).toBe(4)
+  })
+})
+
+describe('coverage — сколько дней оценено', () => {
+  it('закрытый сегодня день не считается: «оценено» — по вчера, как и «из скольких»', () => {
+    const logs = [log(0, 7), log(1, 7), log(3, 7)]
+    expect(coverage(logs, TODAY)).toEqual({ rated: 2, span: 3, sick: 0 })
+  })
+
+  it('первый же закрытый день не даёт «1 из 0»', () => {
+    expect(coverage([log(0, 7)], TODAY)).toEqual({ rated: 0, span: 0, sick: 0 })
+  })
+
+  it('дни болезни считаются среди оценённых', () => {
+    const logs = [log(1, 3, { tags: ['болел'] }), log(2, 7)]
+    expect(coverage(logs, TODAY).sick).toBe(1)
   })
 })

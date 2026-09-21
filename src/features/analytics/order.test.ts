@@ -39,3 +39,11 @@ describe('tagsOf — порядок тегов', () => {
     expect(tagsOf([rare, often, drink]).map((t) => t.tag)).toEqual(['алкоголь', 'встречи', 'ссора'])
   })
 })
+
+describe('cardsOf — сила полосы', () => {
+  it('полоса про «назавтра» и сильна по окну «назавтра», а не по тому же дню', () => {
+    const streak = effect(est('flat', 0.1), est('echo', 2), { challenge: challenge({ id: 'streak' }) })
+    const sameDay = effect(est('likely', 1), est('flat', 0.1), { challenge: challenge({ id: 'same' }) })
+    expect(ids(cardsOf([sameDay, streak]))).toEqual(['streak', 'same'])
+  })
+})
