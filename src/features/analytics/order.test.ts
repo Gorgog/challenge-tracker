@@ -23,6 +23,14 @@ describe('cardsOf — какие карточки и в каком порядк�
     expect(ids(cardsOf([few, none, sameDay, likely, sure]))).toEqual(['sure', 'likely', 'same', 'none', 'few'])
   })
 
+  it('«возможно» — после «похоже», но выше связей с самим днём', () => {
+    const likely = effect(est('flat', 0.1), est('likely', 1), { challenge: challenge({ id: 'likely' }) })
+    const possible = effect(est('flat', 0.1), est('possible', 1.4), { challenge: challenge({ id: 'possible' }) })
+    const sameDay = effect(est('likely', 1.2), est('flat', 0.1), { challenge: challenge({ id: 'same' }) })
+
+    expect(ids(cardsOf([sameDay, possible, likely]))).toEqual(['likely', 'possible', 'same'])
+  })
+
   it('внутри одного уровня сильнее — выше, в какую бы сторону ни было', () => {
     const small = effect(est('flat', 0.1), est('likely', 0.8), { challenge: challenge({ id: 'small' }) })
     const big = effect(est('flat', 0.1), est('likely', -1.9), { challenge: challenge({ id: 'big' }) })

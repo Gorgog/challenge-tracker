@@ -26,9 +26,16 @@ describe('TagEffects', () => {
     expect(screen.getByRole('row', { name: /продуктивность/i })).toBeVisible()
   })
 
-  it('без тегов — объясняет, чего не хватает', () => {
+  it('без тегов — объясняет, чего не хватает: тег показывается с трёх дней', () => {
     render(<TagEffects tags={[]} />)
     expect(screen.getByText(/тегов пока мало/i)).toBeInTheDocument()
+    expect(screen.getByText(/хотя бы в 3 днях/i)).toBeInTheDocument()
+  })
+
+  it('ранний вывод по тегу — со словом «Возможно» в пунктирной рамке', () => {
+    render(<TagEffects tags={[tag('алкоголь', est('flat', 0.1), est('possible', -1.2, [4, 20]), { tagDays: 4 })]} />)
+    expect(screen.getByText('Возможно')).toHaveClass('border-dashed')
+    expect(screen.getByText('Следующий день хуже')).toBeInTheDocument()
   })
 })
 
