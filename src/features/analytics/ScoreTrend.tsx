@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { formatHuman, parseDay } from '@/domain/date'
 import { METRICS, type Metric } from '@/domain/effects'
-import type { SeriesDay } from '@/domain/trend'
+import type { SeriesDay, SleepDay } from '@/domain/trend'
 import { plural } from '@/lib/plural'
 import { METRIC_LABEL, score1, shortDate } from './words'
 
@@ -13,6 +13,8 @@ const SCALES: { metric: Exclude<Metric, 'day'>; dash: string }[] = [
   { metric: 'wellbeing', dash: '5 3' },
   { metric: 'productivity', dash: '1.5 3' },
 ]
+/** Сон — штрих с точкой: четвёртая тонкая линия не должна сливаться со шкалами. */
+const SLEEP_DASH = '7 3 1.5 3'
 
 /**
  * Ширина контейнера: график рисуется в настоящих пикселях, чтобы подписи не сжимались на телефоне.
@@ -51,10 +53,16 @@ function linePath(values: (number | null)[], x: (i: number) => number, y: (v: nu
   return d
 }
 
-/** Оценки по дням: неделя сглаживает, пропуски рвут, подробности — по наведению, тапу и стрелкам. */
-export function ScoreTrend({ series }: { series: SeriesDay[] }) {
+/**
+ * Оценки по дням: неделя сглаживает, пропуски рвут, подробности — по наведению, тапу и стрелкам.
+ * `sleep` — сон по утрам за те же дни; сопоставляется по дню, без утр линии нет.
+ */
+export function ScoreTrend({ series, sleep = [] }: { series: SeriesDay[]; sleep?: SleepDay[] }) {
   const [ref, width] = useWidth(640)
   const [active, setActive] = useState<number | null>(null)
+  const nights = new Map(sleep.map((d) => [d.day, d]))
+  const sleepLine = series.map((d) => nights.get(d.day)?.smooth ?? null)
+  const withSleep = sleepLine.some((v) => v !== null)
 
   const n = series.length
   const plotW = width - PAD.left - PAD.right
@@ -74,8 +82,10 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
     const d = series[i]
     if (!d) return ''
     const date = formatHuman(parseDay(d.day))
-    if (d.raw.day === null) return `${date} — без оценки`
-    return `${date}: ${METRICS.map((m) => `${METRIC_LABEL[m].toLowerCase()} ${score1(d.raw[m]!)}`).join(' · ')}`
+    const night = nights.get(d.day)?.raw ?? null
+    const slept = night === null ? '' : ` · сон ${score1(night)}`
+    if (d.raw.day === null) return `${date} — без оценки${slept}`
+    return `${date}: ${METRICS.map((m) => `${METRIC_LABEL[m].toLowerCase()} ${score1(d.raw[m]!)}`).join(' · ')}${slept}`
   }
   const shown = active ?? n - 1
 
@@ -142,6 +152,16 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
             strokeDasharray={dash || undefined}
           />
         ))}
+        {withSleep && (
+          <path
+            data-line="sleep"
+            d={linePath(sleepLine, x, y)}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth={1.25}
+            strokeDasharray={SLEEP_DASH}
+          />
+        )}
         {series.map((d, i) =>
           d.raw.day === null ? null : (
             <circle key={d.day} cx={x(i)} cy={y(d.raw.day)} r={1.6} fill="var(--primary)" opacity={0.35} />
@@ -201,6 +221,22 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
             {METRIC_LABEL[metric].toLowerCase()}
           </li>
         ))}
+        {withSleep && (
+          <li className="flex items-center gap-1.5">
+            <svg width="18" height="6" aria-hidden="true">
+              <line
+                x1="0"
+                x2="18"
+                y1="3"
+                y2="3"
+                stroke="var(--muted-foreground)"
+                strokeWidth="1.25"
+                strokeDasharray={SLEEP_DASH}
+              />
+            </svg>
+            сон, утром
+          </li>
+        )}
       </ul>
     </div>
   )

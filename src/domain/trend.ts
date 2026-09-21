@@ -1,6 +1,6 @@
 import { addDays, dayKey, daysBetween, parseDay } from './date'
 import { METRICS, SICK, scoreOf, type Metric } from './effects'
-import type { DayLog } from './types'
+import type { DayLog, DayStart } from './types'
 
 /** Оценки по метрикам; null — оценки нет, и это не ноль. */
 export type Scores = Record<Metric, number | null>
@@ -86,3 +86,54 @@ export function averages(logs: DayLog[], today: Date, days = 30): Averages {
   const previous = between(2 * days, days + 1)
   return { current: mean(current), previous: mean(previous), currentDays: current.length, previousDays: previous.length }
 }
+
+/** Сон по дням с утром; пропущенное утро — не день с утром. */
+const sleepByDay = (starts: DayStart[]) =>
+  new Map(starts.flatMap((s) => (s.morning ? [[s.day, s.morning.sleep] as const] : [])))
+
+const meanOf = (values: number[]) => (values.length ? values.reduce((s, v) => s + v, 0) / values.length : null)
+
+export type SleepDay = {
+  day: string
+  /** Сон этого утра; null — утро пропущено или день не начат. */
+  raw: number | null
+  /** Среднее утр за неделю, считая сам день. */
+  smooth: number | null
+}
+
+/**
+ * Сон по утрам за `days` дней по вчера — как ряд оценок: пропущенное утро — пусто, а не ноль,
+ * сглаживание — неделя. Утро дня без итога в ряду есть: сон известен и без вечера.
+ */
+export function sleepSeries(starts: DayStart[], today: Date, days = 90): SleepDay[] {
+  const byDay = sleepByDay(starts)
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDays(today, i - days)
+    const week = Array.from({ length: SMOOTH_DAYS }, (_, k) => byDay.get(dayKey(addDays(date, -k)))).filter(
+      (v): v is number => v !== undefined,
+    )
+    return { day: dayKey(date), raw: byDay.get(dayKey(date)) ?? null, smooth: meanOf(week) }
+  })
+}
+
+export type SleepAverages = {
+  current: number | null
+  previous: number | null
+  /** Утр в окне — по ним, а не по оценкам дня, решается, показывать ли сдвиг. */
+  currentDays: number
+  previousDays: number
+}
+
+/** Средний сон за последние `days` дней (по вчера) и за столько же дней до них — по дням с утром. */
+export function sleepAverages(starts: DayStart[], today: Date, days = 30): SleepAverages {
+  const byDay = [...sleepByDay(starts)]
+  const between = (from: number, to: number) => {
+    const lo = dayKey(addDays(today, -from))
+    const hi = dayKey(addDays(today, -to))
+    return byDay.filter(([day]) => day >= lo && day <= hi).map(([, sleep]) => sleep)
+  }
+  const current = between(days, 1)
+  const previous = between(2 * days, days + 1)
+  return { current: meanOf(current), previous: meanOf(previous), currentDays: current.length, previousDays: previous.length }
+}
+
