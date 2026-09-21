@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { addDays, dayKey, parseDay } from '@/domain/date'
+import { addDays, dayKey, isoDow, parseDay } from '@/domain/date'
 import { isPaused } from '@/domain/pauses'
-import { dayOutcome } from '@/domain/streaks'
+import { activeDays, dayOutcome } from '@/domain/streaks'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
+import type { DayLog, ScoreField } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
 
 const TODAY = parseDay('2026-09-21')
@@ -547,5 +548,111 @@ describe('демо-репозиторий: пауза в сиде', () => {
       expect(dayOutcome(eng, entries, day, TODAY)).toBe('outside')
     }
     expect(dayOutcome(eng, entries, addDays(TODAY, -26), TODAY)).not.toBe('outside')
+  })
+})
+
+describe('демо «Выход из выгорания» — 30 дней', () => {
+  const burnout = (seed = 20260921) =>
+    createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'burnout' })
+  /** Двадцать историй: вероятностные свойства проверяются по среднему, а не на удачном зерне. */
+  const SEEDS = Array.from({ length: 20 }, (_, i) => 20260921 + i * 7919)
+  const byCode = async (r: ReturnType<typeof burnout>, code: string) =>
+    (await r.listChallenges()).find((c) => c.code === code)!
+  const mean = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.length
+
+  it('четыре челленджа из истории: отжимания, шаги, чтение, английский', async () => {
+    expect((await burnout().listChallenges()).map((c) => c.code)).toEqual(['ОТЖ', 'ШАГ', 'ЧТН', 'АНГ'])
+  })
+
+  it('месяц истории: итоги за прошедшие дни, кроме позавчерашнего долга', async () => {
+    const logs = await burnout().listDayLogs()
+    expect(logs).toHaveLength(28)
+    expect(logs[0]!.day).toBe(dayKey(addDays(TODAY, -29)))
+  })
+
+  it('отжимания — цель 10, срок 30 дней, выполнены каждый прошедший день', async () => {
+    const r = burnout()
+    const push = await byCode(r, 'ОТЖ')
+    const entries = (await r.listEntries())[push.id]!
+
+    expect(push.goal).toBe(10)
+    expect(push.lengthDays).toBe(30)
+    for (const key of activeDays(push, TODAY)) {
+      expect(dayOutcome(push, entries, parseDay(key), TODAY)).toBe('hit')
+    }
+  })
+
+  it('английский заведён, но не выполняется ни разу', async () => {
+    const r = burnout()
+    expect((await r.listEntries())[(await byCode(r, 'АНГ')).id]).toEqual({})
+  })
+
+  it('чтение — около трёх раз в неделю', async () => {
+    const counts = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const r = burnout(seed)
+        return Object.keys((await r.listEntries())[(await byCode(r, 'ЧТН')).id]!).length
+      }),
+    )
+    // месяц — это четыре с лишним недели
+    expect(mean(counts)).toBeGreaterThanOrEqual(11)
+    expect(mean(counts)).toBeLessThanOrEqual(15)
+  })
+
+  it('пиво — только в будни, раз-два в неделю', async () => {
+    const drinks = await Promise.all(
+      SEEDS.map(async (seed) => (await burnout(seed).listDayLogs()).filter((l) => l.tags.includes('алкоголь'))),
+    )
+    expect(drinks.flat().every((l) => isoDow(parseDay(l.day)) < 5)).toBe(true)
+    expect(mean(drinks.map((d) => d.length))).toBeGreaterThanOrEqual(4)
+    expect(mean(drinks.map((d) => d.length))).toBeLessThanOrEqual(9)
+  })
+
+  it('недосып во второй половине месяца реже, чем в первой', async () => {
+    const halves = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const logs = await burnout(seed).listDayLogs()
+        const short = (part: DayLog[]) => part.filter((l) => l.tags.includes('мало спал')).length
+        return [short(logs.slice(0, 14)), short(logs.slice(14))] as const
+      }),
+    )
+    expect(mean(halves.map((h) => h[1]))).toBeLessThan(mean(halves.map((h) => h[0])))
+  })
+
+  it('прогулки с месяцем учащаются', async () => {
+    const halves = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const r = burnout(seed)
+        const steps = (await r.listEntries())[(await byCode(r, 'ШАГ')).id]!
+        const walks = (from: number, to: number) =>
+          Array.from({ length: to - from }, (_, k) => dayKey(addDays(TODAY, -(29 - from - k)))).filter(
+            (key) => (steps[key] ?? 0) >= 10000,
+          ).length
+        return [walks(0, 15), walks(15, 30)] as const
+      }),
+    )
+    expect(mean(halves.map((h) => h[1]))).toBeGreaterThan(mean(halves.map((h) => h[0])))
+  })
+
+  it('из выгорания выходит: последняя неделя лучше первой, продуктивность — заметнее всего', async () => {
+    const lifts = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const logs = await burnout(seed).listDayLogs()
+        const avg = (part: DayLog[], field: ScoreField) => mean(part.map((l) => l[field]))
+        const [first, last] = [logs.slice(0, 7), logs.slice(-7)]
+        return { mood: avg(last, 'mood') - avg(first, 'mood'), prod: avg(last, 'productivity') - avg(first, 'productivity') }
+      }),
+    )
+    expect(mean(lifts.map((l) => l.mood))).toBeGreaterThan(0.5)
+    expect(mean(lifts.map((l) => l.prod))).toBeGreaterThan(mean(lifts.map((l) => l.mood)))
+  })
+
+  it('детерминирован по зерну', async () => {
+    expect(await burnout().listDayLogs()).toEqual(await burnout().listDayLogs())
+  })
+
+  it('без выбора сценария — полное демо, как раньше', async () => {
+    const codes = (await repo().listChallenges()).map((c) => c.code)
+    expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ'])
   })
 })
