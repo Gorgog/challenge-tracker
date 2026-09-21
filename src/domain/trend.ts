@@ -1,5 +1,5 @@
-import { addDays, dayKey } from './date'
-import { METRICS, scoreOf, type Metric } from './effects'
+import { addDays, dayKey, daysBetween, parseDay } from './date'
+import { METRICS, SICK, scoreOf, type Metric } from './effects'
 import type { DayLog } from './types'
 
 /** Оценки по метрикам; null — оценки нет, и это не ноль. */
@@ -43,6 +43,28 @@ export function scoreSeries(logs: DayLog[], today: Date, days = 90): SeriesDay[]
     )
     return { day: dayKey(date), raw: log ? mean([log]) : empty(), smooth: mean(week) }
   })
+}
+
+export type Coverage = {
+  /** Закрытых дней по вчера включительно. */
+  rated: number
+  /** Дней от первой оценки по вчера. */
+  span: number
+  /** Среди оценённых — дней с тегом болезни. */
+  sick: number
+}
+
+/** Сколько дней оценено — по вчера, как и всё остальное: закрытый сегодня день ещё не история. */
+export function coverage(logs: DayLog[], today: Date): Coverage {
+  const yesterday = dayKey(addDays(today, -1))
+  const rated = [...closedByDay(logs).values()].filter((l) => l.day <= yesterday)
+  if (!rated.length) return { rated: 0, span: 0, sick: 0 }
+  const first = rated.reduce((min, l) => (l.day < min ? l.day : min), rated[0]!.day)
+  return {
+    rated: rated.length,
+    span: daysBetween(parseDay(first), parseDay(yesterday)) + 1,
+    sick: rated.filter((l) => l.tags.includes(SICK)).length,
+  }
 }
 
 export type Averages = {

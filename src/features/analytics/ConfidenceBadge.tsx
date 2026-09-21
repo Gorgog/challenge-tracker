@@ -12,7 +12,7 @@ export function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
     <span
       className={cn(
         'shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold',
-        confidence === 'sure' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+        confidence === 'sure' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
       )}
     >
       {CONFIDENCE_WORD[confidence]}

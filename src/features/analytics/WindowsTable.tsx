@@ -19,7 +19,6 @@ function Cell({ estimate, window }: { estimate: Estimate; window: 'same' | 'next
       {strength !== 'few' && <span className="font-mono tabular-nums">{signed(estimate.delta)} </span>}
       <span
         className={cn(
-          'whitespace-nowrap',
           quiet && 'text-muted-foreground',
           strength === 'strong' && 'font-semibold',
         )}

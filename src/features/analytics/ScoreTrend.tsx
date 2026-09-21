@@ -69,29 +69,53 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
   const ticks = series
     .map((d, i) => ({ date: parseDay(d.day), i }))
     .filter(({ date }) => date.getDate() === 1 || date.getDate() === 15)
-  const current = active === null ? null : series[active]
+  /** Подсказка дня — и для глаза, и для читалки. */
+  const tipOf = (i: number) => {
+    const d = series[i]
+    if (!d) return ''
+    const date = formatHuman(parseDay(d.day))
+    if (d.raw.day === null) return `${date} — без оценки`
+    return `${date}: ${METRICS.map((m) => `${METRIC_LABEL[m].toLowerCase()} ${score1(d.raw[m]!)}`).join(' · ')}`
+  }
+  const shown = active ?? n - 1
 
   const onKeyDown = (e: KeyboardEvent<SVGSVGElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    const moves: Record<string, (i: number) => number> = {
+      ArrowLeft: (i) => i - 1,
+      ArrowRight: (i) => i + 1,
+      Home: () => 0,
+      End: () => n - 1,
+    }
+    const move = moves[e.key]
+    if (!move) return
     e.preventDefault()
-    const shift = e.key === 'ArrowLeft' ? -1 : 1
-    setActive((i) => Math.min(n - 1, Math.max(0, (i ?? n - 1) + shift)))
+    setActive((i) => Math.min(n - 1, Math.max(0, move(i ?? n - 1))))
   }
+  /** Крайние подписи оси прижимаются к краю, а не обрезаются. */
+  const anchorAt = (px: number) => (px < PAD.left + 16 ? 'start' : px > width - PAD.right - 16 ? 'end' : 'middle')
 
   return (
     <div ref={ref} className="relative flex flex-col gap-2">
+      {/* Слайдер по дням: читалки листают его стрелками в режиме форм, а у картинки стрелки забирают себе. */}
       <svg
-        role="img"
+        role="slider"
         aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(0, n - 1)}
+        aria-valuenow={shown}
+        aria-valuetext={tipOf(shown)}
         tabIndex={0}
         width={width}
         height={HEIGHT}
         viewBox={`0 0 ${width} ${HEIGHT}`}
         className="max-w-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onFocus={() => setActive(n - 1)}
+        onFocus={() => setActive((i) => i ?? n - 1)}
         onBlur={() => setActive(null)}
         onKeyDown={onKeyDown}
-        onPointerLeave={() => setActive(null)}
+        onPointerLeave={(e) => {
+          /* После касания браузер тоже шлёт «ушёл» — подсказку гасит только уход мыши. */
+          if (e.pointerType === 'mouse') setActive(null)
+        }}
       >
         {[0, 5, 10].map((v) => (
           <g key={v}>
@@ -102,7 +126,7 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
           </g>
         ))}
         {ticks.map(({ date, i }) => (
-          <text key={i} x={x(i)} y={HEIGHT - 6} textAnchor="middle" fontSize={10} fill="var(--muted-foreground)">
+          <text key={i} x={x(i)} y={HEIGHT - 6} textAnchor={anchorAt(x(i))} fontSize={10} fill="var(--muted-foreground)">
             {shortDate(date)}
           </text>
         ))}
@@ -116,7 +140,6 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
             stroke="var(--muted-foreground)"
             strokeWidth={1.25}
             strokeDasharray={dash || undefined}
-            opacity={0.8}
           />
         ))}
         {series.map((d, i) =>
@@ -151,13 +174,8 @@ export function ScoreTrend({ series }: { series: SeriesDay[] }) {
         ))}
       </svg>
 
-      <div role="status" className="min-h-[1.25rem] font-mono text-[11px] text-muted-foreground">
-        {current &&
-          (current.raw.day === null
-            ? `${formatHuman(parseDay(current.day))} — без оценки`
-            : `${formatHuman(parseDay(current.day))}: ${METRICS.map(
-                (m) => `${METRIC_LABEL[m].toLowerCase()} ${score1(current.raw[m]!)}`,
-              ).join(' · ')}`)}
+      <div role="status" className="min-h-[1.25rem] font-mono text-[11px] text-foreground">
+        {active !== null && tipOf(active)}
       </div>
 
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">

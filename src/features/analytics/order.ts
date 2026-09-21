@@ -15,10 +15,10 @@ function rank(e: Ranked): number {
   return 3
 }
 
-/** Сила вывода внутри уровня: у выводов «назавтра» — их разница, у остальных — разница дня. */
+/** Сила вывода внутри уровня: у выводов «назавтра» и у полосы — разница назавтра, у остальных — дня. */
 function force(e: Ranked): number {
   const { same, next } = e.windows.day
-  return Math.abs(e.confidence ? next.delta : same.delta)
+  return Math.abs(e.confidence || e.verdict === 'streak' ? next.delta : same.delta)
 }
 
 /**

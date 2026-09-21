@@ -12,8 +12,12 @@ export function EffectCard({ effect }: { effect: ChallengeEffect }) {
   const { challenge: c, windows, verdict, confidence, partner, days, sickDays } = effect
   const { same } = windows.day
 
-  const facts = [`учтено ${daysText(days)}: с — ${same.withDays}, без — ${same.withoutDays}`]
-  if (sickDays > 0) facts.push(`${sickDays} ${plural(sickDays, 'день', 'дня', 'дней')} болезни не учтены`)
+  const facts = [
+    `${plural(days, 'учтён', 'учтено', 'учтено')} ${daysText(days)}: с — ${same.withDays}, без — ${same.withoutDays}`,
+  ]
+  if (sickDays > 0) {
+    facts.push(`${daysText(sickDays)} ${plural(sickDays, 'не учтён', 'не учтены', 'не учтены')} из-за болезни`)
+  }
   if (partner) facts.push(`делается вместе с ${partner.code} — его вклад вычтен`)
   if (effect.twin) facts.push(`почти всегда вместе с ${effect.twin.code} — чей эффект, не сказать`)
 
@@ -42,7 +46,7 @@ export function EffectCard({ effect }: { effect: ChallengeEffect }) {
       </header>
 
       {verdict === 'insufficient' ? (
-        <BeforeAfterNote challenge={c} beforeAfter={effect.beforeAfter} />
+        <BeforeAfterNote effect={effect} />
       ) : (
         <>
           <WindowsTable windows={windows} metrics={['day']} />

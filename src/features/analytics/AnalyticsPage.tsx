@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { useChallenges, useDayLogs, useEntries } from '@/data/queries'
-import { addDays, daysBetween, parseDay, todayKey } from '@/domain/date'
+import { parseDay, todayKey } from '@/domain/date'
 import { challengeEffects, tagEffects } from '@/domain/effects'
-import { averages, scoreSeries } from '@/domain/trend'
+import { averages, coverage, scoreSeries } from '@/domain/trend'
 import { plural } from '@/lib/plural'
 import { EffectCard } from './EffectCard'
 import { cardsOf, tagsOf } from './order'
@@ -38,10 +38,7 @@ export function AnalyticsPage() {
     [dayLogs, todayK],
   )
 
-  const rated = (dayLogs ?? []).filter((l) => l.closedAt !== null)
-  const first = rated.reduce<string | null>((min, l) => (min === null || l.day < min ? l.day : min), null)
-  const span = first ? daysBetween(parseDay(first), addDays(parseDay(todayK), -1)) + 1 : 0
-  const sick = rated.filter((l) => l.tags.includes('болел')).length
+  const { rated, span, sick } = coverage(dayLogs ?? [], parseDay(todayK))
   const loading = challenges.isPending || entries.isPending || logs.isPending
 
   return (
@@ -50,7 +47,7 @@ export function AnalyticsPage() {
         <h1 className="text-2xl font-bold tracking-tight">Аналитика</h1>
         {!loading && (
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            Оценено {rated.length} из {span} {plural(span, 'дня', 'дней', 'дней')}
+            Оценено {rated} из {span} {plural(span, 'дня', 'дней', 'дней')}
             {sick > 0 && ` · дни болезни (${sick}) и следующие за ними в выводы не идут`}
           </p>
         )}
@@ -60,10 +57,10 @@ export function AnalyticsPage() {
         <p className="py-8 text-center text-sm text-muted-foreground">Загружаю…</p>
       ) : (
         <>
-          {rated.length < FEW_RATED && (
+          {rated < FEW_RATED && (
             <div className="rounded-xl border border-dashed border-border p-6 text-center">
               <p className="text-sm text-muted-foreground">
-                Оценено {rated.length} {plural(rated.length, 'день', 'дня', 'дней')} — выводы появятся, когда
+                Оценено {rated} {plural(rated, 'день', 'дня', 'дней')} — выводы появятся, когда
                 закрытых дней наберётся хотя бы две недели.
               </p>
             </div>

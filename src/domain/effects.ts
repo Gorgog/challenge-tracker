@@ -98,6 +98,10 @@ export const SAME_START_DAYS = 3
 export type BeforeAfter = {
   /** Длина каждого из двух окон в календарных днях; 0 — сравнивать не с чем. */
   span: number
+  /** Дней от старта до вчера (или до финиша): 0 — челлендж только начат. */
+  sinceStart: number
+  /** Дней от первой оценки до старта: 0 — до старта оценок нет. */
+  beforeStart: number
   /** Оценённых дней в окне «до» и «после» — без дней болезни и паузы. */
   daysBefore: number
   daysAfter: number
@@ -124,7 +128,8 @@ export type TagEffect = {
   sickDays: number
 }
 
-const SICK = 'болел'
+/** Тег болезни: такие дни и следующие за ними в расчёт эффекта не идут. */
+export const SICK = 'болел'
 const WEEKEND = 'выходной'
 
 const shift = (day: string, by: number) => dayKey(addDays(parseDay(day), by))
@@ -546,7 +551,16 @@ export function beforeAfter(c: Challenge, all: Challenge[], logs: DayLog[], toda
   for (const metric of METRICS) {
     byMetric[metric] = compare(before, after, metric, inseparableFrom.length > 0)
   }
-  return { span, daysBefore: before.length, daysAfter: after.length, byMetric, overlaps, inseparableFrom }
+  return {
+    span,
+    sinceStart: daysSinceStart,
+    beforeStart: daysBeforeStart,
+    daysBefore: before.length,
+    daysAfter: after.length,
+    byMetric,
+    overlaps,
+    inseparableFrom,
+  }
 }
 
 /**
