@@ -313,7 +313,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     async listChallenges() {
       return [...challenges]
         .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((c) => ({ ...c, tagIds: [...c.tagIds] }))
+        .map((c) => ({ ...c, tagIds: [...c.tagIds], pauses: c.pauses.map((p) => ({ ...p })) }))
     },
     async listEntries() {
       return snapshotEntries()
@@ -341,7 +341,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       if (index < 0) return
       const day = parseDay(today)
       const c = challenges[index]!
-      challenges[index] = paused ? pause(c, entries[id] ?? {}, day) : resume(c, day)
+      const closed = Boolean(logs.get(today)?.closedAt)
+      challenges[index] = paused ? pause(c, entries[id] ?? {}, day, closed) : resume(c, day)
       persist()
     },
     async deleteChallenge(id) {

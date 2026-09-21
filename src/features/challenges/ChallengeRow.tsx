@@ -10,7 +10,7 @@ import { plural } from '@/lib/plural'
 export type ChallengeRowProps = {
   challenge: Challenge
   tagNames: string[]
-  onToggleStatus: () => void
+  onTogglePause: () => void
   /** Доступна и у запертого: замок закрывает только правила, имя и теги менять можно. */
   onEdit: () => void
   /** Мягкое удаление: челлендж уходит в «Удалённые», статистика его помнит. */
@@ -20,7 +20,7 @@ export type ChallengeRowProps = {
 export function ChallengeRow({
   challenge: c,
   tagNames,
-  onToggleStatus,
+  onTogglePause,
   onEdit,
   onDelete,
 }: ChallengeRowProps) {
@@ -85,7 +85,7 @@ export function ChallengeRow({
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={onToggleStatus}
+          onClick={onTogglePause}
           aria-label={paused ? 'Снять с паузы' : 'Поставить на паузу'}
           title={paused ? 'Снять с паузы' : 'Поставить на паузу'}
         >

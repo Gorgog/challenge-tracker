@@ -213,7 +213,10 @@ export function useUpdateChallenge() {
   )
 }
 
-/** `today` приходит снаружи, чтобы кэш и хранилище посчитали паузу от одного и того же дня. */
+/**
+ * `today` приходит снаружи, чтобы кэш и хранилище посчитали паузу от одного и того же дня.
+ * Отметки и итоги дней берутся из кэша — страница, откуда зовут паузу, должна быть на них подписана.
+ */
 export function useSetPaused() {
   const client = useQueryClient()
   return useChallengeMutation(
@@ -222,7 +225,10 @@ export function useSetPaused() {
     (list, { id, paused, today }) => {
       const day = parseDay(today)
       const entries = client.getQueryData<Record<string, EntryMap>>(queryKeys.entries)?.[id] ?? {}
-      return patchOne(list, id, (c) => (paused ? pause(c, entries, day) : resume(c, day)))
+      const closed = Boolean(
+        client.getQueryData<DayLog[]>(queryKeys.dayLogs)?.some((l) => l.day === today && l.closedAt),
+      )
+      return patchOne(list, id, (c) => (paused ? pause(c, entries, day, closed) : resume(c, day)))
     },
   )
 }

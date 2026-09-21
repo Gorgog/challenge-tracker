@@ -6,8 +6,10 @@ import {
   useChallenges,
   useCreateChallenge,
   useCreateTag,
+  useDayLogs,
   useDeleteChallenge,
   useDeleteTag,
+  useEntries,
   usePurgeChallenge,
   useRestoreChallenge,
   useSetPaused,
@@ -27,6 +29,10 @@ import { TagsDialog } from './TagsDialog'
 export function ChallengesPage() {
   const challenges = useChallenges()
   const tags = useTags()
+  /* Пауза считается и в кэше: ей нужны сегодняшняя отметка и итог дня. Без подписки
+     кэш бывает пуст, и пауза в кэше разошлась бы с хранилищем. */
+  useEntries()
+  useDayLogs()
   const createChallenge = useCreateChallenge()
   const setPaused = useSetPaused()
   const deleteChallenge = useDeleteChallenge()
@@ -93,7 +99,7 @@ export function ChallengesPage() {
               key={c.id}
               challenge={c}
               tagNames={namesOf(c)}
-              onToggleStatus={() =>
+              onTogglePause={() =>
                 setPaused.mutate({ id: c.id, paused: !isPaused(c), today: todayKey() })
               }
               onEdit={() => setEditing(c)}

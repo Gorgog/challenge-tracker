@@ -47,14 +47,14 @@ export function applyPatch(c: Challenge, patch: ChallengePatch): Challenge {
 }
 
 /**
- * Ставит на паузу. Решённый сегодня день — выполненная привычка или отмеченный срыв —
- * паузой не стирается, и она начинается завтра. Иначе пауза начинается сегодня:
- * незакрытый день не должен превратиться в пропуск.
+ * Ставит на паузу. Решённый сегодня день — закрытый итогом, выполненная привычка или
+ * отмеченный срыв — паузой не стирается, и она начинается завтра. Иначе пауза начинается
+ * сегодня: незакрытый день не должен превратиться в пропуск.
  */
-export function pause(c: Challenge, entries: EntryMap, today: Date): Challenge {
+export function pause(c: Challenge, entries: EntryMap, today: Date, closed = false): Challenge {
   if (isPaused(c)) return c
   const outcome = dayOutcome(c, entries, today, today)
-  const decided = c.kind === 'do' ? outcome === 'hit' : outcome === 'miss'
+  const decided = closed || (c.kind === 'do' ? outcome === 'hit' : outcome === 'miss')
   const from = dayKey(decided ? addDays(today, 1) : today)
   return { ...c, pauses: [...c.pauses, { from, to: null }] }
 }

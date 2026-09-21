@@ -1,20 +1,33 @@
 import { addDays, dayKey, daysBetween, parseDay } from './date'
-import { pauseAt, pausedOn } from './pauses'
+import { pausedOn } from './pauses'
 import type { Challenge, EntryMap, Outcome } from './types'
 
 /**
  * Последний день ограниченного челленджа — тот, на котором набрано `lengthDays` дней
  * вне пауз: пауза отодвигает финиш на свою длину. null — челлендж бессрочный или финиш
- * пока неизвестен: пауза, начатая до него, ещё не закрыта.
+ * пока неизвестен: пауза, начатая до него, ещё не закрыта. Кривой срок из испорченных
+ * данных (дробный, неположительный) считается бессрочным.
+ *
+ * Считается по паузам, а не по дням: функцию зовёт `dayOutcome` на каждый день истории,
+ * и перебор дней сделал бы статистику квадратичной, а опечатку в сроке — зависанием.
  */
 export function lastDay(c: Challenge): Date | null {
-  if (!c.lengthDays) return null
-  let counted = 0
-  for (let day = parseDay(c.startDate); ; day = addDays(day, 1)) {
-    const pause = pauseAt(c, dayKey(day))
-    if (pause?.to === null) return null
-    if (!pause && ++counted === c.lengthDays) return day
+  const length = c.lengthDays
+  if (!length || !Number.isInteger(length) || length < 1) return null
+
+  let end = addDays(parseDay(c.startDate), length - 1)
+  /* Первый день, который ещё не учтён паузами, — чтобы перекрытые паузы не сдвигали дважды. */
+  let cursor = c.startDate
+  const pauses = [...c.pauses].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
+  for (const p of pauses) {
+    if (p.from > dayKey(end)) break
+    if (p.to === null) return null
+    const from = p.from > cursor ? p.from : cursor
+    if (p.to < from) continue
+    end = addDays(end, daysBetween(parseDay(from), parseDay(p.to)) + 1)
+    cursor = dayKey(addDays(parseDay(p.to), 1))
   }
+  return end
 }
 
 /**
@@ -100,7 +113,10 @@ export function bestStreak(c: Challenge, entries: EntryMap, today: Date): number
   return Math.max(best, currentStreak(c, entries, today))
 }
 
-/** Доля выполненных дней среди прошедших; `lastDays` ограничивает окно. */
+/**
+ * Доля выполненных дней среди прошедших. `lastDays` — окно последних календарных дней:
+ * пауза внутри окна его не растягивает на давние дни.
+ */
 export function completionRate(
   c: Challenge,
   entries: EntryMap,
@@ -108,7 +124,8 @@ export function completionRate(
   lastDays?: number,
 ): number {
   const all = activeDays(c, today)
-  const window = lastDays ? all.slice(-lastDays) : all
+  const since = lastDays ? dayKey(addDays(today, -lastDays)) : null
+  const window = since ? all.filter((k) => k >= since) : all
   if (!window.length) return 0
   const hits = window.filter((k) => dayOutcome(c, entries, parseDay(k), today) === 'hit').length
   return hits / window.length
