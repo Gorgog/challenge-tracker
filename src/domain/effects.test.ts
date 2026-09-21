@@ -419,9 +419,33 @@ describe('effectText — вывод словами', () => {
     )
   })
 
-  it('у тега совпадения нет — тег описывает сам день', () => {
+  it('у тега совпадения нет — тег описывает сам день, и видно, в какую сторону', () => {
     const day = { same: est('likely', -1.5), next: est('flat', 0.1) }
-    expect(effectText('coincidence', day, 'tag')).toBe('связано только с самим днём')
+    expect(effectText('coincidence', day, 'tag')).toBe('день хуже — назавтра следа нет')
+  })
+
+  it('тег только про сам день, про следующий неясно — тоже с направлением', () => {
+    const day = { same: est('possible', 1.1), next: est('unclear', 0.3) }
+    expect(effectText('sameDayOnly', day, 'tag')).toBe('день лучше, про следующий пока неясно')
+  })
+
+  it('челлендж без утра: связь с самим днём, про следующий неясно', () => {
+    const day = { same: est('likely', 1.2), next: est('unclear', 0.3) }
+    expect(effectText('sameDayOnly', day, 'challenge')).toBe('связано с самим днём, про следующий пока неясно')
+  })
+
+  it('при том же утре хорошие дни уже учтены — остаётся оговорка про совпадение', () => {
+    const day = { same: est('likely', 1.5), next: est('flat', 0.1) }
+    expect(effectText('coincidence', day, 'challenge', true)).toBe(
+      'при том же утре день лучше, назавтра следа нет — может быть и совпадением',
+    )
+  })
+
+  it('при том же утре, про следующий день неясно — с направлением и оговоркой', () => {
+    const day = { same: est('possible', -1.1), next: est('unclear', 0.3) }
+    expect(effectText('sameDayOnly', day, 'challenge', true)).toBe(
+      'при том же утре день хуже — может быть и совпадением; про следующий пока неясно',
+    )
   })
 
   it('полоса плохих дней называется полосой — без слова «похоже»: полоса бывает и на уровне «возможно»', () => {
