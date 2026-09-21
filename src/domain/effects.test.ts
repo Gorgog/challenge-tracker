@@ -20,6 +20,12 @@ const DAYS = 120
 /** Строк в расчёте без потерь: у первого дня нет «вчера», у вчерашнего — известного «завтра». */
 const FULL = DAYS - 2
 
+/** Момент удаления — локальный полдень нужного дня: день не зависит от часового пояса. */
+const deletedOn = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y!, m! - 1, d!, 12).toISOString()
+}
+
 function challenge(over: Partial<Challenge> = {}): Challenge {
   return {
     id: 'c1', name: 'Читать 20 страниц', code: 'ЧТН', kind: 'do', measure: 'binary', goal: 1,
@@ -197,9 +203,11 @@ describe('окна эффекта челленджа', () => {
     expect(effectOf({ ...w, logs }).days).toBe(FULL - 5)
   })
 
-  it('удалённый челлендж участвует в расчёте — статистика его помнит', () => {
+  it('удалённый челлендж участвует в расчёте своими днями до удаления', () => {
     const w = simulate(15, { done: coin, score: () => 6 })
-    expect(effectOf(w, challenge({ deletedAt: '2026-09-15T00:00:00.000Z' })).days).toBe(FULL)
+    const gone = challenge({ deletedAt: deletedOn(dayKey(addDays(TODAY, -10))) })
+    // удалён 10 дней назад: последняя строка — накануне удаления, ей нужен известный «завтра»
+    expect(effectOf(w, gone).days).toBe(FULL - 9)
   })
 
   it('дни паузы не участвуют — ни как пропуск, ни как выполнение', () => {
@@ -623,6 +631,12 @@ describe('до и после старта — оговорки расчёта', 
     challenge({ id: 'q', code: 'БСГ', kind: 'quit', startDate: dayKey(addDays(TODAY, 60 - DAYS)), ...over })
   const step = (seed: number, jump: number) =>
     simulate(seed, { done: coin, score: (d) => 5 + (d.i >= 60 ? jump : 0) })
+
+  it('у удалённого окно «после» кончается днём удаления', () => {
+    const gone = quit({ deletedAt: deletedOn(dayKey(addDays(TODAY, 70 - DAYS))) })
+    // начат на 60-й день, удалён на 70-й: у него одиннадцать своих дней
+    expect(beforeAfter(gone, [gone], step(69, 2).logs, TODAY).span).toBe(11)
+  })
 
   it('дни паузы в окне «после» в сравнение не идут', () => {
     const from = dayKey(addDays(TODAY, 65 - DAYS))

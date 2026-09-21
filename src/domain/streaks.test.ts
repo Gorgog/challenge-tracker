@@ -193,15 +193,37 @@ describe('fullDays', () => {
   })
 })
 
-describe('удалённый челлендж в статистике', () => {
-  it('по-прежнему участвует в подсчёте полных дней — статистика его помнит', () => {
-    const kept = challenge()
-    const deleted = challenge({ id: 'gone', deletedAt: '2026-09-15T00:00:00.000Z' })
-    const entries = { c1: entriesFrom('2026-09-20', '1'), gone: {} }
+/** Момент удаления — локальный полдень нужного дня: день не зависит от часового пояса. */
+const deletedOn = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y!, m! - 1, d!, 12).toISOString()
+}
 
-    /* У удалённого 20 сентября пропуск, поэтому день не полный. Отфильтруй его
-       fullDays — вышла бы единица, и история задним числом стала бы лучше, чем была. */
-    expect(fullDays([kept, deleted], entries, TODAY, 1)).toBe(0)
+describe('удалённый челлендж в статистике', () => {
+  it('до удаления его пропуски по-прежнему портят день, после — нет', () => {
+    const kept = challenge()
+    const deleted = challenge({ id: 'gone', deletedAt: deletedOn('2026-09-15') })
+    const entries = { c1: entriesFrom('2026-09-14', '1111111'), gone: {} }
+
+    /* 14 и 15 сентября у удалённого пропуски — дни не полные: отфильтруй его целиком, и история
+       задним числом стала бы лучше, чем была. С 16-го его уже нет, и дни он не портит. */
+    expect(fullDays([kept, deleted], entries, TODAY, 7)).toBe(5)
+  })
+
+  it('день удаления — последний день челленджа, дальше он вне', () => {
+    const c = challenge({ deletedAt: deletedOn('2026-09-15') })
+    expect(dayOutcome(c, {}, parseDay('2026-09-15'), TODAY)).toBe('miss')
+    expect(dayOutcome(c, {}, parseDay('2026-09-16'), TODAY)).toBe('outside')
+  })
+
+  it('у отказа дни после удаления — не «выдержан», а вне челленджа', () => {
+    const quit = challenge({ kind: 'quit', deletedAt: deletedOn('2026-09-15') })
+    expect(dayOutcome(quit, {}, parseDay('2026-09-16'), TODAY)).toBe('outside')
+  })
+
+  it('прошедшие дни удалённого — по день удаления включительно', () => {
+    const c = challenge({ startDate: '2026-09-12', deletedAt: deletedOn('2026-09-15') })
+    expect(activeDays(c, TODAY)).toEqual(['2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15'])
   })
 })
 
