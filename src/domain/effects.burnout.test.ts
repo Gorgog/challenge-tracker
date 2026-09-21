@@ -26,11 +26,17 @@ type World = {
 /** Мир на день `day` истории: сегодня — этот день, оценки — только до него. */
 async function build(seed: number, day = 30): Promise<World> {
   const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'burnout' })
-  const [challenges, entries, all] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
+  const [challenges, entries, all, allStarts] = await Promise.all([
+    r.listChallenges(),
+    r.listEntries(),
+    r.listDayLogs(),
+    r.listDayStarts(),
+  ])
   const today = addDays(TODAY, day - 30)
   const logs = all.filter((l) => l.day < dayKey(today))
-  const effects = challengeEffects(challenges, entries, logs, today)
-  const tags = tagEffects(logs)
+  const starts = allStarts.filter((s) => s.day < dayKey(today))
+  const effects = challengeEffects(challenges, entries, logs, today, starts)
+  const tags = tagEffects(logs, starts)
   return {
     byCode: (code) => effects.find((e) => e.challenge.code === code)!,
     tag: (name) => tags.find((t) => t.tag === name),
@@ -102,6 +108,11 @@ describe('ранние выводы на месяце', () => {
 
   it('чтение: слово уверенности назавтра — не чаще чем в 35% миров', () => {
     expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.35)
+  })
+
+  it('чтение при том же утре: «в тот же день» решено не чаще чем в 35% миров', () => {
+    // Чтение по расписанию, связи с днём нет. Свежие 800 миров: около 20%, σ = 6,3 п.п.; без утра — 18,5%.
+    expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.same.strength))).toBeLessThanOrEqual(0.35)
   })
 
   it('хоть одно слово уверенности на экране — не реже чем в 80% миров', () => {

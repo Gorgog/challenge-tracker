@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { createDemoRepo } from '@/data/demoRepo'
 import { isLive } from './challenges'
 import { parseDay } from './date'
-import { beforeAfter, challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } from './effects'
+import { METRICS, beforeAfter, challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } from './effects'
 import type { Challenge, DayLog } from './types'
 
 /**
@@ -32,18 +32,26 @@ type World = {
   effects: ChallengeEffect[]
   tags: TagEffect[]
   byCode: (code: string) => ChallengeEffect
+  /** Тот же мир без утр — чтобы проверить, что утро не меняет слов. */
+  withoutMornings: { effects: ChallengeEffect[]; tags: TagEffect[] }
 }
 
 async function build(seed: number): Promise<World> {
   const r = createDemoRepo({ today: TODAY, seed, storage: null })
-  const [challenges, entries, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
-  const effects = challengeEffects(challenges, entries, logs, TODAY)
+  const [challenges, entries, logs, starts] = await Promise.all([
+    r.listChallenges(),
+    r.listEntries(),
+    r.listDayLogs(),
+    r.listDayStarts(),
+  ])
+  const effects = challengeEffects(challenges, entries, logs, TODAY, starts)
   return {
     challenges,
     logs,
     effects,
-    tags: tagEffects(logs),
+    tags: tagEffects(logs, starts),
     byCode: (code) => effects.find((e) => e.challenge.code === code)!,
+    withoutMornings: { effects: challengeEffects(challenges, entries, logs, TODAY), tags: tagEffects(logs) },
   }
 }
 
@@ -122,3 +130,71 @@ describe('приёмка методики на демо-данных: 40 мир�
     expect(beforeAfter(read, challenges, logs, TODAY).inseparableFrom.map((c) => c.code)).toEqual(['ШАГ'])
   })
 })
+
+/**
+ * Утро в аналитике (решение Georgy от 21.09): у челленджей окно «в тот же день» — при том же утре,
+ * строка «Утро» — справочно. Пороги заданы до реализации: частоты на 450 свежих мирах, край 2σ при
+ * 40 мирах, округлён в сторону запаса. Демо к поправке на утро щедро: в сиде утро знает о дне всё,
+ * кроме событий, — в жизни польза, скорее всего, меньше (разведка: миры M0, M1, M2).
+ */
+describe('утро в аналитике: 40 миров', () => {
+  const sameDecided = (e: ChallengeEffect) => WORDED.includes(e.windows.day.same.strength)
+
+  it('ШАГ — при том же утре «следующий день лучше», а не «и в тот же день тоже»: не реже чем в 45% миров', () => {
+    // Свежие миры: 60,9%, σ = 7,7 п.п. Без утра — около 1%: в хорошие дни и шагов больше.
+    expect(share((w) => w.byCode('ШАГ').verdict === 'delayed')).toBeGreaterThanOrEqual(0.45)
+  })
+
+  it('ЧТН — при том же утре «в тот же день» решено не чаще чем в 35% миров', () => {
+    // Свежие миры: 18,7%, σ = 6,2 п.п. Без утра — 69–79%: читает в энергичные дни.
+    expect(share((w) => sameDecided(w.byCode('ЧТН')))).toBeLessThanOrEqual(0.35)
+  })
+
+  it('ОТЖ — при том же утре «в тот же день» решено не чаще чем в 65% миров', () => {
+    // Свежие миры: 47,3%, σ = 7,9 п.п. Без утра — 67–73%.
+    expect(share((w) => sameDecided(w.byCode('ОТЖ')))).toBeLessThanOrEqual(0.65)
+  })
+
+  it('АНГ — шум: при том же утре «в тот же день» решено не чаще чем в 5% миров', () => {
+    // Свежие миры: 0 из 450.
+    expect(share((w) => sameDecided(w.byCode('АНГ')))).toBeLessThanOrEqual(0.05)
+  })
+
+  it('у ШАГ и ЧТН окно «в тот же день» при том же утре — не реже чем в 90% миров', () => {
+    // Свежие миры: 100%. Утро пропущено примерно в каждом восьмом дне — двух третей хватает.
+    expect(share((w) => w.byCode('ШАГ').morningBase && w.byCode('ЧТН').morningBase)).toBeGreaterThanOrEqual(0.9)
+  })
+
+  it('строка «Утро»: ШАГ — утро назавтра лучше не реже чем в 95% миров', () => {
+    // Свежие миры: 99,1%, σ = 1,5 п.п.
+    const found = share((w) => {
+      const next = w.byCode('ШАГ').morning?.next
+      return next !== undefined && WORDED.includes(next.strength) && next.delta > 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.95)
+  })
+
+  it('строка «Утро»: ЧТН — в дни чтения утро и так лучше не реже чем в 40% миров', () => {
+    // Свежие миры: 58,4%, σ = 7,8 п.п. Читает в энергичные дни — это видно уже по утру.
+    const found = share((w) => {
+      const same = w.byCode('ЧТН').morning?.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta > 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.4)
+  })
+
+  it('утро не меняет слов: «назавтра» и слова челленджей и вечерних тегов те же, что без утр', () => {
+    for (const w of worlds) {
+      for (const e of w.effects) {
+        const plain = w.withoutMornings.effects.find((p) => p.challenge.id === e.challenge.id)!
+        expect(e.confidence).toBe(plain.confidence)
+        for (const metric of METRICS) expect(e.windows[metric].next).toEqual(plain.windows[metric].next)
+      }
+      for (const plain of w.withoutMornings.tags) {
+        const t = w.tags.find((x) => x.tag === plain.tag)!
+        expect([t.windows, t.verdict, t.confidence]).toEqual([plain.windows, plain.verdict, plain.confidence])
+      }
+    }
+  })
+})
+
