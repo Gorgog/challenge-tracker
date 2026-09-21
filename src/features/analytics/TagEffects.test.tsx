@@ -34,7 +34,10 @@ describe('TagEffects', () => {
 
   it('ранний вывод по тегу — со словом «Возможно» в пунктирной рамке', () => {
     render(<TagEffects tags={[tag('алкоголь', est('flat', 0.1), est('possible', -1.2, [4, 20]), { tagDays: 4 })]} />)
-    expect(screen.getByText('Возможно')).toHaveClass('border-dashed')
+    const badge = screen.getByText('Возможно')
+    expect(badge).toHaveClass('border', 'border-dashed')
+    expect(badge).not.toHaveClass('bg-muted')
+    expect(badge).not.toHaveClass('bg-primary')
     expect(screen.getByText('Следующий день хуже')).toBeInTheDocument()
   })
 })

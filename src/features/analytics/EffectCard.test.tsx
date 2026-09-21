@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { addDays, dayKey, parseDay } from '@/domain/date'
+import { challengeEffects } from '@/domain/effects'
+import type { DayLog } from '@/domain/types'
 import { EffectCard } from './EffectCard'
 import { beforeAfterOf, challenge, effect, est } from './testing'
 
@@ -84,14 +87,14 @@ describe('EffectCard', () => {
       render(<EffectCard effect={effect(fewRelapses, fewRelapses, { challenge: quit, beforeAfter: beforeAfterOf() })} />)
 
       expect(screen.getByText('Мало данных')).toBeInTheDocument()
-      expect(screen.getByText(/срывов пока 2 — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтено 2 срыва — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
       expect(screen.getByText(/до и после старта/i)).toBeInTheDocument()
       expect(screen.getByText(/без разницы/)).toBeInTheDocument()
     })
 
-    it('срывов не было — так и сказано, без «пока 0»', () => {
+    it('учтённых срывов нет — так и сказано, без «0»; и не «срывов не было»: день старта и вчера не в счёт', () => {
       render(<EffectCard effect={effect(est('few', 0, [30, 0]), est('few', 0, [30, 0]), { challenge: quit, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/срывов не было — дни не с чем сравнить/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтённых срывов пока нет — дни не с чем сравнить/i)).toBeInTheDocument()
     })
 
     it('начатые одновременно — предупреждение, что эффекты не разделить', () => {
@@ -121,36 +124,70 @@ describe('EffectCard', () => {
 
     const habit = challenge({ id: 'h', code: 'ПРВ', name: 'Привычка' })
 
-    it('выполнений мало — сколько есть и сколько нужно', () => {
+    it('выполнений мало — сколько учтено и сколько нужно', () => {
       render(<EffectCard effect={effect(est('few', 0, [2, 33]), est('few', 0, [2, 33]), { challenge: habit, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/выполнений пока 2 — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтено 2 выполнения — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
     })
 
-    it('выполнений нет — так и сказано', () => {
+    it('одно выполнение — «учтено 1 выполнение», один пропуск — «учтён 1 пропуск»', () => {
+      const { unmount } = render(
+        <EffectCard effect={effect(est('few', 0, [1, 30]), est('few', 0, [1, 30]), { challenge: habit, beforeAfter: beforeAfterOf() })} />,
+      )
+      expect(screen.getByText(/учтено 1 выполнение — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
+      unmount()
+      render(<EffectCard effect={effect(est('few', 0, [30, 1]), est('few', 0, [30, 1]), { challenge: habit, beforeAfter: beforeAfterOf() })} />)
+      expect(screen.getByText(/учтён 1 пропуск — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
+    })
+
+    it('учтённых выполнений нет — так и сказано', () => {
       render(<EffectCard effect={effect(est('few', 0, [0, 33]), est('few', 0, [0, 33]), { challenge: habit, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/выполнений пока нет — дни не с чем сравнить/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтённых выполнений пока нет — дни не с чем сравнить/i)).toBeInTheDocument()
     })
 
-    it('пропусков не было — так и сказано', () => {
+    it('учтённых пропусков нет — так и сказано', () => {
       render(<EffectCard effect={effect(est('few', 0, [30, 0]), est('few', 0, [30, 0]), { challenge: habit, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/пропусков не было — дни не с чем сравнить/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтённых пропусков пока нет — дни не с чем сравнить/i)).toBeInTheDocument()
     })
 
     it('отказ с частыми срывами — выдержанных дней мало, с числами', () => {
       render(<EffectCard effect={effect(est('few', 0, [2, 33]), est('few', 0, [2, 33]), { challenge: quit, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/выдержанных дней пока 2 — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтено 2 выдержанных дня — для сравнения нужно хотя бы 3/i)).toBeInTheDocument()
     })
 
-    it('обеих групп мало — сколько дней оценено и сколько нужно', () => {
+    it('обеих групп мало — сколько дней учтено и сколько нужно', () => {
       render(<EffectCard effect={effect(est('few', 0, [2, 1]), est('few', 0, [2, 1]), { challenge: habit, days: 3, beforeAfter: beforeAfterOf() })} />)
-      expect(screen.getByText(/оценённых дней пока 3 — для сравнения нужно хотя бы по 3 с выполнением и без/i)).toBeInTheDocument()
+      expect(screen.getByText(/учтено 3 дня: с выполнением — 2, без — 1\. для сравнения нужно хотя бы по 3/i)).toBeInTheDocument()
+    })
+
+    it('группы полные, а дни модель не разделяет — так и сказано, без ложных чисел', () => {
+      // Выполнения по расписанию: «не делал ни вчера, ни сегодня» — один день, «делал и вчера, и сегодня» —
+      // ни одного. У этого дня полный рычаг, и модель не решается даже без поправок, как у ЧТН на 15-й день
+      // «выгорания» в части миров.
+      const today = parseDay('2026-09-21')
+      const on = (i: number) => dayKey(addDays(today, i - 10))
+      const read = challenge({ id: 'r', code: 'ЧТН', name: 'Читать 20 страниц', measure: 'binary', goal: 1, unit: null, startDate: on(0) })
+      const entries = Object.fromEntries([0, 2, 5, 7, 9].map((i) => [on(i), 1]))
+      const logs = Array.from({ length: 10 }, (_, i): DayLog => {
+        const day = on(i)
+        return { day, mood: 5 + (i % 3), wellbeing: 6, productivity: 5 + (i % 2), tags: [], note: '', closedAt: `${day}T21:00:00.000Z` }
+      })
+      const [e] = challengeEffects([read], { r: entries }, logs, today)
+
+      expect(e!.verdict).toBe('insufficient')
+      expect(Math.min(e!.windows.day.same.withDays, e!.windows.day.same.withoutDays)).toBeGreaterThanOrEqual(3)
+      render(<EffectCard effect={e!} />)
+      expect(screen.getByText(/дни пока не разделить/i)).toBeInTheDocument()
+      expect(screen.queryByText(/нужно хотя бы/i)).toBeNull()
     })
   })
 
   it('ранний вывод — бейдж «Возможно» с пунктирной рамкой, слабее «Похоже», и слово в таблице', () => {
     render(<EffectCard effect={effect(est('flat', 0.1), est('possible', 0.9, [6, 20]))} />)
 
-    expect(screen.getByText('Возможно')).toHaveClass('border-dashed')
+    const badge = screen.getByText('Возможно')
+    expect(badge).toHaveClass('border', 'border-dashed')
+    expect(badge).not.toHaveClass('bg-muted')
+    expect(badge).not.toHaveClass('bg-primary')
     expect(screen.getByText('Следующий день лучше')).toBeInTheDocument()
     expect(dayRow()).toHaveTextContent('+0,9')
     expect(dayRow()).toHaveTextContent('возможно')

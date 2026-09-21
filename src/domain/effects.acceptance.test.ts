@@ -95,7 +95,10 @@ describe('приёмка методики на демо-данных: 40 мир�
   it('БСХ — срывов мало: «похоже» и «уверенно» не чаще 10% миров, любое слово — не чаще 35%, «до/после» без ложного «похоже»', () => {
     expect(share((w) => FIRM.includes(w.byCode('БСХ').confidence))).toBeLessThanOrEqual(0.1)
     expect(share((w) => w.byCode('БСХ').confidence !== null)).toBeLessThanOrEqual(0.35)
-    expect(share((w) => w.byCode('БСХ').beforeAfter?.byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
+    // «до/после» считается напрямую в каждом мире: на карточке оно видно, только когда дни не с чем
+    // сравнить, и проверка по карточке засчитывала бы миры, где его нет
+    const sugar = (w: World) => w.challenges.find((c) => c.code === 'БСХ')!
+    expect(share((w) => beforeAfter(sugar(w), w.challenges, w.logs, TODAY).byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
   })
 
   it('ЧТН и ШАГ начаты в один день — «до/после» их не разделит', () => {

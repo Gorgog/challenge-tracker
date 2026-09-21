@@ -25,8 +25,9 @@ describe('cardsOf — какие карточки и в каком порядк�
 
   it('«возможно» — после «похоже», но выше связей с самим днём', () => {
     const likely = effect(est('flat', 0.1), est('likely', 1), { challenge: challenge({ id: 'likely' }) })
-    const possible = effect(est('flat', 0.1), est('possible', 1.4), { challenge: challenge({ id: 'possible' }) })
-    const sameDay = effect(est('likely', 1.2), est('flat', 0.1), { challenge: challenge({ id: 'same' }) })
+    // у связи с самим днём разница больше: при равном уровне она встала бы выше
+    const possible = effect(est('flat', 0.1), est('possible', 0.9), { challenge: challenge({ id: 'possible' }) })
+    const sameDay = effect(est('likely', 2.5), est('flat', 0.1), { challenge: challenge({ id: 'same' }) })
 
     expect(ids(cardsOf([sameDay, possible, likely]))).toEqual(['likely', 'possible', 'same'])
   })

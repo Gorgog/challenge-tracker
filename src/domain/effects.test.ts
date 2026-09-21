@@ -405,11 +405,9 @@ describe('effectText — вывод словами', () => {
     expect(effectText('coincidence', day, 'tag')).toBe('связано только с самим днём')
   })
 
-  it('полоса плохих дней называется полосой плохих дней', () => {
+  it('полоса плохих дней называется полосой — без слова «похоже»: полоса бывает и на уровне «возможно»', () => {
     const day = { same: est('likely', -1), next: est('echo', -1) }
-    expect(effectText('streak', day, 'challenge')).toBe(
-      'похоже на полосу плохих дней: накануне оценки тоже ниже',
-    )
+    expect(effectText('streak', day, 'challenge')).toBe('накануне оценки тоже ниже — это может быть полоса плохих дней')
   })
 
   it('мало данных — так и сказано', () => {
@@ -534,6 +532,15 @@ describe('до и после старта — когда дни сравнить
     const logs = w.logs.filter((_l, i) => i >= 60)
 
     expect(beforeAfter(quit(), [quit()], logs, TODAY).byMetric.day.strength).toBe('few')
+  })
+
+  it('окно «до/после» короче десяти дней — «мало данных»: ранний порог сюда не переносится', () => {
+    const w = step(53, 2)
+    const late = quit({ startDate: dayKey(addDays(TODAY, -8)) })
+    const ba = beforeAfter(late, [late], w.logs, TODAY)
+
+    expect(ba.span).toBe(8)
+    expect(ba.byMetric.day.strength).toBe('few')
   })
 
   it('окно не длиннее того, что прошло после старта', () => {
@@ -661,6 +668,18 @@ describe('классы окна — где проходят границы', () 
     expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.9, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('echo')
     // накануне почти ничего: ранний вывод остаётся
     expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.2, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('possible')
+  })
+
+  it('отличие от накануне для «возможно» — тоже по 70%: по 95% не отличить, по 70% — отличить, и это не полоса', () => {
+    const early = { delta: 1, se: 1 / 1.5 }
+    // накануне заметно по 70% (0,5 > 1,06 · 0,4); разница с ним 0,5 — выше 1,06 · 0,4, но ниже 2,05 · 0,4
+    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.5, se: 0.4 }, diffSe: 0.4, level: 0.995 }).strength).toBe('possible')
+  })
+
+  it('«уверенно» требует отличия от накануне по 95%, а не по 70%', () => {
+    // чисто по 99%; разница с накануне 0,8 — выше 1,06 · 0,5, но ниже 2,05 · 0,5
+    const e = strengthOf({ delta: 1, se: 1 / 3.5 }, 30, 30, 10, { lead: { delta: 0.2, se: 0.4 }, diffSe: 0.5, level: 0.995 })
+    expect(e.strength).toBe('likely')
   })
 })
 

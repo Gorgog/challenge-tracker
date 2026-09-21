@@ -35,11 +35,13 @@ describe('AnalyticsPage — что сказано о выводах', () => {
     expect(screen.getByText(/общий подъём или спад/i)).toBeInTheDocument()
   })
 
-  it('оценок мало — плашка не обещает выводов через две недели: ранние выводы могут стоять уже сейчас', () => {
+  it('оценок мало — плашка не обещает выводов через две недели: первые могут появиться раньше', () => {
     mocked.logs = rated(5)
     render(<AnalyticsPage />)
 
     expect(screen.queryByText(/выводы появятся/i)).toBeNull()
-    expect(screen.getByText(/оценено 5 дней — данных пока мало: выводы ранние/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/оценено 5 дней — данных пока мало: первые выводы обычно появляются на второй неделе/i),
+    ).toBeInTheDocument()
   })
 })
