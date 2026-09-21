@@ -47,6 +47,7 @@ export function buildChallenge(
     startDate: today,
     lengthDays: draft.lengthDays,
     status: 'active',
+    pauses: [],
     rulesLocked: draft.rulesLocked,
     deletedAt: null,
     sortOrder: existing.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1,

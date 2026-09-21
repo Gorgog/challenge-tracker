@@ -5,6 +5,9 @@ export type ChallengeMeasure = 'binary' | 'count'
 /** Пауза — временно не на экране дня. Удаление — отдельно, через `deletedAt`. */
 export type ChallengeStatus = 'active' | 'paused'
 
+/** Период паузы: ключи дней включительно, `to: null` — пауза ещё идёт. */
+export type Pause = { from: string; to: string | null }
+
 export type Challenge = {
   id: string
   name: string
@@ -23,6 +26,11 @@ export type Challenge = {
   /** Длина периода в днях; null — бессрочный челлендж. */
   lengthDays: number | null
   status: ChallengeStatus
+  /**
+   * Периоды пауз. Дни внутри — вне челленджа: не пропуск и не выполнение. Серия на них
+   * замирает, а финиш срочного челленджа отодвигается на длину паузы.
+   */
+  pauses: Pause[]
   /**
    * Правила под замком: тип, измерение, цель и срок больше не меняются —
    * иначе статистика задним числом поедет. Имя и теги менять можно.

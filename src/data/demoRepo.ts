@@ -18,7 +18,7 @@ const DAYS_BACK = 120
  * Челленджи прототипа. `startsAgo` — за сколько дней до «сегодня» начался челлендж,
  * `tag` — имя тега: при сиде из них собирается список тегов, а челлендж получает ссылку.
  */
-type Blueprint = Omit<Challenge, 'startDate' | 'tagIds' | 'rulesLocked' | 'deletedAt'> & {
+type Blueprint = Omit<Challenge, 'startDate' | 'tagIds' | 'pauses' | 'rulesLocked' | 'deletedAt'> & {
   startsAgo: number
   tag: string
 }
@@ -83,7 +83,7 @@ export type DemoOptions = {
 
 const STORAGE_KEY = 'tabel-demo'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 2
+const STORAGE_VERSION = 3
 
 type Snapshot = {
   version: number
@@ -152,6 +152,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     ...rest,
     tagIds: [tagIdOf(tag)],
     startDate: dayKey(addDays(today, -startsAgo)),
+    pauses: [],
     rulesLocked: false,
     deletedAt: null,
   })).sort((a, b) => a.sortOrder - b.sortOrder)

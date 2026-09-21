@@ -1,4 +1,7 @@
-import type { Challenge } from './types'
+import { addDays, dayKey } from './date'
+import { isPaused } from './pauses'
+import { dayOutcome } from './streaks'
+import type { Challenge, EntryMap } from './types'
 
 /**
  * Не удалён. Списки и формы показывают только такие.
@@ -41,4 +44,30 @@ export function applyPatch(c: Challenge, patch: ChallengePatch): Challenge {
   if (patch.rulesLocked === true) next.rulesLocked = true
 
   return next
+}
+
+/**
+ * Ставит на паузу. Решённый сегодня день — выполненная привычка или отмеченный срыв —
+ * паузой не стирается, и она начинается завтра. Иначе пауза начинается сегодня:
+ * незакрытый день не должен превратиться в пропуск.
+ */
+export function pause(c: Challenge, entries: EntryMap, today: Date): Challenge {
+  if (isPaused(c)) return c
+  const outcome = dayOutcome(c, entries, today, today)
+  const decided = c.kind === 'do' ? outcome === 'hit' : outcome === 'miss'
+  const from = dayKey(decided ? addDays(today, 1) : today)
+  return { ...c, pauses: [...c.pauses, { from, to: null }] }
+}
+
+/**
+ * Снимает с паузы: сегодня челлендж снова идёт, пауза заканчивается вчера.
+ * Пауза, которая так и не успела начаться, исчезает из истории.
+ */
+export function resume(c: Challenge, today: Date): Challenge {
+  if (!isPaused(c)) return c
+  const to = dayKey(addDays(today, -1))
+  const pauses = c.pauses
+    .map((p) => (p.to === null ? { ...p, to } : p))
+    .filter((p) => p.to !== null && p.to >= p.from)
+  return { ...c, pauses }
 }

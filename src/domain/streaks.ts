@@ -1,9 +1,20 @@
 import { addDays, dayKey, daysBetween, parseDay } from './date'
+import { pauseAt, pausedOn } from './pauses'
 import type { Challenge, EntryMap, Outcome } from './types'
 
-/** Последний день ограниченного челленджа; для бессрочного — null. */
+/**
+ * Последний день ограниченного челленджа — тот, на котором набрано `lengthDays` дней
+ * вне пауз: пауза отодвигает финиш на свою длину. null — челлендж бессрочный или финиш
+ * пока неизвестен: пауза, начатая до него, ещё не закрыта.
+ */
 export function lastDay(c: Challenge): Date | null {
-  return c.lengthDays ? addDays(parseDay(c.startDate), c.lengthDays - 1) : null
+  if (!c.lengthDays) return null
+  let counted = 0
+  for (let day = parseDay(c.startDate); ; day = addDays(day, 1)) {
+    const pause = pauseAt(c, dayKey(day))
+    if (pause?.to === null) return null
+    if (!pause && ++counted === c.lengthDays) return day
+  }
 }
 
 /**
@@ -12,10 +23,12 @@ export function lastDay(c: Challenge): Date | null {
  * Привычка: запись есть — сравниваем с целью; записи нет — пропуск, но только для
  * прошедших дней, сегодняшний ещё идёт.
  * Отказ: день засчитывается сам, запись появляется только когда отмечен срыв.
+ * День паузы — вне челленджа, как и дни до старта и после финиша.
  */
 export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Date): Outcome {
   const start = parseDay(c.startDate)
   if (daysBetween(start, day) < 0) return 'outside'
+  if (pausedOn(c, dayKey(day))) return 'outside'
   const end = lastDay(c)
   if (end && daysBetween(end, day) > 0) return 'outside'
   if (daysBetween(today, day) > 0) return 'outside'
@@ -30,7 +43,10 @@ export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Da
   return isToday ? 'pending' : 'miss'
 }
 
-/** Прошедшие дни, за которые челлендж отвечает. Сегодняшний не входит: он ещё не закончен. */
+/**
+ * Прошедшие дни, за которые челлендж отвечает. Сегодняшний не входит: он ещё не закончен.
+ * Дни паузы не входят тоже.
+ */
 export function activeDays(c: Challenge, today: Date): string[] {
   const start = parseDay(c.startDate)
   const end = lastDay(c)
@@ -38,14 +54,18 @@ export function activeDays(c: Challenge, today: Date): string[] {
   const until = end && daysBetween(end, lastPassed) > 0 ? end : lastPassed
 
   const out: string[] = []
-  for (let d = start; daysBetween(d, until) >= 0; d = addDays(d, 1)) out.push(dayKey(d))
+  for (let d = start; daysBetween(d, until) >= 0; d = addDays(d, 1)) {
+    const key = dayKey(d)
+    if (!pausedOn(c, key)) out.push(key)
+  }
   return out
 }
 
 /**
  * Текущая серия. Для привычки счёт начинается со вчера, если сегодня ещё не отмечено —
  * незаконченный день не должен обнулять серию. Для отказа сегодняшний день идёт в счёт
- * сразу, а отмеченный срыв обрывает серию немедленно.
+ * сразу, а отмеченный срыв обрывает серию немедленно. Пауза серию замораживает:
+ * её дни не рвут счёт и не прибавляют к нему.
  */
 export function currentStreak(c: Challenge, entries: EntryMap, today: Date): number {
   let day = today
@@ -54,7 +74,12 @@ export function currentStreak(c: Challenge, entries: EntryMap, today: Date): num
   if (todayOutcome !== 'hit') day = addDays(today, -1)
 
   let streak = 0
-  while (dayOutcome(c, entries, day, today) === 'hit') {
+  for (;;) {
+    if (pausedOn(c, dayKey(day))) {
+      day = addDays(day, -1)
+      continue
+    }
+    if (dayOutcome(c, entries, day, today) !== 'hit') break
     streak++
     day = addDays(day, -1)
   }
