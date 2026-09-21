@@ -6,6 +6,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { ChallengesPage } from '@/features/challenges/ChallengesPage'
 import { DayPage } from '@/features/day/DayPage'
 import { JournalPage } from '@/features/journal/JournalPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 import { Layout } from './Layout'
 import { SetupNeeded } from './SetupNeeded'
 
@@ -31,6 +32,7 @@ export function App() {
         <Route path="challenges" element={<ChallengesPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="journal" element={<JournalPage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<DayPage />} />
       </Route>
     </Routes>

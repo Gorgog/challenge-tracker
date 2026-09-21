@@ -1,3 +1,4 @@
+import { SettingsIcon } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/AuthProvider'
@@ -47,6 +48,19 @@ export function Layout() {
           <span className="font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground">
             {DOW[isoDow(today)]}, {formatHuman(today)}
           </span>
+          <NavLink
+            to="/settings"
+            aria-label="Настройки"
+            title="Настройки"
+            className={({ isActive }) =>
+              cn(
+                'grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                isActive && 'bg-muted text-foreground',
+              )
+            }
+          >
+            <SettingsIcon aria-hidden="true" className="size-4" />
+          </NavLink>
           <Button variant="ghost" size="sm" onClick={signOut}>
             Выйти
           </Button>
