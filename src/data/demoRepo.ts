@@ -1,5 +1,6 @@
 import { addDays, dayKey, isoDow, parseDay, todayKey } from '@/domain/date'
 import { applyPatch } from '@/domain/challenges'
+import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import {
   DEFAULT_DAY_GROUPS,
   type Challenge,
@@ -217,22 +218,22 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
       Math.round(
         3.6 + energy * 5.4 + rnd() * 1.4 - (has('ссора') ? 2.6 : 0) - (has('болел') ? 1.8 : 0) + (has('отдых') ? 0.8 : 0),
       ),
-      1,
-      10,
+      SCORE_MIN,
+      SCORE_MAX,
     )
     const wellbeing = clamp(
       Math.round(
         3.8 + energy * 4.8 + rnd() * 1.2 - (has('мало спал') ? 2.4 : 0) - (has('болел') ? 3.4 : 0) - (has('алкоголь') ? 1.2 : 0),
       ),
-      1,
-      10,
+      SCORE_MIN,
+      SCORE_MAX,
     )
     const productivity = clamp(
       Math.round(
         2.9 + energy * 5.6 + rnd() * 1.3 + (has('дедлайн') ? 1.4 : 0) - (has('болел') ? 3 : 0) - (has('выходной') ? 1.6 : 0),
       ),
-      1,
-      10,
+      SCORE_MIN,
+      SCORE_MAX,
     )
 
     let note = ''

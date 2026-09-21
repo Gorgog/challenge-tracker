@@ -42,7 +42,7 @@ export type DayCloseDialogProps = {
 /** Сколько бегунок доезжает до засечки после отпускания. */
 const SNAP_MS = 150
 
-/** Доля дорожки, на которой стоит значение: 5 из 1–10 — это 44,4 %, а не половина. */
+/** Доля дорожки, на которой стоит значение. На шкале 0–10 пятёрка — ровно половина. */
 const anchorAt = (value: number) =>
   `${((value - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100}%`
 
@@ -163,7 +163,7 @@ export function DayCloseDialog({
               <div className="flex items-baseline justify-between gap-3">
                 <b className="text-[13.5px] font-semibold">{scale.label}</b>
                 <em className="font-mono text-xs not-italic text-muted-foreground tabular-nums">
-                  {shown === null ? 'не выбрано' : `${shown} из 10`}
+                  {shown === null ? 'не выбрано' : `${shown} из ${SCORE_MAX}`}
                 </em>
               </div>
 
@@ -172,7 +172,7 @@ export function DayCloseDialog({
                 max={SCORE_MAX}
                 step={0.01}
                 value={[live ?? value ?? 5]}
-                thumbLabel={`${scale.label} от 1 до 10`}
+                thumbLabel={`${scale.label} от ${SCORE_MIN} до ${SCORE_MAX}`}
                 data-snapping={snapping === scale.field ? '' : undefined}
                 onValueChange={([next]) =>
                   setDragging((prev) => ({ ...prev, [scale.field]: next ?? 5 }))
@@ -191,7 +191,7 @@ export function DayCloseDialog({
               */}
               <div className="relative h-4 font-mono text-[10.5px] text-muted-foreground">
                 <span className="absolute whitespace-nowrap" style={{ left: anchorAt(SCORE_MIN) }}>
-                  1 — {scale.low}
+                  {SCORE_MIN} — {scale.low}
                 </span>
                 <span
                   className="absolute -translate-x-1/2 whitespace-nowrap"
@@ -203,7 +203,7 @@ export function DayCloseDialog({
                   className="absolute -translate-x-full whitespace-nowrap"
                   style={{ left: anchorAt(SCORE_MAX) }}
                 >
-                  10 — {scale.high}
+                  {SCORE_MAX} — {scale.high}
                 </span>
               </div>
             </div>
