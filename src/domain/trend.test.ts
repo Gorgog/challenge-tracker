@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { averages, coverage, scoreSeries } from './trend'
-import type { DayLog } from './types'
+import { averages, coverage, scoreSeries, sleepAverages, sleepSeries } from './trend'
+import type { DayLog, DayStart } from './types'
 
 const TODAY = parseDay('2026-09-21')
 
@@ -119,3 +119,34 @@ describe('coverage — сколько дней оценено', () => {
     expect(coverage(logs, TODAY).sick).toBe(1)
   })
 })
+
+/** Начало дня `back` дней назад; сон null — утро пропущено. */
+const start = (back: number, sleep: number | null): DayStart => {
+  const day = dayKey(addDays(TODAY, -back))
+  return { day, morning: sleep === null ? null : { sleep, wellbeing: 6, mood: 6 }, startedAt: `${day}T08:00:00.000Z` }
+}
+
+describe('сон по утрам — ряд и средние', () => {
+  it('ряд — по вчера: пропущенное утро — пусто, а не ноль; сегодняшнее утро в ряд не идёт', () => {
+    const series = sleepSeries([start(0, 9), start(1, 6), start(2, null), start(3, 4)], TODAY, 5)
+    expect(series.map((d) => d.day)).toEqual(['2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19', '2026-09-20'])
+    expect(series.map((d) => d.raw)).toEqual([null, null, 4, null, 6])
+  })
+
+  it('сглаживание — среднее утр за неделю, считая сам день; без утр за неделю — пусто', () => {
+    const series = sleepSeries([start(1, 6), start(3, 4)], TODAY, 10)
+    expect(series.at(-1)!.smooth).toBe(5)
+    expect(series[0]!.smooth).toBeNull()
+  })
+
+  it('средние за последние 30 дней и прошлые 30 — по дням с утром, со своим числом дней', () => {
+    const starts = [start(0, 10), start(1, 8), start(2, 6), start(3, null), start(35, 5), start(40, null)]
+    expect(sleepAverages(starts, TODAY)).toEqual({ current: 7, previous: 5, currentDays: 2, previousDays: 1 })
+  })
+
+  it('без утр — пусто и ноль дней', () => {
+    expect(sleepAverages([start(1, null)], TODAY)).toEqual({ current: null, previous: null, currentDays: 0, previousDays: 0 })
+    expect(sleepSeries([], TODAY, 3).every((d) => d.raw === null && d.smooth === null)).toBe(true)
+  })
+})
+

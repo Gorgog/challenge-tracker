@@ -16,6 +16,10 @@ function series(gaps: number[] = []): SeriesDay[] {
 
 const dayPath = (container: HTMLElement) => container.querySelector('[data-line="day"]')!.getAttribute('d')!
 
+/** Сон по тем же дням; в `gaps` утро пропущено. */
+const sleepOf = (gaps: number[] = []) =>
+  series().map((d, i) => ({ day: d.day, raw: gaps.includes(i) ? null : 7, smooth: gaps.includes(i) ? null : 7 }))
+
 describe('ScoreTrend', () => {
   it('описан для читалки: что за график и за какой срок', () => {
     render(<ScoreTrend series={series()} />)
@@ -85,3 +89,36 @@ describe('ScoreTrend — мышь, палец и читалка', () => {
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', expect.stringMatching(/19 сентября/))
   })
 })
+
+describe('ScoreTrend — сон по утрам', () => {
+  it('линия сна — своя, и в легенде подписана', () => {
+    const { container } = render(<ScoreTrend series={series()} sleep={sleepOf()} />)
+    expect(container.querySelector('[data-line="sleep"]')).not.toBeNull()
+    expect(screen.getByText(/сон, утром/i)).toBeInTheDocument()
+  })
+
+  it('без утр линии сна и её подписи нет', () => {
+    const none = sleepOf(Array.from({ length: 20 }, (_, i) => i))
+    const { container, rerender } = render(<ScoreTrend series={series()} sleep={none} />)
+    expect(container.querySelector('[data-line="sleep"]')).toBeNull()
+    expect(screen.queryByText(/сон, утром/i)).toBeNull()
+    rerender(<ScoreTrend series={series()} />)
+    expect(container.querySelector('[data-line="sleep"]')).toBeNull()
+  })
+
+  it('в подсказке дня — и сон, если утро было', () => {
+    render(<ScoreTrend series={series()} sleep={sleepOf([13])} />)
+    fireEvent.pointerEnter(screen.getByTestId('day-2026-09-12'))
+    expect(screen.getByRole('status')).toHaveTextContent('сон 7,0')
+    fireEvent.pointerEnter(screen.getByTestId('day-2026-09-14'))
+    expect(screen.getByRole('status')).not.toHaveTextContent('сон')
+  })
+
+  it('читалке сон отдаётся вместе с оценками дня', async () => {
+    const user = userEvent.setup()
+    render(<ScoreTrend series={series()} sleep={sleepOf()} />)
+    await user.tab()
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', expect.stringMatching(/сон 7,0/))
+  })
+})
+

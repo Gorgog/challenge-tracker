@@ -35,4 +35,27 @@ describe('ScoreTiles', () => {
     render(<ScoreTiles averages={{ current: all(7), previous: all(null), currentDays: 20, previousDays: 0 }} />)
     expect(screen.getByRole('group', { name: /оценка дня/i })).not.toHaveTextContent(/[+−]/)
   })
+
+  it('плитка сна — средний сон по утрам и сдвиг к прошлым 30', () => {
+    const a: Averages = { current: all(7), previous: all(6), currentDays: 28, previousDays: 30 }
+    render(<ScoreTiles averages={a} sleep={{ current: 6.4, previous: 7.1, currentDays: 25, previousDays: 12 }} />)
+
+    const sleep = screen.getByRole('group', { name: /сон/i })
+    expect(sleep).toHaveTextContent('6,4')
+    expect(sleep).toHaveTextContent('−0,7')
+  })
+
+  it('сдвиг сна считается по утрам: оценок хватает, а утр мало — сдвига нет', () => {
+    const a: Averages = { current: all(7), previous: all(6), currentDays: 28, previousDays: 30 }
+    render(<ScoreTiles averages={a} sleep={{ current: 6, previous: 7, currentDays: 25, previousDays: 4 }} />)
+    expect(screen.getByRole('group', { name: /сон/i })).not.toHaveTextContent(/[+−]/)
+  })
+
+  it('без утр плитки сна нет', () => {
+    const a: Averages = { current: all(7), previous: all(6), currentDays: 28, previousDays: 30 }
+    const { rerender } = render(<ScoreTiles averages={a} sleep={{ current: null, previous: null, currentDays: 0, previousDays: 0 }} />)
+    expect(screen.queryByRole('group', { name: /сон/i })).toBeNull()
+    rerender(<ScoreTiles averages={a} />)
+    expect(screen.queryByRole('group', { name: /сон/i })).toBeNull()
+  })
 })
