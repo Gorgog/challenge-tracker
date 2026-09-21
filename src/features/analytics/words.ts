@@ -11,6 +11,7 @@ export const METRIC_LABEL: Record<Metric, string> = {
 /** Слово класса оценки окна — так он читается в таблице. */
 export const STRENGTH_WORD: Record<Strength, string> = {
   few: 'мало данных',
+  tangled: 'не разделить',
   flat: 'без разницы',
   unclear: 'неясно',
   echo: 'полоса',

@@ -15,6 +15,7 @@ export function EffectCard({ effect }: { effect: ChallengeEffect }) {
   const facts = [`учтено ${daysText(days)}: с — ${same.withDays}, без — ${same.withoutDays}`]
   if (sickDays > 0) facts.push(`${sickDays} ${plural(sickDays, 'день', 'дня', 'дней')} болезни не учтены`)
   if (partner) facts.push(`делается вместе с ${partner.code} — его вклад вычтен`)
+  if (effect.twin) facts.push(`почти всегда вместе с ${effect.twin.code} — чей эффект, не сказать`)
 
   return (
     <article

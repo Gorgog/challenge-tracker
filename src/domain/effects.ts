@@ -12,29 +12,29 @@ import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
  * выполнение, выходные хуже будней, а хорошие дни идут полосами. Поэтому одна регрессия
  * на субъект и шкалу даёт оба окна сразу:
  *
- *   оценка(t) ~ 1 + x(t) + x(t−1) + x(t+1) + выходные(t)
+ *   оценка(t) ~ 1 + x(t) + x(t−1) + x(t+1) + выходные(t) + выходные(t−1) [+ сосед(t−1)]
  *
  * x(t) — окно «в тот же день», x(t−1) — «на следующий день», x(t+1) — контроль «накануне»:
  * завтрашнее выполнение не может влиять на сегодняшнюю оценку, и если оно «предсказывает»
- * её так же, как вчерашнее, — это полоса хороших дней, а не эффект.
+ * её так же, как вчерашнее, — это полоса хороших дней, а не эффект. «Выходные вчера» отделяют
+ * понедельник и разницу субботы с воскресеньем — иначе ритм недели утекал бы в окно «назавтра».
  */
 
 /** `day` — оценка дня целиком: среднее трёх шкал. */
 export type Metric = 'day' | ScoreField
 export const METRICS: Metric[] = ['day', 'mood', 'wellbeing', 'productivity']
 
-/** Разница меньше полубалла — «без разницы», даже если она устойчива. */
+/** Разница меньше полубалла — не повод для вывода, даже если она устойчива. */
 export const PRACTICAL = 0.5
-/** Контроль «накануне» того же знака и не меньше этой доли от эффекта — это полоса. */
-export const ECHO_SHARE = 0.5
 
 /**
  * Класс оценки окна, от слабого к сильному:
- * few — мало дней в группе; flat — разница меньше полубалла; unclear — интервал задевает ноль;
- * echo — только «назавтра»: накануне оценки так же выше, это полоса; likely — похоже;
- * strong — уверенно, бывает только «назавтра».
+ * few — мало дней в группе; tangled — окна не разделить (привычка через день);
+ * flat — весь интервал внутри полубалла; unclear — неясно: интервал задевает ноль, разница меньше
+ * полубалла или назавтра не отличить от накануне; echo — только «назавтра»: накануне оценки тоже
+ * заметно выше, это полоса; likely — похоже; strong — уверенно, бывает только «назавтра».
  */
-export type Strength = 'few' | 'flat' | 'unclear' | 'echo' | 'likely' | 'strong'
+export type Strength = 'few' | 'tangled' | 'flat' | 'unclear' | 'echo' | 'likely' | 'strong'
 
 export type Estimate = {
   /** На сколько баллов оценка выше в дни «с», чем в дни «без», с поправками модели. */
@@ -55,6 +55,7 @@ export type Windows = { same: Estimate; next: Estimate }
  * rebound — в тот же день и назавтра в разные стороны; streak — полоса, а не эффект;
  * coincidence — связь только с самим днём, назавтра следа нет; sameDayOnly — про тот же день
  * видно, про следующий пока нет; noEffect — разницы нет; unclear — неясно;
+ * tangled — выполнение идёт через день, тот же день и следующий не разделить;
  * insufficient — мало данных в обоих окнах.
  */
 export type Verdict =
@@ -66,6 +67,7 @@ export type Verdict =
   | 'sameDayOnly'
   | 'noEffect'
   | 'unclear'
+  | 'tangled'
   | 'insufficient'
 
 /** «Уверенно» или «похоже»; null — слова уверенности нет. Даёт только окно «назавтра». */
@@ -78,6 +80,8 @@ export type ChallengeEffect = {
   confidence: Confidence
   /** Челлендж, который делается вместе с этим: его вчерашнее выполнение учтено в модели. */
   partner: Challenge | null
+  /** Делается почти всегда вместе с этим — эффекты не разделить, вывод не сильнее «похоже». */
+  twin: Challenge | null
   /** Дней, вошедших в расчёт. */
   days: number
   /** Дней, выброшенных из-за болезни: «болел» в сам день или накануне. */
@@ -124,13 +128,14 @@ const SICK = 'болел'
 const WEEKEND = 'выходной'
 
 const shift = (day: string, by: number) => dayKey(addDays(parseDay(day), by))
+const weekendOf = (day: string) => (isoDow(parseDay(day)) >= 5 ? 1 : 0)
 
 /** Оценка дня по метрике: `day` — среднее трёх шкал. */
 export const scoreOf = (log: DayLog, metric: Metric) =>
   metric === 'day' ? (log.mood + log.wellbeing + log.productivity) / 3 : log[metric]
 
 /** Уровень для «уверенно»: 99% для оценки дня, для отдельной шкалы — с поправкой на три шкалы. */
-const strictLevel = (metric: Metric) => (metric === 'day' ? 0.995 : 1 - 0.01 / 3 / 2)
+export const strictLevel = (metric: Metric) => (metric === 'day' ? 0.995 : 1 - 0.01 / 3 / 2)
 
 /** Что анализируем — челлендж или тег — и как с ним обращаться. */
 type Subject = {
@@ -150,16 +155,24 @@ type Row = { day: string; log: DayLog; now: 0 | 1; before: 0 | 1; after: 0 | 1 }
 
 type Coef = { delta: number; se: number }
 
-const few = (withDays: number, withoutDays: number): Estimate => ({
+const blank = (strength: 'few' | 'tangled', withDays: number, withoutDays: number): Estimate => ({
   delta: 0,
   low: 0,
   high: 0,
-  strength: 'few',
+  strength,
   withDays,
   withoutDays,
 })
+const few = (withDays: number, withoutDays: number) => blank('few', withDays, withoutDays)
 
-function classify(
+/**
+ * Класс оценки окна. «Без разницы» — только когда весь 95% интервал внутри полубалла: широкий
+ * интервал вокруг нуля — это «неясно». В тот же день (`next` = null) сильнее «похоже» не бывает.
+ * Назавтра: накануне оценки тоже заметно выше и разница с ним не значима — полоса. «Уверенно» —
+ * 99% интервал (для шкалы строже), значимое отличие от накануне и не меньше десяти дней в группе;
+ * для «похоже» отличие от накануне не требуется, иначе инерция настроения глушила бы и настоящее.
+ */
+export function strengthOf(
   est: Coef,
   withDays: number,
   withoutDays: number,
@@ -170,26 +183,30 @@ function classify(
   if (smaller < minGroup) return few(withDays, withoutDays)
 
   const df = Math.max(3, smaller - 1)
-  const half = tQuantile(0.975, df) * est.se
+  const t95 = tQuantile(0.975, df)
+  const half = t95 * est.se
   const base = { delta: est.delta, low: est.delta - half, high: est.delta + half, withDays, withoutDays }
 
-  if (Math.abs(est.delta) < PRACTICAL) return { ...base, strength: 'flat' }
+  if (base.low > -PRACTICAL && base.high < PRACTICAL) return { ...base, strength: 'flat' }
   if (base.low <= 0 && base.high >= 0) return { ...base, strength: 'unclear' }
-  /* В тот же день причину от следствия не отличить — сильнее «похоже» не бывает. */
+  if (Math.abs(est.delta) < PRACTICAL) return { ...base, strength: 'unclear' }
   if (!next) return { ...base, strength: 'likely' }
 
   const { lead } = next
-  const sameSign = Math.sign(lead.delta) === Math.sign(est.delta)
-  if (sameSign && Math.abs(lead.delta) >= ECHO_SHARE * Math.abs(est.delta)) {
-    return { ...base, strength: 'echo' }
-  }
+  const clearOfLead = Math.abs(est.delta - lead.delta) > t95 * next.diffSe
+  const leadShows = Math.sign(lead.delta) === Math.sign(est.delta) && Math.abs(lead.delta) > t95 * lead.se
+  /* Накануне оценки тоже заметно выше и назавтра от накануне не отличить — это полоса. */
+  if (leadShows && !clearOfLead) return { ...base, strength: 'echo' }
 
+  /* «Уверенно» — только когда назавтра отличается и от нуля по 99%, и от контроля «накануне». */
   const strict = tQuantile(next.level, df) * est.se
   const clearOfZero = est.delta - strict > 0 || est.delta + strict < 0
-  const clearOfLead = Math.abs(est.delta - lead.delta) > tQuantile(0.975, df) * next.diffSe
   const strong = clearOfZero && clearOfLead && smaller >= MIN_GROUP
   return { ...base, strength: strong ? 'strong' : 'likely' }
 }
+
+/** Столбцы, без которых модель обходится: их выкидывают по одному, если она не решается. */
+const DROPPABLE = ['partner', 'weekendBefore', 'weekend', 'after'] as const
 
 function analyze(subject: Subject, logs: DayLog[]) {
   const byDay = new Map(logs.filter((l) => l.closedAt !== null).map((l) => [l.day, l]))
@@ -216,35 +233,63 @@ function analyze(subject: Subject, logs: DayLog[]) {
   const [sameWith, sameWithout] = count((r) => r.now)
   const [nextWith, nextWithout] = count((r) => r.before)
 
-  /* Столбцы модели; постоянные выкидываются — их не отличить от свободного члена. */
   const columns: { name: string; values: number[] }[] = [
     { name: 'now', values: rows.map((r) => r.now) },
     { name: 'before', values: rows.map((r) => r.before) },
     { name: 'after', values: rows.map((r) => r.after) },
   ]
   if (subject.weekendControl) {
-    columns.push({ name: 'weekend', values: rows.map((r) => (isoDow(parseDay(r.day)) >= 5 ? 1 : 0)) })
+    columns.push({ name: 'weekend', values: rows.map((r) => weekendOf(r.day)) })
+    columns.push({ name: 'weekendBefore', values: rows.map((r) => weekendOf(shift(r.day, -1))) })
   }
+  /* used — сосед в модели; tangled — сосед неотделим от самого челленджа. */
+  let partnerState: 'none' | 'used' | 'tangled' = 'none'
   const { partner } = subject
   if (partner) {
-    columns.push({ name: 'partner', values: rows.map((r) => partner(shift(r.day, -1))) })
+    const values = rows.map((r) => partner(shift(r.day, -1)))
+    const ones = values.filter((v) => v === 1).length
+    /* Сосед с горсткой дней «с» или «без» ничего не поправляет — только ломает модель. */
+    if (ones >= MIN_GROUP && values.length - ones >= MIN_GROUP) {
+      columns.push({ name: 'partner', values })
+      partnerState = 'used'
+    }
   }
-  const used = columns.filter((c) => new Set(c.values).size > 1)
-  /** Номер столбца в матрице модели; −1 — столбец выкинут как постоянный. */
+
+  /* Постоянные столбцы выкидываются сразу — их не отличить от свободного члена. */
+  let used = columns.filter((c) => new Set(c.values).size > 1)
+  const design = () => rows.map((_r, i) => [1, ...used.map((c) => c.values[i]!)])
+  const dayScores = rows.map((r) => scoreOf(r.log, 'day'))
+  let x = design()
+  let solvable = rows.length > 0 && fitLinear(x, dayScores) !== null
+  /* Модель не решается — выкидываем посторонние столбцы по одному, окна оставляем. */
+  while (rows.length > 0 && !solvable) {
+    const drop = DROPPABLE.find((name) => used.some((c) => c.name === name))
+    if (!drop) break
+    if (drop === 'partner') partnerState = 'tangled'
+    used = used.filter((c) => c.name !== drop)
+    x = design()
+    solvable = fitLinear(x, dayScores) !== null
+  }
+
   const column = (name: string) => {
     const i = used.findIndex((c) => c.name === name)
     return i < 0 ? -1 : i + 1
   }
-  const x = rows.map((_r, i) => [1, ...used.map((c) => c.values[i]!)])
   const iNow = column('now')
   const iBefore = column('before')
   const iAfter = column('after')
+  /* Окна сплетены: «вчера» — всегда тот же или обратный день, как у привычки через день. */
+  const tangled =
+    rows.length > 0 && (rows.every((r) => r.now === r.before) || rows.every((r) => r.now !== r.before))
 
   const windows = {} as Record<Metric, Windows>
   for (const metric of METRICS) {
-    const fit = rows.length ? fitLinear(x, rows.map((r) => scoreOf(r.log, metric))) : null
+    const fit = solvable ? fitLinear(x, rows.map((r) => scoreOf(r.log, metric))) : null
     if (!fit) {
-      windows[metric] = { same: few(sameWith, sameWithout), next: few(nextWith, nextWithout) }
+      const bigEnough =
+        Math.min(sameWith, sameWithout) >= subject.minGroup && Math.min(nextWith, nextWithout) >= subject.minGroup
+      const kind = tangled && bigEnough ? 'tangled' : 'few'
+      windows[metric] = { same: blank(kind, sameWith, sameWithout), next: blank(kind, nextWith, nextWithout) }
       continue
     }
 
@@ -263,11 +308,11 @@ function analyze(subject: Subject, logs: DayLog[]) {
       same:
         iNow < 0
           ? few(sameWith, sameWithout)
-          : classify(coef(iNow), sameWith, sameWithout, subject.minGroup, null),
+          : strengthOf(coef(iNow), sameWith, sameWithout, subject.minGroup, null),
       next:
         iBefore < 0
           ? few(nextWith, nextWithout)
-          : classify(nextCoef, nextWith, nextWithout, subject.minGroup, {
+          : strengthOf(nextCoef, nextWith, nextWithout, subject.minGroup, {
               lead,
               diffSe,
               level: strictLevel(metric),
@@ -275,7 +320,7 @@ function analyze(subject: Subject, logs: DayLog[]) {
     }
   }
 
-  return { windows, days: rows.length, sickDays }
+  return { windows, days: rows.length, sickDays, partnerState }
 }
 
 /** Прошедшие дни челленджа с известным исходом: 1 — взят, 0 — пропуск или срыв. */
@@ -289,8 +334,8 @@ function outcomes(c: Challenge, entries: EntryMap, today: Date): Map<string, 0 |
   return out
 }
 
-/** Совместность выполнения двух челленджей — φ по дням, известным у обоих, и число этих дней. */
-function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): { phi: number; days: number } {
+/** Совместность выполнения двух челленджей по дням, известным у обоих. */
+function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): { phi: number; days: number; ones: number } {
   let n = 0
   let sa = 0
   let sb = 0
@@ -303,24 +348,26 @@ function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): { phi: number; days:
     sb += xb
     sab += xa * xb
   }
-  if (n < MIN_GROUP) return { phi: 0, days: n }
+  if (n < MIN_GROUP) return { phi: 0, days: n, ones: sb }
   const pa = sa / n
   const pb = sb / n
   const spread = Math.sqrt(pa * (1 - pa) * pb * (1 - pb))
-  return { phi: spread === 0 ? 0 : (sab / n - pa * pb) / spread, days: n }
+  return { phi: spread === 0 ? 0 : (sab / n - pa * pb) / spread, days: n, ones: sb }
 }
 
 /**
  * Сосед `c` — челлендж с заметной совместностью (|φ| ≥ PARTNER_PHI), а из нескольких — тот,
  * чья совместность надёжнее: |φ|·√дней. Иначе недавний челлендж, случайно совпавший на двух
  * неделях, перебил бы давний, с которым история общая, и чужой эффект остался бы неучтённым.
+ * Кандидат с горсткой выполненных или пропущенных дней соседом не становится.
  */
 function partnerOf(c: Challenge, all: Challenge[], known: Map<string, Map<string, 0 | 1>>) {
   let best: Challenge | null = null
   let bestWeight = 0
   for (const other of all) {
     if (other.id === c.id) continue
-    const { phi: p, days } = phi(known.get(c.id)!, known.get(other.id)!)
+    const { phi: p, days, ones } = phi(known.get(c.id)!, known.get(other.id)!)
+    if (ones < MIN_GROUP || days - ones < MIN_GROUP) continue
     const weight = Math.abs(p) * Math.sqrt(days)
     if (Math.abs(p) >= PARTNER_PHI && weight > bestWeight) {
       best = other
@@ -335,6 +382,7 @@ const decided = (s: Strength) => s === 'likely' || s === 'strong'
 /** Вывод по двум окнам оценки дня — таблица из плана; уверенность даёт только «назавтра». */
 export function verdictOf(day: Windows): { verdict: Verdict; confidence: Confidence } {
   const { same, next } = day
+  if (same.strength === 'tangled' || next.strength === 'tangled') return { verdict: 'tangled', confidence: null }
   const confidence: Confidence =
     next.strength === 'strong' ? 'sure' : next.strength === 'likely' ? 'likely' : null
 
@@ -376,9 +424,19 @@ export function effectText(verdict: Verdict, day: Windows, subject: 'challenge' 
       return 'заметной связи нет'
     case 'unclear':
       return 'пока неясно'
+    case 'tangled':
+      return 'выполнение чередуется через день — тот же день и следующий не разделить'
     case 'insufficient':
       return 'мало данных'
   }
+}
+
+/** «Уверенно» → «похоже» во всех окнах: для близнецов чей эффект — не сказать. */
+function capAtLikely(windows: Record<Metric, Windows>): Record<Metric, Windows> {
+  const cap = (e: Estimate): Estimate => (e.strength === 'strong' ? { ...e, strength: 'likely' } : e)
+  const out = {} as Record<Metric, Windows>
+  for (const metric of METRICS) out[metric] = { same: cap(windows[metric].same), next: cap(windows[metric].next) }
+  return out
 }
 
 /**
@@ -395,24 +453,29 @@ export function challengeEffects(
 
   return all.map((challenge) => {
     const mine = known.get(challenge.id)!
-    const partner = partnerOf(challenge, all, known)
-    const partnerDays = partner ? known.get(partner.id)! : null
-    const result = analyze(
+    const candidate = partnerOf(challenge, all, known)
+    const candidateDays = candidate ? known.get(candidate.id)! : null
+    const { partnerState, windows: raw, days, sickDays } = analyze(
       {
         x: (day) => mine.get(day),
         minGroup: MIN_GROUP,
         weekendControl: true,
         dropSick: true,
-        partner: partnerDays ? (day) => partnerDays.get(day) ?? 0 : undefined,
+        partner: candidateDays ? (day) => candidateDays.get(day) ?? 0 : undefined,
       },
       logs,
     )
-    const verdict = verdictOf(result.windows.day)
+    const twin = partnerState === 'tangled' ? candidate : null
+    const windows = twin ? capAtLikely(raw) : raw
+    const verdict = verdictOf(windows.day)
     return {
       challenge,
-      partner,
-      ...result,
+      windows,
       ...verdict,
+      partner: partnerState === 'used' ? candidate : null,
+      twin,
+      days,
+      sickDays,
       beforeAfter: verdict.verdict === 'insufficient' ? beforeAfter(challenge, all, logs, today) : null,
     }
   })
@@ -431,7 +494,7 @@ function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable:
 
   const r = lag1(fit.residuals, rows.map((row) => row.log.day))
   const se = Math.sqrt(fit.cov[1]![1]!) * Math.sqrt((1 + r) / (1 - r))
-  const est = classify({ delta: fit.beta[1]!, se }, after.length, before.length, MIN_GROUP, null)
+  const est = strengthOf({ delta: fit.beta[1]!, se }, after.length, before.length, MIN_GROUP, null)
   /* Другой челлендж начат одновременно — чей это эффект, не сказать. */
   if (inseparable && est.strength === 'likely') return { ...est, strength: 'unclear' }
   return est
@@ -499,7 +562,7 @@ export function tagEffects(logs: DayLog[]): TagEffect[] {
   return tags
     .map((tag) => {
       const tagDays = closed.filter((l) => l.tags.includes(tag)).length
-      const result = analyze(
+      const { windows, days, sickDays } = analyze(
         {
           x: (day) => {
             const log = byDay.get(day)
@@ -512,7 +575,7 @@ export function tagEffects(logs: DayLog[]): TagEffect[] {
         },
         closed,
       )
-      return { tag, tagDays, ...result, ...verdictOf(result.windows.day) }
+      return { tag, tagDays, windows, days, sickDays, ...verdictOf(windows.day) }
     })
     .filter((t) => t.tagDays >= MIN_TAG_DAYS)
     .sort((a, b) => b.tagDays - a.tagDays)
