@@ -1096,6 +1096,34 @@ describe('тег «плохо спал» — из утренней шкалы с
     expect(sleepTag(tagEffects(w.logs, w.starts))!.morning).toBeNull()
   })
 
+  it('как у всех тегов: дни болезни и следующие за ними выпадают', () => {
+    const bad = tagged(57, () => 0.3)
+    const ill = new Set([20, 70])
+    const w = simulate(57, {
+      done: coin,
+      score: () => 6,
+      tags: (i) => (ill.has(i) ? ['болел'] : []),
+      morning: (d, _y, rnd) => wake(6, rnd, bad.has(d.i) ? 3 : 7),
+    })
+    const t = sleepTag(tagEffects(w.logs, w.starts))!
+    expect(t.sickDays).toBe(4)
+    expect(t.days).toBe(FULL - 4)
+  })
+
+  it('недосып чаще в выходные, а выходные и так хуже — это не эффект сна', () => {
+    const bad = tagged(58, (weekend) => (weekend ? 0.7 : 0.1))
+    const w = nights(58, (i) => (bad.has(i) ? 3 : 7), (d) => 7 - (d.weekend ? 2 : 0))
+    expect(STRONG).not.toContain(sleepTag(tagEffects(w.logs, w.starts))!.windows.day.same.strength)
+  })
+
+  it('три плохие ночи — вывод не сильнее «возможно», как у редкого вечернего тега', () => {
+    const three = new Set([30, 60, 90])
+    const w = nights(59, (i) => (three.has(i) ? 2 : 7), (d) => 6 - (three.has(d.i) ? 3 : 0))
+    const t = sleepTag(tagEffects(w.logs, w.starts))!
+    expect(t.tagDays).toBe(3)
+    expect(t.windows.day.same.strength).toBe('possible')
+  })
+
   it('плохой день портит сон следующей ночью — «похоже» и сильнее у тега сна не чаще чем в 4 мирах из 40', () => {
     // Завтрашний сон здесь — уже не чистый контроль «накануне». На 300 мирах слово «похоже» или
     // «уверенно» — в 3,7%: как обычная цена «похоже», без перекоса.

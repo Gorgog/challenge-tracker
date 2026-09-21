@@ -146,12 +146,20 @@ export type TagEffect = {
   days: number
   /** Дней, выброшенных из-за болезни. */
   sickDays: number
-  /** Строка «Утро» — как у челленджа: справочно, не сильнее «похоже». null — утр нет. */
+  /** Строка «Утро» — как у челленджа: справочно, не сильнее «похоже». null — утр нет, и у тега сна. */
   morning: Windows | null
+  /** Тег выведен из утра («плохо спал»), а не поставлен вечером. */
+  fromMorning: boolean
 }
 
 /** Тег болезни: такие дни и следующие за ними в расчёт эффекта не идут. */
 export const SICK = 'болел'
+/**
+ * Тег сна — из утренней шкалы, вечером его не ставят (решение Georgy от 21.09): сон 0–4, ниже
+ * «как обычно». Утро пропущено — сон неизвестен, а не «нормальный».
+ */
+export const SLEEP_TAG = 'плохо спал'
+export const BAD_SLEEP = 4
 const WEEKEND = 'выходной'
 
 const shift = (day: string, by: number) => dayKey(addDays(parseDay(day), by))
@@ -756,8 +764,35 @@ export function tagEffects(logs: DayLog[], starts: DayStart[] = []): TagEffect[]
         closed,
         options,
       )
-      return { tag, tagDays, windows, days, sickDays, morning, ...verdictOf(windows.day) }
+      return { tag, tagDays, windows, days, sickDays, morning, fromMorning: false, ...verdictOf(windows.day) }
     })
+    .concat(mornings.size > 0 ? [sleepEffect(closed, mornings)] : [])
     .filter((t) => t.tagDays >= MIN_EARLY)
     .sort((a, b) => b.tagDays - a.tagDays)
+}
+
+/**
+ * Тег «плохо спал» — той же моделью, что вечерние теги. Сон известен, когда есть утро: соседнему дню
+ * итог не нужен, а сам день в расчёт идёт закрытым, как у всех тегов. Строки «Утро» нет: тег и утро —
+ * из одной записи. Дни тега — закрытые дни с плохим сном.
+ */
+function sleepEffect(closed: DayLog[], mornings: Map<string, Morning>): TagEffect {
+  const bad = (m: Morning) => (m.sleep <= BAD_SLEEP ? 1 : 0)
+  const tagDays = closed.filter((l) => {
+    const m = mornings.get(l.day)
+    return m !== undefined && bad(m) === 1
+  }).length
+  const { windows, days, sickDays } = analyze(
+    {
+      x: (day) => {
+        const m = mornings.get(day)
+        return m ? bad(m) : undefined
+      },
+      minGroup: MIN_TAG_DAYS,
+      weekendControl: true,
+      dropSick: true,
+    },
+    closed,
+  )
+  return { tag: SLEEP_TAG, tagDays, windows, days, sickDays, morning: null, fromMorning: true, ...verdictOf(windows.day) }
 }
