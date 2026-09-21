@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createDemoRepo } from '@/data/demoRepo'
+import { isLive } from './challenges'
 import { parseDay } from './date'
 import { beforeAfter, challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } from './effects'
 import type { Challenge, DayLog } from './types'
@@ -14,8 +15,8 @@ import type { Challenge, DayLog } from './types'
  * Проверяются частоты по многим мирам, а не один мир: зерно, подобранное так, что всё сошлось,
  * ничего не доказывает. Пороги заданы до прогона: настоящее находится в большинстве миров,
  * ложное «похоже» назавтра — не чаще, чем позволяет 95% интервал, ложное «уверенно» — почти никогда.
- * «Возможно» — ранний вывод по 70% интервалу, у него своя цена: ложное — до трети миров, а у
- * челленджа, который делается в энергичные дни (ОТЖ), и больше.
+ * «Возможно» — ранний вывод по 70% интервалу, пока в группе меньше десяти дней; у него своя цена:
+ * ложное — до трети миров, а у челленджа, который делается в энергичные дни (ОТЖ), и больше.
  */
 const TODAY = parseDay('2026-09-21')
 const SEEDS = Array.from({ length: 40 }, (_, i) => 20260921 + i * 7919)
@@ -28,6 +29,7 @@ const FIRM: (string | null)[] = ['likely', 'sure']
 type World = {
   challenges: Challenge[]
   logs: DayLog[]
+  effects: ChallengeEffect[]
   tags: TagEffect[]
   byCode: (code: string) => ChallengeEffect
 }
@@ -39,6 +41,7 @@ async function build(seed: number): Promise<World> {
   return {
     challenges,
     logs,
+    effects,
     tags: tagEffects(logs),
     byCode: (code) => effects.find((e) => e.challenge.code === code)!,
   }
@@ -75,6 +78,18 @@ describe('приёмка методики на демо-данных: 40 мир�
 
   it('ЧТН — «возможно» и сильнее назавтра не чаще чем в 30% миров', () => {
     expect(share((w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.3)
+  })
+
+  it('слов уверенности сверх заложенных эффектов назавтра — в среднем не больше двух на экран', () => {
+    // Заложены назавтра только ШАГ (лучше) и пиво (хуже); любое другое слово уверенности на экране — сверх.
+    // Разведка на 150 свежих мирах: 1,4 на экран; без правила «возможно, пока дней мало» было 2,7.
+    const extra = worlds.map((w) => {
+      const cards = w.effects.filter((e) => isLive(e.challenge) && e.confidence !== null)
+      const walks = (e: ChallengeEffect) => e.challenge.code === 'ШАГ' && e.windows.day.next.delta > 0
+      const beer = (t: TagEffect) => t.tag === 'алкоголь' && t.windows.day.next.delta < 0
+      return cards.filter((e) => !walks(e)).length + w.tags.filter((t) => t.confidence !== null && !beer(t)).length
+    })
+    expect(extra.reduce((s, n) => s + n, 0) / worlds.length).toBeLessThanOrEqual(2)
   })
 
   it('ОТЖ делается в энергичные дни — «возможно» и сильнее назавтра не чаще чем в 60% миров', () => {

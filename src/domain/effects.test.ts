@@ -632,24 +632,34 @@ describe('классы окна — где проходят границы', () 
   })
 
   it('степени свободы — по меньшей группе: двенадцать дней «с» дают 11, а не сотню', () => {
-    // t = 2,1: при 11 степенях (2,20) 95% интервал задевает ноль, при сотне (1,98) — уже нет,
-    // поэтому не «похоже»; 70% интервал ноль не задевает — ранний вывод есть
-    expect(strengthOf({ delta: 1, se: 1 / 2.1 }, 12, 100, 10, null).strength).toBe('possible')
+    // t = 2,1: при 11 степенях (2,20) 95% интервал задевает ноль, при сотне (1,98) — уже нет;
+    // «возможно» при двенадцати днях в группе не ставится
+    expect(strengthOf({ delta: 1, se: 1 / 2.1 }, 12, 100, 10, null).strength).toBe('unclear')
   })
 
-  it('«возможно» — между 70% и 95%: ранний вывод, в том числе назавтра', () => {
-    // t = 1,5: выше квантиля 85% при 29 степенях (≈1,06), ниже 97,5% (2,05)
-    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 30, 30, 10, null).strength).toBe('possible')
-    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 30, 30, 10, clean(1 / 1.5)).strength).toBe('possible')
+  it('«возможно» — между 70% и 95%, пока дней мало: ранний вывод, в том числе назавтра', () => {
+    // шесть дней в группе, 5 степеней: t = 1,5 — выше квантиля 85% (1,16), ниже 97,5% (2,57)
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 6, 30, 10, null).strength).toBe('possible')
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 6, 30, 10, clean(1 / 1.5)).strength).toBe('possible')
+  })
+
+  it('с десяти дней в группе «возможно» не ставится — и у тега: на длинной истории это чаще шум', () => {
+    // t = 1,5 — ниже 95% при 29 и при 9 степенях
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 30, 30, 10, null).strength).toBe('unclear')
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 10, 100, 10, clean(1 / 1.5)).strength).toBe('unclear')
+    // у тега «похоже» с четырёх дней, а «возможно» — тоже только до десяти
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 12, 100, 4, null).strength).toBe('unclear')
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 6, 100, 4, null).strength).toBe('possible')
   })
 
   it('ниже 70% — «неясно»', () => {
-    // t = 0,9 — ниже 1,06
-    expect(strengthOf({ delta: 1, se: 1 / 0.9 }, 30, 30, 10, null).strength).toBe('unclear')
+    // t = 0,9 — ниже 1,16
+    expect(strengthOf({ delta: 1, se: 1 / 0.9 }, 6, 30, 10, null).strength).toBe('unclear')
   })
 
   it('разница меньше полубалла не становится и «возможно»', () => {
-    expect(strengthOf({ delta: 0.4, se: 0.3 }, 30, 30, 10, null).strength).toBe('unclear')
+    // t = 1,33 — выше 1,16, но разница 0,4
+    expect(strengthOf({ delta: 0.4, se: 0.3 }, 6, 30, 10, null).strength).toBe('unclear')
   })
 
   it('ранний вывод — с трёх дней в группе, при двух — «мало данных»', () => {
@@ -664,16 +674,16 @@ describe('классы окна — где проходят границы', () 
 
   it('полоса ловится и на уровне «возможно»: накануне заметно по 70% и назавтра от него не отличить', () => {
     const early = { delta: 1, se: 1 / 1.5 }
-    // накануне: t = 0,9 / 0,75 = 1,2 — выше 1,06, но ниже 2,05
-    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.9, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('echo')
+    // шесть дней в группе; накануне: t = 0,9 / 0,75 = 1,2 — выше 1,16, но ниже 2,57
+    expect(strengthOf(early, 6, 30, 10, { lead: { delta: 0.9, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('echo')
     // накануне почти ничего: ранний вывод остаётся
-    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.2, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('possible')
+    expect(strengthOf(early, 6, 30, 10, { lead: { delta: 0.2, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('possible')
   })
 
   it('отличие от накануне для «возможно» — тоже по 70%: по 95% не отличить, по 70% — отличить, и это не полоса', () => {
     const early = { delta: 1, se: 1 / 1.5 }
-    // накануне заметно по 70% (0,5 > 1,06 · 0,4); разница с ним 0,5 — выше 1,06 · 0,4, но ниже 2,05 · 0,4
-    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.5, se: 0.4 }, diffSe: 0.4, level: 0.995 }).strength).toBe('possible')
+    // накануне заметно по 70% (0,5 > 1,16 · 0,4); разница с ним 0,5 — выше 1,16 · 0,4, но ниже 2,57 · 0,4
+    expect(strengthOf(early, 6, 30, 10, { lead: { delta: 0.5, se: 0.4 }, diffSe: 0.4, level: 0.995 }).strength).toBe('possible')
   })
 
   it('«уверенно» требует отличия от накануне по 95%, а не по 70%', () => {
