@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
 import {
   METRICS,
+  SLEEP_TAG,
   beforeAfter,
   challengeEffects,
   effectText,
@@ -13,6 +14,7 @@ import {
   type Strength,
 } from './effects'
 import { tQuantile } from './regression'
+import { DAY_TAGS } from './tags'
 import type { Challenge, DayLog, DayStart, EntryMap, Morning, ScoreField } from './types'
 
 const TODAY = parseDay('2026-09-21')
@@ -1039,3 +1041,76 @@ describe('строка «Утро» — справочно, слов не даё
     expect(tagEffects(w.logs).find((t) => t.tag === 'алкоголь')!.morning).toBeNull()
   })
 })
+
+describe('тег «плохо спал» — из утренней шкалы сна', () => {
+  const sleepTag = (tags: ReturnType<typeof tagEffects>) => tags.find((t) => t.tag === SLEEP_TAG)
+  /** Мир, где сон 0–10 задан заранее по дням, а оценки дня — по правилу. */
+  const nights = (seed: number, sleep: (i: number) => number, score: (d: SimDay) => number = () => 6) =>
+    simulate(seed, { done: coin, score, morning: (d, _y, rnd) => wake(6, rnd, sleep(d.i)) })
+
+  it('сон 4 — тег, сон 5 — уже нет; дни тега — закрытые дни с таким утром', () => {
+    const low = tagged(51, () => 0.3)
+    const w = nights(51, (i) => (low.has(i) ? 4 : 5))
+    const t = sleepTag(tagEffects(w.logs, w.starts))!
+    expect(t.fromMorning).toBe(true)
+    expect(t.tagDays).toBe(low.size)
+    expect(tagEffects(w.logs, w.starts).filter((e) => e.tag !== SLEEP_TAG).every((e) => !e.fromMorning)).toBe(true)
+  })
+
+  it('после плохого сна день хуже — это окно «в тот же день»', () => {
+    const bad = tagged(52, () => 0.3)
+    const w = nights(52, (i) => (bad.has(i) ? 3 : 7), (d) => 6 - (bad.has(d.i) ? 1.5 : 0))
+    const t = sleepTag(tagEffects(w.logs, w.starts))!
+    expect(t.windows.day.same.strength).toBe('likely')
+    expect(t.windows.day.same.delta).toBeCloseTo(-1.5, 0)
+  })
+
+  it('утро пропущено — сон неизвестен, а не «нормальный»: выпадают сам день и соседние', () => {
+    const bad = tagged(53, () => 0.3)
+    const w = nights(53, (i) => (bad.has(i) ? 3 : 7))
+    const full = sleepTag(tagEffects(w.logs, w.starts))!
+    const holed = w.starts.map((s, i) => (i === 60 ? { ...s, morning: null } : s))
+    expect(full.days).toBe(FULL)
+    expect(sleepTag(tagEffects(w.logs, holed))!.days).toBe(FULL - 3)
+  })
+
+  it('утро дня-долга известно: день без итога выпадает один, а его плохой сон в дни тега не идёт', () => {
+    const bad = tagged(54, () => 0.3)
+    const w = nights(54, (i) => (bad.has(i) ? 3 : 7))
+    const k = [...bad].find((i) => i > 50)!
+    const logs = w.logs.filter((_l, i) => i !== k)
+    const t = sleepTag(tagEffects(logs, w.starts))!
+    expect(t.days).toBe(FULL - 1)
+    expect(t.tagDays).toBe(bad.size - 1)
+  })
+
+  it('без утр тега сна нет; вечером такой тег не ставят', () => {
+    const w = nights(55, () => 3)
+    expect(sleepTag(tagEffects(w.logs))).toBeUndefined()
+    expect(DAY_TAGS as readonly string[]).not.toContain(SLEEP_TAG)
+  })
+
+  it('у тега сна нет строки «Утро»: и тег, и утро — из одной записи', () => {
+    const bad = tagged(56, () => 0.3)
+    const w = nights(56, (i) => (bad.has(i) ? 3 : 7))
+    expect(sleepTag(tagEffects(w.logs, w.starts))!.morning).toBeNull()
+  })
+
+  it('плохой день портит сон следующей ночью — «похоже» и сильнее у тега сна не чаще чем в 4 мирах из 40', () => {
+    // Завтрашний сон здесь — уже не чистый контроль «накануне». На 300 мирах слово «похоже» или
+    // «уверенно» — в 3,7%: как обычная цена «похоже», без перекоса.
+    let firm = 0
+    for (let seed = 200; seed < 240; seed++) {
+      const w = simulate(seed, {
+        state: (prev, noise) => 0.6 * prev + noise,
+        done: coin,
+        score: (d) => 6 + 1.2 * d.state,
+        morning: (d, y, rnd) => wake(6 + 1.2 * d.state, rnd, y && y.state < -0.5 ? 3 : 7),
+      })
+      const t = sleepTag(tagEffects(w.logs, w.starts))
+      if (t?.confidence === 'likely' || t?.confidence === 'sure') firm++
+    }
+    expect(firm).toBeLessThanOrEqual(4)
+  })
+})
+

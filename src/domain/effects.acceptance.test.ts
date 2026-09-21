@@ -183,6 +183,15 @@ describe('утро в аналитике: 40 миров', () => {
     expect(found).toBeGreaterThanOrEqual(0.4)
   })
 
+  it('«плохо спал» (сон 0–4 утром): день хуже в тот же день — не реже чем в 75% миров', () => {
+    // Свежие 450 миров: 86,2%, σ = 5,4 п.п. В сиде недосып бьёт по самочувствию своего дня.
+    const found = share((w) => {
+      const same = w.tags.find((t) => t.tag === 'плохо спал')?.windows.day.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.75)
+  })
+
   it('утро не меняет слов: «назавтра» и слова челленджей и вечерних тегов те же, что без утр', () => {
     for (const w of worlds) {
       for (const e of w.effects) {

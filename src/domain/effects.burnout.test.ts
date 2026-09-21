@@ -103,8 +103,15 @@ describe('ранние выводы на месяце', () => {
     expect(found).toBeGreaterThanOrEqual(0.45)
   })
 
-  // Проверки «мало спал» сняты вместе с тегом (решение Georgy от 21.09): сон теперь спрашивается
-  // утром шкалой, и его проверки появятся, когда утро дойдёт до аналитики.
+  it('«плохо спал» (сон 0–4 утром): хуже в тот же день, «возможно» и сильнее — не реже чем в 40% миров', () => {
+    // Тег выводится из утренней шкалы сна (этап 2). Свежие 1200 миров: 58,8%, σ = 7,8 п.п. У прежнего
+    // вечернего тега «мало спал» порог был тот же.
+    const found = share(month, (w) => {
+      const same = w.tag('плохо спал')?.windows.day.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.4)
+  })
 
   it('чтение: слово уверенности назавтра — не чаще чем в 35% миров', () => {
     expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.35)
