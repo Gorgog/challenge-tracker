@@ -56,6 +56,7 @@ type Scores = Record<ScoreField, number>
 /**
  * Синтетический мир с заранее известной связью: как выполняется челлендж и из чего
  * складываются оценки. К каждой шкале добавляется свой шум — как в жизни.
+ * `length` — сколько дней истории, по вчера; по умолчанию `DAYS`.
  */
 function simulate(
   seed: number,
@@ -65,12 +66,13 @@ function simulate(
     score: (d: SimDay, yesterday: SimDay | undefined) => number | Scores
     tags?: (i: number) => string[]
   },
+  length = DAYS,
 ): { entries: EntryMap; logs: DayLog[] } {
   const rnd = mulberry32(seed)
   const days: SimDay[] = []
   let state = 0
-  for (let i = 0; i < DAYS; i++) {
-    const date = addDays(TODAY, i - DAYS)
+  for (let i = 0; i < length; i++) {
+    const date = addDays(TODAY, i - length)
     state = rules.state ? rules.state(state, gauss(rnd)) : 0
     const day: SimDay = { i, key: dayKey(date), weekend: isoDow(date) >= 5, state, done: false }
     day.done = rules.done(day, rnd)
@@ -171,12 +173,33 @@ describe('окна эффекта челленджа', () => {
     expect(['flat', 'unclear']).toContain(windows.mood.next.strength)
   })
 
-  it('мало пропусков — вывода нет: в группе «без» меньше десяти дней', () => {
-    const w = simulate(11, { done: (d) => d.i % 25 !== 0, score: () => 6 })
+  it('мало пропусков — вывода нет: в группе «без» меньше трёх дней', () => {
+    // пропуски в дни 0 и 60: в окне «в тот же день» их один, в окне «назавтра» — два
+    const w = simulate(11, { done: (d) => d.i % 60 !== 0, score: () => 6 })
     const { day } = effectOf(w).windows
 
     expect(day.same.strength).toBe('few')
     expect(day.next.strength).toBe('few')
+  })
+
+  it('четыре пропуска — уже не «мало данных»: ранний вывод считается с трёх дней в группе', () => {
+    const w = simulate(11, { done: (d) => d.i % 25 !== 0, score: () => 6 })
+    const { day } = effectOf(w).windows
+
+    expect(day.same.strength).not.toBe('few')
+    expect(day.next.strength).not.toBe('few')
+  })
+
+  it('две недели и крупный эффект назавтра — уже «возможно», а не «мало данных»', () => {
+    const w = simulate(12, { done: coin, score: (_d, y) => 6 + (y?.done ? 2.5 : 0) }, 15)
+    const e = effectOf(w, challenge({ startDate: dayKey(addDays(TODAY, -15)) }))
+
+    // в группах меньше десяти дней: как бы чисто ни было, сильнее «возможно» не бывает
+    expect(Math.min(e.windows.day.next.withDays, e.windows.day.next.withoutDays)).toBeLessThan(10)
+    expect(e.windows.day.next.strength).toBe('possible')
+    expect(e.windows.day.next.delta).toBeCloseTo(2.5, 0)
+    expect(e.verdict).toBe('delayed')
+    expect(e.confidence).toBe('possible')
   })
 
   it('дни в группах «с» и «без» складываются в число учтённых дней', () => {
@@ -301,6 +324,14 @@ describe('verdictOf — вывод по двум окнам оценки дня'
     ['unclear', 'few', 1, 'unclear', null],
     ['few', 'few', 1, 'insufficient', null],
     ['tangled', 'tangled', 1, 'tangled', null],
+    ['few', 'possible', 1, 'delayed', 'possible'],
+    ['possible', 'possible', 1, 'persists', 'possible'],
+    ['possible', 'possible', -1, 'rebound', 'possible'],
+    ['likely', 'possible', 1, 'persists', 'possible'],
+    ['possible', 'likely', 1, 'persists', 'likely'],
+    ['possible', 'flat', 1, 'coincidence', null],
+    ['possible', 'unclear', 1, 'sameDayOnly', null],
+    ['possible', 'echo', 1, 'streak', null],
   ] as const)(
     'тот же день %s, назавтра %s (знак назавтра %s) → %s, уверенность %s',
     (same, next, sign, verdict, confidence) => {
@@ -427,8 +458,8 @@ describe('теги дня в двух окнах', () => {
     expect(t.windows.day.same.strength).toBe('likely')
   })
 
-  it('редкий тег не показывается — три дня ничего не говорят', () => {
-    const rare = new Set([10, 50, 90])
+  it('редкий тег не показывается — два дня ничего не говорят', () => {
+    const rare = new Set([10, 90])
     const w = simulate(46, { done: coin, score: () => 6, tags: (i) => (rare.has(i) ? ['дорога'] : []) })
     expect(tagEffects(w.logs).map((e) => e.tag)).not.toContain('дорога')
   })
@@ -567,8 +598,42 @@ describe('классы окна — где проходят границы', () 
   })
 
   it('степени свободы — по меньшей группе: двенадцать дней «с» дают 11, а не сотню', () => {
-    // t = 2,1: при 11 степенях (2,20) интервал задевает ноль, при сотне (1,98) — уже нет
-    expect(strengthOf({ delta: 1, se: 1 / 2.1 }, 12, 100, 10, null).strength).toBe('unclear')
+    // t = 2,1: при 11 степенях (2,20) 95% интервал задевает ноль, при сотне (1,98) — уже нет,
+    // поэтому не «похоже»; 70% интервал ноль не задевает — ранний вывод есть
+    expect(strengthOf({ delta: 1, se: 1 / 2.1 }, 12, 100, 10, null).strength).toBe('possible')
+  })
+
+  it('«возможно» — между 70% и 95%: ранний вывод, в том числе назавтра', () => {
+    // t = 1,5: выше квантиля 85% при 29 степенях (≈1,06), ниже 97,5% (2,05)
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 30, 30, 10, null).strength).toBe('possible')
+    expect(strengthOf({ delta: 1, se: 1 / 1.5 }, 30, 30, 10, clean(1 / 1.5)).strength).toBe('possible')
+  })
+
+  it('ниже 70% — «неясно»', () => {
+    // t = 0,9 — ниже 1,06
+    expect(strengthOf({ delta: 1, se: 1 / 0.9 }, 30, 30, 10, null).strength).toBe('unclear')
+  })
+
+  it('разница меньше полубалла не становится и «возможно»', () => {
+    expect(strengthOf({ delta: 0.4, se: 0.3 }, 30, 30, 10, null).strength).toBe('unclear')
+  })
+
+  it('ранний вывод — с трёх дней в группе, при двух — «мало данных»', () => {
+    expect(strengthOf({ delta: 2, se: 0.2 }, 2, 100, 10, null).strength).toBe('few')
+    expect(strengthOf({ delta: 2, se: 0.2 }, 3, 100, 10, null).strength).toBe('possible')
+  })
+
+  it('«похоже» у челленджа — с десяти дней в группе: при шести тот же чистый результат — «возможно»', () => {
+    expect(strengthOf({ delta: 2, se: 0.2 }, 6, 100, 10, clean(0.2)).strength).toBe('possible')
+    expect(strengthOf({ delta: 2, se: 0.2 }, 10, 100, 10, clean(0.2)).strength).toBe('strong')
+  })
+
+  it('полоса ловится и на уровне «возможно»: накануне заметно по 70% и назавтра от него не отличить', () => {
+    const early = { delta: 1, se: 1 / 1.5 }
+    // накануне: t = 0,9 / 0,75 = 1,2 — выше 1,06, но ниже 2,05
+    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.9, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('echo')
+    // накануне почти ничего: ранний вывод остаётся
+    expect(strengthOf(early, 30, 30, 10, { lead: { delta: 0.2, se: 0.75 }, diffSe: 0.8, level: 0.995 }).strength).toBe('possible')
   })
 })
 
@@ -611,6 +676,14 @@ describe('вырожденные случаи — не «мало данных»
     expect(e.windows.day.next.strength).toBe('tangled')
     expect(e.verdict).toBe('tangled')
     expect(e.beforeAfter).toBeNull()
+  })
+
+  it('привычка через день на двух неделях — тоже «не разделить», а не «мало данных»', () => {
+    const w = simulate(62, { done: (d) => d.i % 2 === 0, score: (_d, y) => 6 + (y?.done ? 1.5 : 0) }, 15)
+    const e = effectOf(w, challenge({ startDate: dayKey(addDays(TODAY, -15)) }))
+
+    expect(e.windows.day.next.strength).toBe('tangled')
+    expect(e.verdict).toBe('tangled')
   })
 
   it('тег, который стоит на всех выходных, не выдаётся за «мало данных»', () => {
@@ -661,6 +734,20 @@ describe('до и после старта — оговорки расчёта', 
     expect(ba.overlaps.map((c) => c.id)).toEqual(['o'])
   })
 
+  it('«до/после» не даёт «возможно»: это сравнение и так смещено возвратом к норме', () => {
+    const w = simulate(77, { state: (_p, noise) => 1.5 * noise, done: coin, score: (d) => 5 + (d.i >= 60 ? 0.6 : 0) + d.state })
+    const ba = beforeAfter(quit(), [quit()], w.logs, TODAY)
+    const day = ba.byMetric.day
+    const df = Math.max(3, Math.min(ba.daysBefore, ba.daysAfter) - 1)
+    const t = Math.abs(day.delta) / ((day.high - day.delta) / tQuantile(0.975, df))
+
+    // разница — в полосе «возможно»: не меньше полубалла, 70% интервал ноль не задевает, 95% — задевает
+    expect(Math.abs(day.delta)).toBeGreaterThanOrEqual(0.5)
+    expect(t).toBeGreaterThan(tQuantile(0.85, df))
+    expect(t).toBeLessThan(tQuantile(0.975, df))
+    expect(day.strength).toBe('unclear')
+  })
+
   it('«до/после» не подменяет выводы, которые просто неясны', () => {
     const w = simulate(64, { state: (_p, noise) => 2.5 * noise, done: coin, score: (d) => 6 + d.state })
     const e = effectOf(w)
@@ -692,9 +779,9 @@ describe('до и после старта — оговорки расчёта', 
 })
 
 describe('порог показа тегов', () => {
-  it('тег на четырёх днях уже показывается', () => {
-    const four = new Set([15, 45, 75, 105])
-    const w = simulate(66, { done: coin, score: () => 6, tags: (i) => (four.has(i) ? ['дорога'] : []) })
+  it('тег на трёх днях уже показывается — ранний вывод считается с трёх', () => {
+    const three = new Set([15, 45, 75])
+    const w = simulate(66, { done: coin, score: () => 6, tags: (i) => (three.has(i) ? ['дорога'] : []) })
     expect(tagEffects(w.logs).map((e) => e.tag)).toContain('дорога')
   })
 })
