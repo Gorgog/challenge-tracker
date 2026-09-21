@@ -9,15 +9,17 @@ import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
  * Эффект челленджей и тегов на оценки дня.
  *
  * Сравнение «средняя в дни с выполнением против дней без» врёт: хороший день сам тянет
- * выполнение, выходные хуже будней, а хорошие дни идут полосами. Поэтому одна регрессия
- * на субъект и шкалу даёт оба окна сразу:
+ * выполнение, выходные хуже будней, хорошие дни идут полосами, а оценки со временем растут или
+ * падают. Поэтому одна регрессия на субъект и шкалу даёт оба окна сразу:
  *
- *   оценка(t) ~ 1 + x(t) + x(t−1) + x(t+1) + выходные(t) + выходные(t−1) [+ сосед(t−1)]
+ *   оценка(t) ~ 1 + x(t) + x(t−1) + x(t+1) + выходные(t) + выходные(t−1) + день(t) [+ сосед(t−1)]
  *
  * x(t) — окно «в тот же день», x(t−1) — «на следующий день», x(t+1) — контроль «накануне»:
  * завтрашнее выполнение не может влиять на сегодняшнюю оценку, и если оно «предсказывает»
  * её так же, как вчерашнее, — это полоса хороших дней, а не эффект. «Выходные вчера» отделяют
  * понедельник и разницу субботы с воскресеньем — иначе ритм недели утекал бы в окно «назавтра».
+ * день(t) — номер дня по порядку: общий подъём или спад (выход из выгорания, возврат к норме после
+ * плохой полосы) не достаётся челленджу, который пришёлся на это время.
  */
 
 /** `day` — оценка дня целиком: среднее трёх шкал. */
@@ -227,7 +229,7 @@ export function strengthOf(
 }
 
 /** Столбцы, без которых модель обходится: их выкидывают по одному, если она не решается. */
-const DROPPABLE = ['partner', 'weekendBefore', 'weekend', 'after'] as const
+const DROPPABLE = ['partner', 'trend', 'weekendBefore', 'weekend', 'after'] as const
 
 function analyze(subject: Subject, logs: DayLog[]) {
   const byDay = new Map(logs.filter((l) => l.closedAt !== null).map((l) => [l.day, l]))
@@ -262,6 +264,14 @@ function analyze(subject: Subject, logs: DayLog[]) {
   if (subject.weekendControl) {
     columns.push({ name: 'weekend', values: rows.map((r) => weekendOf(r.day)) })
     columns.push({ name: 'weekendBefore', values: rows.map((r) => weekendOf(shift(r.day, -1))) })
+  }
+  /* Номер дня — в долях длины истории: у сотен дней квадраты номеров иначе перевешивали бы
+     остальные столбцы матрицы. */
+  if (rows.length) {
+    const first = rows.reduce((min, r) => (r.day < min ? r.day : min), rows[0]!.day)
+    const offsets = rows.map((r) => daysBetween(parseDay(first), parseDay(r.day)))
+    const span = Math.max(1, ...offsets)
+    columns.push({ name: 'trend', values: offsets.map((o) => o / span) })
   }
   /* used — сосед в модели; tangled — сосед неотделим от самого челленджа. */
   let partnerState: 'none' | 'used' | 'tangled' = 'none'
