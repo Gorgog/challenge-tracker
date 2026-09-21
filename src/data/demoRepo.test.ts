@@ -680,3 +680,66 @@ describe('сценарий демо из хранилища', () => {
     expect(demoScenario(storage)).toBe('burnout')
   })
 })
+
+describe('начало дня', () => {
+  const morning = { sleep: 7, wellbeing: 6, mood: 5 }
+  const start = { day: '2026-09-21', morning, startedAt: '2026-09-21T06:30:00.000Z' }
+  const withStorage = (storage: Storage) => createDemoRepo({ today: TODAY, seed: 20260921, storage })
+
+  it('записывает начало дня с утренними оценками', async () => {
+    const r = repo()
+    await r.startDay(start)
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')).toEqual(start)
+  })
+
+  it('пропущенное утро — начало дня без оценок', async () => {
+    const r = repo()
+    await r.startDay({ ...start, morning: null })
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning).toBeNull()
+  })
+
+  it('утро не правится: второй раз за день начать нельзя, первое остаётся', async () => {
+    const r = repo()
+    await r.startDay(start)
+    await expect(r.startDay({ ...start, morning: { sleep: 1, wellbeing: 1, mood: 1 } })).rejects.toThrow()
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning).toEqual(morning)
+  })
+
+  it('отдаёт копии: правка полученной записи не меняет хранилище', async () => {
+    const r = repo()
+    await r.startDay(start)
+    const got = (await r.listDayStarts()).find((s) => s.day === '2026-09-21')!
+    got.morning!.sleep = 0
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning?.sleep).toBe(7)
+  })
+
+  it('начало дня переживает пересоздание', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).startDay(start)
+    const starts = await withStorage(storage).listDayStarts()
+    expect(starts.find((s) => s.day === '2026-09-21')).toEqual(start)
+  })
+})
+
+describe('настройки', () => {
+  const withStorage = (storage: Storage) => createDemoRepo({ today: TODAY, seed: 20260921, storage })
+
+  it('по умолчанию утренние вопросы — до 15:00', async () => {
+    expect(await repo().getSettings()).toEqual({ morningUntil: 15 })
+  })
+
+  it('сохранённый час переживает пересоздание', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).saveSettings({ morningUntil: 12 })
+    expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 12 })
+  })
+
+  it('снимок прежней версии пересобирается: в нём нет ни начал дней, ни настроек', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).saveSettings({ morningUntil: 12 })
+    const raw = JSON.parse(storage.getItem('tabel-demo')!) as Record<string, unknown>
+    storage.setItem('tabel-demo', JSON.stringify({ ...raw, version: 6 }))
+
+    expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 15 })
+  })
+})
