@@ -1,63 +1,140 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createDemoRepo } from '@/data/demoRepo'
-import { parseDay } from './date'
+import { addDays, dayKey, parseDay } from './date'
 import { challengeEffects, tagEffects, type ChallengeEffect, type TagEffect } from './effects'
 
 /**
- * Как методика ведёт себя на коротком горизонте — месяц «выхода из выгорания».
- * Тридцати дней мало, чтобы требовать находок: здесь проверяется, что методика не выдумывает
- * (нет ложного «уверенно» у нейтральных челленджей) и не путает знак там, где говорит уверенно.
- * Пороги заданы до прогона.
+ * Как методика ведёт себя на коротком горизонте — месяц «выхода из выгорания» и его первые
+ * пятнадцать дней. Проверяется, что методика не выдумывает (нет ложного «уверенно» у нейтральных
+ * челленджей, ложное «возможно» — в пределах своей цены), не путает знак там, где говорит, и что
+ * ранние выводы появляются: решение Georgy от 21.09 — выводы нужны с первых двух недель, даже
+ * ценой ошибок. Пороги заданы до прогона.
  */
 const TODAY = parseDay('2026-09-21')
 const SEEDS = Array.from({ length: 40 }, (_, i) => 20260921 + i * 7919)
 const STRONG = ['likely', 'strong']
+/** «Возможно» и сильнее. */
+const WORDED: string[] = ['possible', 'likely', 'strong']
 
-type World = { byCode: (code: string) => ChallengeEffect; tag: (name: string) => TagEffect | undefined }
+type World = {
+  byCode: (code: string) => ChallengeEffect
+  tag: (name: string) => TagEffect | undefined
+  /** Хоть одно слово уверенности на экране — у карточки челленджа или у тега. */
+  anyWord: boolean
+}
 
-async function build(seed: number): Promise<World> {
+/** Мир на день `day` истории: сегодня — этот день, оценки — только до него. */
+async function build(seed: number, day = 30): Promise<World> {
   const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'burnout' })
-  const [challenges, entries, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
-  const effects = challengeEffects(challenges, entries, logs, TODAY)
+  const [challenges, entries, all] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
+  const today = addDays(TODAY, day - 30)
+  const logs = all.filter((l) => l.day < dayKey(today))
+  const effects = challengeEffects(challenges, entries, logs, today)
   const tags = tagEffects(logs)
   return {
     byCode: (code) => effects.find((e) => e.challenge.code === code)!,
     tag: (name) => tags.find((t) => t.tag === name),
+    anyWord: [...effects, ...tags].some((e) => e.confidence !== null),
   }
 }
 
-let worlds: World[] = []
+let month: World[] = []
+let early: World[] = []
 beforeAll(async () => {
-  worlds = await Promise.all(SEEDS.map(build))
+  ;[month, early] = await Promise.all([
+    Promise.all(SEEDS.map((seed) => build(seed))),
+    Promise.all(SEEDS.map((seed) => build(seed, 15))),
+  ])
 }, 120_000)
 
-const count = (pick: (w: World) => boolean) => worlds.filter(pick).length
+const count = (worlds: World[], pick: (w: World) => boolean) => worlds.filter(pick).length
+/** Доля миров, где выполняется условие. */
+const share = (worlds: World[], pick: (w: World) => boolean) => count(worlds, pick) / worlds.length
 
 describe('месяц выхода из выгорания: 40 миров', () => {
   it.each(['ЧТН', 'АНГ', 'ОТЖ'])('%s — нейтрален: «уверенно» не больше чем в одном мире', (code) => {
-    expect(count((w) => w.byCode(code).confidence === 'sure')).toBeLessThanOrEqual(1)
+    expect(count(month, (w) => w.byCode(code).confidence === 'sure')).toBeLessThanOrEqual(1)
   })
 
   it('чтение по расписанию — «похоже» назавтра не чаще чем в 10% миров', () => {
-    expect(count((w) => STRONG.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(4)
+    expect(count(month, (w) => STRONG.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(4)
   })
 
   it('о прогулках со словом уверенности — назавтра лучше, а не хуже', () => {
-    const said = worlds.map((w) => w.byCode('ШАГ')).filter((e) => e.confidence !== null)
+    const said = month.map((w) => w.byCode('ШАГ')).filter((e) => e.confidence !== null)
     expect(said.filter((e) => e.windows.day.next.delta > 0).length).toBeGreaterThanOrEqual(Math.ceil(said.length * 0.95))
   })
 
   it('о пиве со словом уверенности — назавтра хуже, а не лучше', () => {
-    const said = worlds.map((w) => w.tag('алкоголь')).filter((t): t is TagEffect => t !== undefined && t.confidence !== null)
+    const said = month.map((w) => w.tag('алкоголь')).filter((t): t is TagEffect => t !== undefined && t.confidence !== null)
     expect(said.filter((t) => t.windows.day.next.delta < 0).length).toBeGreaterThanOrEqual(Math.ceil(said.length * 0.95))
   })
 
   it('отжимания без пропусков — «мало данных», и до старта оценок нет', () => {
-    expect(count((w) => w.byCode('ОТЖ').verdict === 'insufficient')).toBe(worlds.length)
-    expect(count((w) => w.byCode('ОТЖ').beforeAfter?.beforeStart === 0)).toBe(worlds.length)
+    expect(count(month, (w) => w.byCode('ОТЖ').verdict === 'insufficient')).toBe(month.length)
+    expect(count(month, (w) => w.byCode('ОТЖ').beforeAfter?.beforeStart === 0)).toBe(month.length)
   })
 
   it('английский без единого выполнения — «мало данных»', () => {
-    expect(count((w) => w.byCode('АНГ').verdict === 'insufficient')).toBe(worlds.length)
+    expect(count(month, (w) => w.byCode('АНГ').verdict === 'insufficient')).toBe(month.length)
+  })
+})
+
+describe('ранние выводы на месяце', () => {
+  it('прогулки: «возможно» и сильнее, назавтра лучше — не реже чем в 45% миров', () => {
+    const found = share(month, (w) => {
+      const e = w.byCode('ШАГ')
+      return e.confidence !== null && e.windows.day.next.delta > 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.45)
+  })
+
+  it('пиво: «возможно» и сильнее, назавтра хуже — не реже чем в 45% миров', () => {
+    const found = share(month, (w) => {
+      const t = w.tag('алкоголь')
+      return t !== undefined && t.confidence !== null && t.windows.day.next.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.45)
+  })
+
+  it('«мало спал»: хуже в тот же день, «возможно» и сильнее — не реже чем в 55% миров', () => {
+    const found = share(month, (w) => {
+      const same = w.tag('мало спал')?.windows.day.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.55)
+  })
+
+  it('чтение: слово уверенности назавтра — не чаще чем в 35% миров', () => {
+    expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.35)
+  })
+
+  it('хоть одно слово уверенности на экране — не реже чем в 80% миров', () => {
+    expect(share(month, (w) => w.anyWord)).toBeGreaterThanOrEqual(0.8)
+  })
+})
+
+describe('первые 15 дней той же истории', () => {
+  it('хоть одно слово уверенности на экране — не реже чем в 50% миров', () => {
+    expect(share(early, (w) => w.anyWord)).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('«мало спал»: хуже в тот же день, «возможно» и сильнее — не реже чем в 30% миров', () => {
+    const found = share(early, (w) => {
+      const same = w.tag('мало спал')?.windows.day.same
+      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
+    })
+    expect(found).toBeGreaterThanOrEqual(0.3)
+  })
+
+  it('чтение: слово уверенности назавтра — не чаще чем в 40% миров', () => {
+    expect(share(early, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.4)
+  })
+
+  it('о прогулках и пиве со словом уверенности — верный знак не меньше чем в 85% выводов', () => {
+    const walks = early.map((w) => w.byCode('ШАГ')).filter((e) => e.confidence !== null)
+    const beer = early.map((w) => w.tag('алкоголь')).filter((t): t is TagEffect => t !== undefined && t.confidence !== null)
+    const right = walks.filter((e) => e.windows.day.next.delta > 0).length + beer.filter((t) => t.windows.day.next.delta < 0).length
+    expect(right).toBeGreaterThanOrEqual(Math.ceil((walks.length + beer.length) * 0.85))
   })
 })

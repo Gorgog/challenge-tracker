@@ -14,10 +14,16 @@ import type { Challenge, DayLog } from './types'
  * Проверяются частоты по многим мирам, а не один мир: зерно, подобранное так, что всё сошлось,
  * ничего не доказывает. Пороги заданы до прогона: настоящее находится в большинстве миров,
  * ложное «похоже» назавтра — не чаще, чем позволяет 95% интервал, ложное «уверенно» — почти никогда.
+ * «Возможно» — ранний вывод по 70% интервалу, у него своя цена: ложное — до трети миров, а у
+ * челленджа, который делается в энергичные дни (ОТЖ), и больше.
  */
 const TODAY = parseDay('2026-09-21')
 const SEEDS = Array.from({ length: 40 }, (_, i) => 20260921 + i * 7919)
 const STRONG = ['likely', 'strong']
+/** «Возможно» и сильнее. */
+const WORDED: string[] = ['possible', 'likely', 'strong']
+/** «Похоже» или «уверенно» — слова, планка которых не изменилась с появлением «возможно». */
+const FIRM: (string | null)[] = ['likely', 'sure']
 
 type World = {
   challenges: Challenge[]
@@ -55,10 +61,10 @@ describe('приёмка методики на демо-данных: 40 мир�
     expect(found).toBeGreaterThanOrEqual(0.8)
   })
 
-  it('похмелье: следующий день хуже, со словом уверенности — не меньше чем в 80% миров', () => {
+  it('похмелье: следующий день хуже, «похоже» или «уверенно» — не меньше чем в 80% миров', () => {
     const found = share((w) => {
       const drink = w.tags.find((t) => t.tag === 'алкоголь')
-      return drink !== undefined && drink.confidence !== null && drink.windows.day.next.delta < 0
+      return drink !== undefined && FIRM.includes(drink.confidence) && drink.windows.day.next.delta < 0
     })
     expect(found).toBeGreaterThanOrEqual(0.8)
   })
@@ -67,8 +73,17 @@ describe('приёмка методики на демо-данных: 40 мир�
     expect(share((w) => STRONG.includes(w.byCode(code).windows.day.next.strength))).toBeLessThanOrEqual(0.1)
   })
 
-  it('АНГ — шум: слово уверенности не чаще чем в 10% миров, «уверенно» — не больше чем в одном', () => {
-    expect(share((w) => w.byCode('АНГ').confidence !== null)).toBeLessThanOrEqual(0.1)
+  it('ЧТН — «возможно» и сильнее назавтра не чаще чем в 30% миров', () => {
+    expect(share((w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.3)
+  })
+
+  it('ОТЖ делается в энергичные дни — «возможно» и сильнее назавтра не чаще чем в 60% миров', () => {
+    expect(share((w) => WORDED.includes(w.byCode('ОТЖ').windows.day.next.strength))).toBeLessThanOrEqual(0.6)
+  })
+
+  it('АНГ — шум: «похоже» и «уверенно» не чаще 10% миров, любое слово — не чаще 30%, «уверенно» — не больше чем в одном', () => {
+    expect(share((w) => FIRM.includes(w.byCode('АНГ').confidence))).toBeLessThanOrEqual(0.1)
+    expect(share((w) => w.byCode('АНГ').confidence !== null)).toBeLessThanOrEqual(0.3)
     expect(worlds.filter((w) => w.byCode('АНГ').confidence === 'sure').length).toBeLessThanOrEqual(1)
   })
 
@@ -77,8 +92,9 @@ describe('приёмка методики на демо-данных: 40 мир�
     expect(share((w) => w.byCode('БСГ').beforeAfter?.byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
   })
 
-  it('БСХ — срывов мало: «мало данных» не реже чем в 85% миров, «до/после» без ложного «похоже»', () => {
-    expect(share((w) => w.byCode('БСХ').verdict === 'insufficient')).toBeGreaterThanOrEqual(0.85)
+  it('БСХ — срывов мало: «похоже» и «уверенно» не чаще 10% миров, любое слово — не чаще 35%, «до/после» без ложного «похоже»', () => {
+    expect(share((w) => FIRM.includes(w.byCode('БСХ').confidence))).toBeLessThanOrEqual(0.1)
+    expect(share((w) => w.byCode('БСХ').confidence !== null)).toBeLessThanOrEqual(0.35)
     expect(share((w) => w.byCode('БСХ').beforeAfter?.byMetric.day.strength !== 'likely')).toBeGreaterThanOrEqual(0.9)
   })
 
