@@ -15,6 +15,7 @@ export const STRENGTH_WORD: Record<Strength, string> = {
   flat: 'без разницы',
   unclear: 'неясно',
   echo: 'полоса',
+  possible: 'возможно',
   likely: 'похоже',
   strong: 'уверенно',
 }
@@ -22,6 +23,7 @@ export const STRENGTH_WORD: Record<Strength, string> = {
 export const CONFIDENCE_WORD: Record<Exclude<Confidence, null>, string> = {
   sure: 'Уверенно',
   likely: 'Похоже',
+  possible: 'Возможно',
 }
 
 /** Разница в баллах: «+1,2», «−0,9» — с настоящим минусом и русской запятой. */

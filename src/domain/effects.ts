@@ -1,7 +1,7 @@
 import { addDays, dayKey, daysBetween, isoDow, parseDay } from './date'
 import { pausedOn } from './pauses'
 import { fitLinear, lag1, tQuantile } from './regression'
-import { MIN_GROUP, MIN_TAG_DAYS } from './stats'
+import { MIN_EARLY, MIN_GROUP, MIN_TAG_DAYS } from './stats'
 import { activeDays, dayOutcome, deletedDay, lastDay } from './streaks'
 import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
 
@@ -29,12 +29,13 @@ export const PRACTICAL = 0.5
 
 /**
  * Класс оценки окна, от слабого к сильному:
- * few — мало дней в группе; tangled — окна не разделить (привычка через день);
- * flat — весь интервал внутри полубалла; unclear — неясно: интервал задевает ноль, разница меньше
- * полубалла или назавтра не отличить от накануне; echo — только «назавтра»: накануне оценки тоже
- * заметно выше, это полоса; likely — похоже; strong — уверенно, бывает только «назавтра».
+ * few — меньше `MIN_EARLY` дней в группе; tangled — окна не разделить (привычка через день);
+ * flat — весь интервал внутри полубалла; unclear — неясно: 70% интервал задевает ноль, разница
+ * меньше полубалла или назавтра не отличить от накануне; echo — только «назавтра»: накануне оценки
+ * тоже заметно выше, это полоса; possible — возможно, ранний вывод по 70% интервалу; likely —
+ * похоже; strong — уверенно, бывает только «назавтра».
  */
-export type Strength = 'few' | 'tangled' | 'flat' | 'unclear' | 'echo' | 'likely' | 'strong'
+export type Strength = 'few' | 'tangled' | 'flat' | 'unclear' | 'echo' | 'possible' | 'likely' | 'strong'
 
 export type Estimate = {
   /** На сколько баллов оценка выше в дни «с», чем в дни «без», с поправками модели. */
@@ -70,8 +71,8 @@ export type Verdict =
   | 'tangled'
   | 'insufficient'
 
-/** «Уверенно» или «похоже»; null — слова уверенности нет. Даёт только окно «назавтра». */
-export type Confidence = 'sure' | 'likely' | null
+/** «Уверенно», «похоже» или «возможно»; null — слова уверенности нет. Даёт только окно «назавтра». */
+export type Confidence = 'sure' | 'likely' | 'possible' | null
 
 export type ChallengeEffect = {
   challenge: Challenge
@@ -142,11 +143,18 @@ export const scoreOf = (log: DayLog, metric: Metric) =>
 /** Уровень для «уверенно»: 99% для оценки дня, для отдельной шкалы — с поправкой на три шкалы. */
 export const strictLevel = (metric: Metric) => (metric === 'day' ? 0.995 : 1 - 0.01 / 3 / 2)
 
+/**
+ * Уровень для «возможно» — 70% интервал, ранний вывод. На демо «выгорание» он верен примерно через
+ * раз на двух неделях и в четырёх случаях из пяти к концу месяца: решение Georgy от 21.09 — ранние
+ * выводы важнее того, что они часто ошибаются.
+ */
+export const POSSIBLE_LEVEL = 0.85
+
 /** Что анализируем — челлендж или тег — и как с ним обращаться. */
 type Subject = {
   /** 1 или 0 в известный день, undefined — день неизвестен и в расчёт не идёт. */
   x: (day: string) => 0 | 1 | undefined
-  /** Меньше стольких дней в группе — вывода нет. */
+  /** Со стольких дней в меньшей группе — «похоже»; раньше вывод не сильнее «возможно». */
   minGroup: number
   /** Поправка на выходные — кроме тега «выходной», где это сам субъект. */
   weekendControl: boolean
@@ -172,10 +180,12 @@ const few = (withDays: number, withoutDays: number) => blank('few', withDays, wi
 
 /**
  * Класс оценки окна. «Без разницы» — только когда весь 95% интервал внутри полубалла: широкий
- * интервал вокруг нуля — это «неясно». В тот же день (`next` = null) сильнее «похоже» не бывает.
- * Назавтра: накануне оценки тоже заметно выше и разница с ним не значима — полоса. «Уверенно» —
- * 99% интервал (для шкалы строже), значимое отличие от накануне и не меньше десяти дней в группе;
- * для «похоже» отличие от накануне не требуется, иначе инерция настроения глушила бы и настоящее.
+ * интервал вокруг нуля — это «неясно». Вывод — когда разница не меньше полубалла и интервал не
+ * задевает ноль: по 95% — «похоже», если в меньшей группе хотя бы `minGroup` дней, иначе и по 70% —
+ * «возможно». В тот же день (`next` = null) сильнее «похоже» не бывает. Назавтра: накануне оценки
+ * тоже заметно выше и разница с ним не значима на том же уровне — полоса. «Уверенно» — 99% интервал
+ * (для шкалы строже), значимое отличие от накануне и не меньше десяти дней в группе; для «похоже»
+ * отличие от накануне не требуется, иначе инерция настроения глушила бы и настоящее.
  */
 export function strengthOf(
   est: Coef,
@@ -185,7 +195,7 @@ export function strengthOf(
   next: { lead: Coef; diffSe: number; level: number } | null,
 ): Estimate {
   const smaller = Math.min(withDays, withoutDays)
-  if (smaller < minGroup) return few(withDays, withoutDays)
+  if (smaller < MIN_EARLY) return few(withDays, withoutDays)
 
   const df = Math.max(3, smaller - 1)
   const t95 = tQuantile(0.975, df)
@@ -193,20 +203,26 @@ export function strengthOf(
   const base = { delta: est.delta, low: est.delta - half, high: est.delta + half, withDays, withoutDays }
 
   if (base.low > -PRACTICAL && base.high < PRACTICAL) return { ...base, strength: 'flat' }
-  if (base.low <= 0 && base.high >= 0) return { ...base, strength: 'unclear' }
   if (Math.abs(est.delta) < PRACTICAL) return { ...base, strength: 'unclear' }
-  if (!next) return { ...base, strength: 'likely' }
+  /* Интервал уровня с квантилем `t` не задевает ноль. */
+  const beyond = (t: number) => Math.abs(est.delta) > t * est.se
+  const t70 = tQuantile(POSSIBLE_LEVEL, df)
+  const level = beyond(t95) && smaller >= minGroup ? 'likely' : beyond(t70) ? 'possible' : null
+  if (!level) return { ...base, strength: 'unclear' }
+  if (!next) return { ...base, strength: level }
 
+  const t = level === 'likely' ? t95 : t70
   const { lead } = next
-  const clearOfLead = Math.abs(est.delta - lead.delta) > t95 * next.diffSe
-  const leadShows = Math.sign(lead.delta) === Math.sign(est.delta) && Math.abs(lead.delta) > t95 * lead.se
+  const clearOfLead = (q: number) => Math.abs(est.delta - lead.delta) > q * next.diffSe
+  const leadShows = Math.sign(lead.delta) === Math.sign(est.delta) && Math.abs(lead.delta) > t * lead.se
   /* Накануне оценки тоже заметно выше и назавтра от накануне не отличить — это полоса. */
-  if (leadShows && !clearOfLead) return { ...base, strength: 'echo' }
+  if (leadShows && !clearOfLead(t)) return { ...base, strength: 'echo' }
+  if (level === 'possible') return { ...base, strength: 'possible' }
 
   /* «Уверенно» — только когда назавтра отличается и от нуля по 99%, и от контроля «накануне». */
   const strict = tQuantile(next.level, df) * est.se
   const clearOfZero = est.delta - strict > 0 || est.delta + strict < 0
-  const strong = clearOfZero && clearOfLead && smaller >= MIN_GROUP
+  const strong = clearOfZero && clearOfLead(t95) && smaller >= MIN_GROUP
   return { ...base, strength: strong ? 'strong' : 'likely' }
 }
 
@@ -291,8 +307,7 @@ function analyze(subject: Subject, logs: DayLog[]) {
   for (const metric of METRICS) {
     const fit = solvable ? fitLinear(x, rows.map((r) => scoreOf(r.log, metric))) : null
     if (!fit) {
-      const bigEnough =
-        Math.min(sameWith, sameWithout) >= subject.minGroup && Math.min(nextWith, nextWithout) >= subject.minGroup
+      const bigEnough = Math.min(sameWith, sameWithout, nextWith, nextWithout) >= MIN_EARLY
       const kind = tangled && bigEnough ? 'tangled' : 'few'
       windows[metric] = { same: blank(kind, sameWith, sameWithout), next: blank(kind, nextWith, nextWithout) }
       continue
@@ -382,14 +397,16 @@ function partnerOf(c: Challenge, all: Challenge[], known: Map<string, Map<string
   return best
 }
 
-const decided = (s: Strength) => s === 'likely' || s === 'strong'
+const decided = (s: Strength) => s === 'possible' || s === 'likely' || s === 'strong'
+
+/** Слово уверенности вывода — по классу окна «назавтра». */
+const CONFIDENCE: Partial<Record<Strength, Confidence>> = { strong: 'sure', likely: 'likely', possible: 'possible' }
 
 /** Вывод по двум окнам оценки дня — таблица из плана; уверенность даёт только «назавтра». */
 export function verdictOf(day: Windows): { verdict: Verdict; confidence: Confidence } {
   const { same, next } = day
   if (same.strength === 'tangled' || next.strength === 'tangled') return { verdict: 'tangled', confidence: null }
-  const confidence: Confidence =
-    next.strength === 'strong' ? 'sure' : next.strength === 'likely' ? 'likely' : null
+  const confidence = CONFIDENCE[next.strength] ?? null
 
   if (decided(next.strength)) {
     if (!decided(same.strength)) return { verdict: 'delayed', confidence }
@@ -486,7 +503,7 @@ export function challengeEffects(
   })
 }
 
-/** Сравнение двух наборов дней по Уэлчу с поправкой на полосы; не сильнее «похоже». */
+/** Сравнение двух наборов дней по Уэлчу с поправкой на полосы; не сильнее «похоже» и без «возможно». */
 function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable: boolean): Estimate {
   if (Math.min(before.length, after.length) < MIN_GROUP) return few(after.length, before.length)
 
@@ -500,6 +517,8 @@ function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable:
   const r = lag1(fit.residuals, rows.map((row) => row.log.day))
   const se = Math.sqrt(fit.cov[1]![1]!) * Math.sqrt((1 + r) / (1 - r))
   const est = strengthOf({ delta: fit.beta[1]!, se }, after.length, before.length, MIN_GROUP, null)
+  /* Раннего вывода здесь нет: сравнение и так смещено возвратом к норме. */
+  if (est.strength === 'possible') return { ...est, strength: 'unclear' }
   /* Другой челлендж начат одновременно — чей это эффект, не сказать. */
   if (inseparable && est.strength === 'likely') return { ...est, strength: 'unclear' }
   return est
@@ -568,7 +587,8 @@ export function beforeAfter(c: Challenge, all: Challenge[], logs: DayLog[], toda
 /**
  * Эффект тегов дня — той же моделью, без соседа. Тег известен только в оценённый день:
  * день без оценки — «неизвестно», а не «без тега». У «выходного» нет поправки на выходные,
- * «болел» не выбрасывает сам себя. Теги реже `MIN_TAG_DAYS` дней не показываются.
+ * «болел» не выбрасывает сам себя. Теги реже `MIN_EARLY` дней не показываются, «похоже» у тега —
+ * с `MIN_TAG_DAYS` дней в группе.
  */
 export function tagEffects(logs: DayLog[]): TagEffect[] {
   const closed = logs.filter((l) => l.closedAt !== null)
@@ -593,6 +613,6 @@ export function tagEffects(logs: DayLog[]): TagEffect[] {
       )
       return { tag, tagDays, windows, days, sickDays, ...verdictOf(windows.day) }
     })
-    .filter((t) => t.tagDays >= MIN_TAG_DAYS)
+    .filter((t) => t.tagDays >= MIN_EARLY)
     .sort((a, b) => b.tagDays - a.tagDays)
 }
