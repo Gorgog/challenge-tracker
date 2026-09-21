@@ -53,8 +53,12 @@ describe.each(WEEK.map((d) => [dayKey(d), d] as const))('демо-данные, 
     expect(['likely', 'strong']).not.toContain(read.windows.day.next.strength)
   })
 
-  it('АНГ — шум: заметной связи нет или неясно', async () => {
-    expect(['noEffect', 'unclear']).toContain((await world(today)).byCode('АНГ').verdict)
+  it('АНГ — шум: ни слова уверенности, ни эффекта назавтра', async () => {
+    const eng = (await world(today)).byCode('АНГ')
+    // Окно «в тот же день» с 95% интервалом ошибается примерно в 5% случаев — на этих данных
+    // 22.09 оно видит у шума «похоже». Поэтому слово уверенности даёт только окно «назавтра».
+    expect(eng.confidence).toBeNull()
+    expect(['likely', 'strong']).not.toContain(eng.windows.day.next.strength)
   })
 
   it.each(['ОТЖ', 'БСГ', 'БСХ'])('%s почти без пропусков — только «до/после», и без вывода', async (code) => {
