@@ -42,6 +42,10 @@ export type DayCloseDialogProps = {
 /** Сколько бегунок доезжает до засечки после отпускания. */
 const SNAP_MS = 150
 
+/** Доля дорожки, на которой стоит значение: 5 из 1–10 — это 44,4 %, а не половина. */
+const anchorAt = (value: number) =>
+  `${((value - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100}%`
+
 type Draft = Record<ScoreField, number | null>
 
 const emptyDraft: Draft = { mood: null, wellbeing: null, productivity: null }
@@ -181,10 +185,26 @@ export function DayCloseDialog({
                 )}
               />
 
-              <div className="flex justify-between font-mono text-[10.5px] text-muted-foreground">
-                <span>1 — {scale.low}</span>
-                <span>5 — как обычно</span>
-                <span>10 — {scale.high}</span>
+              {/*
+                Якоря стоят на позициях своих значений, а не по краям и середине:
+                середина дорожки — это 5,5, и подпись «5» с бегунком расходилась.
+              */}
+              <div className="relative h-4 font-mono text-[10.5px] text-muted-foreground">
+                <span className="absolute whitespace-nowrap" style={{ left: anchorAt(SCORE_MIN) }}>
+                  1 — {scale.low}
+                </span>
+                <span
+                  className="absolute -translate-x-1/2 whitespace-nowrap"
+                  style={{ left: anchorAt(5) }}
+                >
+                  5 — как обычно
+                </span>
+                <span
+                  className="absolute -translate-x-full whitespace-nowrap"
+                  style={{ left: anchorAt(SCORE_MAX) }}
+                >
+                  10 — {scale.high}
+                </span>
               </div>
             </div>
           )
