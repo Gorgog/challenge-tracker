@@ -57,7 +57,9 @@ export function SortableRow({ id, label, children }: SortableRowProps) {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1',
-        isDragging && 'z-10 rounded-xl ring-2 ring-primary/25',
+        /* outline, а не ring: у него есть отступ, и места в раскладке он не занимает —
+           соседи не сдвигаются, пока карточку тащат. */
+        isDragging && 'z-10 rounded-xl outline-2 outline-offset-4 outline-primary/45',
       )}
     >
       <Grip
@@ -87,7 +89,10 @@ export function SortableGroup({ group, title, children }: SortableGroupProps) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn('flex flex-col gap-2 rounded-xl', isDragging && 'z-10 ring-2 ring-primary/25')}
+      className={cn(
+        'flex flex-col gap-2 rounded-xl',
+        isDragging && 'z-10 outline-2 outline-offset-8 outline-primary/45',
+      )}
     >
       <div className="flex items-center gap-1">
         <Grip

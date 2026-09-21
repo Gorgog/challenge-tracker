@@ -169,6 +169,8 @@
   [role='button']:not([aria-disabled='true']),
   [role='option'],
   [role='switch']:not(:disabled),
+  [role='slider']:not([data-disabled]),
+  [data-slot='slider']:not([data-disabled]),
   summary {
     cursor: pointer;
   }
