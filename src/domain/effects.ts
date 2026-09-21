@@ -1,9 +1,9 @@
 import { addDays, dayKey, daysBetween, isoDow, parseDay } from './date'
 import { pausedOn } from './pauses'
-import { fitLinear, lag1, tQuantile } from './regression'
+import { fitLinear, lag1, tQuantile, type Fit } from './regression'
 import { MIN_EARLY, MIN_GROUP, MIN_TAG_DAYS } from './stats'
 import { activeDays, dayOutcome, deletedDay, lastDay } from './streaks'
-import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
+import type { Challenge, DayLog, DayStart, EntryMap, Morning, ScoreField } from './types'
 
 /**
  * Эффект челленджей и тегов на оценки дня.
@@ -20,6 +20,12 @@ import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
  * понедельник и разницу субботы с воскресеньем — иначе ритм недели утекал бы в окно «назавтра».
  * день(t) — номер дня по порядку: общий подъём или спад (выход из выгорания, возврат к норме после
  * плохой полосы) не достаётся челленджу, который пришёлся на это время.
+ *
+ * Утро (решение Georgy от 21.09) измерено до дел дня. У челленджей окно «в тот же день» считается
+ * ещё и при том же утре: к тем же столбцам добавляется утро этого дня, и хорошее утро больше не
+ * выдаёт себя за эффект. «Назавтра» на утро не поправляется: для вчерашнего челленджа утро — уже
+ * результат, поправка спрятала бы сам эффект. Строка «Утро» — та же модель с утром вместо вечера,
+ * справочно.
  */
 
 /** `day` — оценка дня целиком: среднее трёх шкал. */
@@ -91,6 +97,17 @@ export type ChallengeEffect = {
   sickDays: number
   /** Запасное сравнение «до/после старта» — только когда дни «с» и «без» не набрать. */
   beforeAfter: BeforeAfter | null
+  /**
+   * Окно «в тот же день» посчитано при том же утре: дни «с» и «без» в нём — дни с утром. Иначе
+   * утр мало, и окно обычное.
+   */
+  morningBase: boolean
+  /**
+   * Строка «Утро» — самочувствие и настроение до дел дня. «В тот же день» — каким было утро в дни
+   * «с» (утро раньше дел: это не эффект, а то, какими эти дни были с самого начала), «назавтра» —
+   * утро на следующий день. Справочно: вывода и слов не даёт и не сильнее «похоже». null — утр нет.
+   */
+  morning: Windows | null
 }
 
 /** Окно «до/после» — не длиннее месяца с каждой стороны. */
@@ -129,6 +146,8 @@ export type TagEffect = {
   days: number
   /** Дней, выброшенных из-за болезни. */
   sickDays: number
+  /** Строка «Утро» — как у челленджа: справочно, не сильнее «похоже». null — утр нет. */
+  morning: Windows | null
 }
 
 /** Тег болезни: такие дни и следующие за ними в расчёт эффекта не идут. */
@@ -141,6 +160,24 @@ const weekendOf = (day: string) => (isoDow(parseDay(day)) >= 5 ? 1 : 0)
 /** Оценка дня по метрике: `day` — среднее трёх шкал. */
 export const scoreOf = (log: DayLog, metric: Metric) =>
   metric === 'day' ? (log.mood + log.wellbeing + log.productivity) / 3 : log[metric]
+
+/** Утро одним числом — самочувствие и настроение до дел дня. Сон — отдельная шкала. */
+export const morningScore = (m: Morning) => (m.wellbeing + m.mood) / 2
+
+/**
+ * Модели при том же утре нужен запас — столько строк сверх её столбцов. С меньшим на 15-м дне
+ * «выгорания» она добавляла ложное «в тот же день» (у ЧТН 28% миров против 26% без утра), с пятью —
+ * почти нет, а на месяце и полном демо польза та же (разведка этапа 2, 800 свежих миров). С таким
+ * запасом степени свободы по меньшей группе (`strengthOf`) не превышают строк сверх столбцов: без
+ * соседа столбцов не больше восьми, а меньшая группа — не больше половины строк; соседу нужно 20 дней.
+ */
+export const MIN_BASE_RESIDUAL = 5
+
+/**
+ * Окно при том же утре берётся, только когда дни с утром — не меньше этой доли дней обычной модели:
+ * иначе горстка дней с утром перебила бы долгую историю без утр, и окна описывали бы разные дни.
+ */
+export const BASE_COVERAGE = 2 / 3
 
 /** Уровень для «уверенно»: 99% для оценки дня, для отдельной шкалы — с поправкой на три шкалы. */
 export const strictLevel = (metric: Metric) => (metric === 'day' ? 0.995 : 1 - 0.01 / 3 / 2)
@@ -167,7 +204,7 @@ type Subject = {
   partner?: (day: string) => 0 | 1
 }
 
-type Row = { day: string; log: DayLog; now: 0 | 1; before: 0 | 1; after: 0 | 1 }
+type Row = { day: string; log: DayLog; morning: Morning | null; now: 0 | 1; before: 0 | 1; after: 0 | 1 }
 
 type Coef = { delta: number; se: number }
 
@@ -234,7 +271,35 @@ export function strengthOf(
 /** Столбцы, без которых модель обходится: их выкидывают по одному, если она не решается. */
 const DROPPABLE = ['partner', 'trend', 'weekendBefore', 'weekend', 'after'] as const
 
-function analyze(subject: Subject, logs: DayLog[]) {
+/** Хорошие и плохие дни идут полосами — ошибка расширяется на автокорреляцию остатков. */
+function coefsOf(fit: Fit, days: string[]) {
+  const r = lag1(fit.residuals, days)
+  const inflate = Math.sqrt((1 + r) / (1 - r))
+  const coef = (i: number): Coef =>
+    i < 0 ? { delta: 0, se: 0 } : { delta: fit.beta[i]!, se: Math.sqrt(fit.cov[i]![i]!) * inflate }
+  /* Ошибка разницы «назавтра» и «накануне» — с их ковариацией. */
+  const diffSe = (a: number, b: number) => {
+    const cov = a < 0 || b < 0 ? 0 : fit.cov[a]![b]! * inflate * inflate
+    return Math.sqrt(Math.max(0, coef(a).se ** 2 + coef(b).se ** 2 - 2 * cov))
+  }
+  return { coef, diffSe }
+}
+
+/** «Уверенно» → «похоже»: для близнецов и справочной строки «Утро». */
+const atMostLikely = (e: Estimate): Estimate => (e.strength === 'strong' ? { ...e, strength: 'likely' } : e)
+
+type Options = {
+  /** Утро по дням; пропущенного утра здесь нет. */
+  mornings: Map<string, Morning>
+  /** Окно «в тот же день» — ещё и при том же утре. Только у челленджей: часть тегов известна до утра. */
+  base: boolean
+  /** Строка «Утро». */
+  morningRow: boolean
+}
+
+const NO_MORNINGS: Options = { mornings: new Map(), base: false, morningRow: false }
+
+function analyze(subject: Subject, logs: DayLog[], options: Options = NO_MORNINGS) {
   const byDay = new Map(logs.filter((l) => l.closedAt !== null).map((l) => [l.day, l]))
   const rows: Row[] = []
   let sickDays = 0
@@ -249,15 +314,15 @@ function analyze(subject: Subject, logs: DayLog[]) {
       sickDays++
       continue
     }
-    rows.push({ day, log, now, before, after })
+    rows.push({ day, log, morning: options.mornings.get(day) ?? null, now, before, after })
   }
 
-  const count = (pick: (r: Row) => number) => {
-    const withDays = rows.filter((r) => pick(r) === 1).length
-    return [withDays, rows.length - withDays] as const
+  const countIn = (subset: Row[], pick: (r: Row) => number) => {
+    const withDays = subset.filter((r) => pick(r) === 1).length
+    return [withDays, subset.length - withDays] as const
   }
-  const [sameWith, sameWithout] = count((r) => r.now)
-  const [nextWith, nextWithout] = count((r) => r.before)
+  const [sameWith, sameWithout] = countIn(rows, (r) => r.now)
+  const [nextWith, nextWithout] = countIn(rows, (r) => r.before)
 
   const columns: { name: string; values: number[] }[] = [
     { name: 'now', values: rows.map((r) => r.now) },
@@ -325,18 +390,7 @@ function analyze(subject: Subject, logs: DayLog[]) {
       windows[metric] = { same: blank(kind, sameWith, sameWithout), next: blank(kind, nextWith, nextWithout) }
       continue
     }
-
-    /* Хорошие и плохие дни идут полосами — ошибка расширяется на автокорреляцию остатков. */
-    const r = lag1(fit.residuals, rows.map((row) => row.day))
-    const inflate = Math.sqrt((1 + r) / (1 - r))
-    const coef = (i: number): Coef =>
-      i < 0 ? { delta: 0, se: 0 } : { delta: fit.beta[i]!, se: Math.sqrt(fit.cov[i]![i]!) * inflate }
-
-    const nextCoef = coef(iBefore)
-    const lead = coef(iAfter)
-    const covLead = iBefore < 0 || iAfter < 0 ? 0 : fit.cov[iBefore]![iAfter]! * inflate * inflate
-    const diffSe = Math.sqrt(Math.max(0, nextCoef.se ** 2 + lead.se ** 2 - 2 * covLead))
-
+    const { coef, diffSe } = coefsOf(fit, rows.map((row) => row.day))
     windows[metric] = {
       same:
         iNow < 0
@@ -345,15 +399,66 @@ function analyze(subject: Subject, logs: DayLog[]) {
       next:
         iBefore < 0
           ? few(nextWith, nextWithout)
-          : strengthOf(nextCoef, nextWith, nextWithout, subject.minGroup, {
-              lead,
-              diffSe,
+          : strengthOf(coef(iBefore), nextWith, nextWithout, subject.minGroup, {
+              lead: coef(iAfter),
+              diffSe: diffSe(iBefore, iAfter),
               level: strictLevel(metric),
             }),
     }
   }
 
-  return { windows, days: rows.length, sickDays, partnerState }
+  /* Дни с утром — для окна при том же утре и для строки «Утро». Столбцы у обеих моделей — те, что
+     остались у обычной: своих решений они не принимают, иначе окна описывали бы разные модели. */
+  const morningRows = rows.flatMap((r, i) => (r.morning ? [i] : []))
+  const subset = morningRows.map((i) => rows[i]!)
+  const subsetDays = subset.map((r) => r.day)
+
+  /** Окно «в тот же день» при том же утре — или null, если утр мало и окно остаётся обычным. */
+  const sameGivenMorning = (): Record<Metric, Estimate> | null => {
+    if (!solvable || iNow < 0 || morningRows.length < BASE_COVERAGE * rows.length) return null
+    /* Утро — в долях шкалы от «как обычно»: сырые баллы перевешивали бы остальные столбцы. */
+    const base = subset.map((r) => (morningScore(r.morning!) - 5) / 10)
+    /* Постоянное утро модель и так не решит; проверка — чтобы не полагаться на порог вырожденности. */
+    if (new Set(base).size < 2 || subset.length - (x[0]!.length + 1) < MIN_BASE_RESIDUAL) return null
+    const xb = morningRows.map((i, j) => [...x[i]!, base[j]!])
+    const [withDays, withoutDays] = countIn(subset, (r) => r.now)
+    const out = {} as Record<Metric, Estimate>
+    for (const metric of METRICS) {
+      const fit = fitLinear(xb, subset.map((r) => scoreOf(r.log, metric)))
+      if (!fit) return null
+      const { coef } = coefsOf(fit, subsetDays)
+      out[metric] = strengthOf(coef(iNow), withDays, withoutDays, subject.minGroup, null)
+    }
+    return out.day.strength === 'few' || out.day.strength === 'tangled' ? null : out
+  }
+
+  /** Строка «Утро»: те же столбцы, исход — утро. Справочно, не сильнее «похоже». */
+  const morningWindows = (): Windows => {
+    const [sw, swo] = countIn(subset, (r) => r.now)
+    const [nw, nwo] = countIn(subset, (r) => r.before)
+    const fit = solvable ? fitLinear(morningRows.map((i) => x[i]!), subset.map((r) => morningScore(r.morning!))) : null
+    if (!fit) return { same: few(sw, swo), next: few(nw, nwo) }
+    const { coef, diffSe } = coefsOf(fit, subsetDays)
+    const same = iNow < 0 ? few(sw, swo) : strengthOf(coef(iNow), sw, swo, subject.minGroup, null)
+    const next =
+      iBefore < 0
+        ? few(nw, nwo)
+        : strengthOf(coef(iBefore), nw, nwo, subject.minGroup, {
+            lead: coef(iAfter),
+            diffSe: diffSe(iBefore, iAfter),
+            level: strictLevel('day'),
+          })
+    return { same: atMostLikely(same), next: atMostLikely(next) }
+  }
+
+  return {
+    windows,
+    days: rows.length,
+    sickDays,
+    partnerState,
+    based: options.base ? sameGivenMorning() : null,
+    morning: options.morningRow && subset.length > 0 ? morningWindows() : null,
+  }
 }
 
 /** Прошедшие дни челленджа с известным исходом: 1 — взят, 0 — пропуск или срыв. */
@@ -469,29 +574,38 @@ export function effectText(verdict: Verdict, day: Windows, subject: 'challenge' 
 
 /** «Уверенно» → «похоже» во всех окнах: для близнецов чей эффект — не сказать. */
 function capAtLikely(windows: Record<Metric, Windows>): Record<Metric, Windows> {
-  const cap = (e: Estimate): Estimate => (e.strength === 'strong' ? { ...e, strength: 'likely' } : e)
   const out = {} as Record<Metric, Windows>
-  for (const metric of METRICS) out[metric] = { same: cap(windows[metric].same), next: cap(windows[metric].next) }
+  for (const metric of METRICS) {
+    out[metric] = { same: atMostLikely(windows[metric].same), next: atMostLikely(windows[metric].next) }
+  }
   return out
 }
+
+/** Утро по дням; пропущенное утро — не день с утром. */
+const morningsOf = (starts: DayStart[]) =>
+  new Map(starts.flatMap((s) => (s.morning ? [[s.day, s.morning] as const] : [])))
 
 /**
  * Эффект каждого переданного челленджа. Список — целиком, с удалёнными: скрывать их
  * можно только на экране, а соседом удалённый быть может — его история никуда не делась.
+ * `starts` — начала дней с утром; без них всё считается, как до утра в аналитике.
  */
 export function challengeEffects(
   all: Challenge[],
   entriesById: Record<string, EntryMap>,
   logs: DayLog[],
   today: Date,
+  starts: DayStart[] = [],
 ): ChallengeEffect[] {
   const known = new Map(all.map((c) => [c.id, outcomes(c, entriesById[c.id] ?? {}, today)]))
+  const mornings = morningsOf(starts)
+  const options: Options = { mornings, base: mornings.size > 0, morningRow: mornings.size > 0 }
 
   return all.map((challenge) => {
     const mine = known.get(challenge.id)!
     const candidate = partnerOf(challenge, all, known)
     const candidateDays = candidate ? known.get(candidate.id)! : null
-    const { partnerState, windows: raw, days, sickDays } = analyze(
+    const { partnerState, windows: plain, days, sickDays, based, morning } = analyze(
       {
         x: (day) => mine.get(day),
         minGroup: MIN_GROUP,
@@ -500,7 +614,10 @@ export function challengeEffects(
         partner: candidateDays ? (day) => candidateDays.get(day) ?? 0 : undefined,
       },
       logs,
+      options,
     )
+    /* «Назавтра» — всегда из обычной модели: утро на нём не поправляется. */
+    const raw = based ? joinSame(plain, based) : plain
     const twin = partnerState === 'tangled' ? candidate : null
     const windows = twin ? capAtLikely(raw) : raw
     const verdict = verdictOf(windows.day)
@@ -513,8 +630,17 @@ export function challengeEffects(
       days,
       sickDays,
       beforeAfter: verdict.verdict === 'insufficient' ? beforeAfter(challenge, all, logs, today) : null,
+      morningBase: based !== null,
+      morning,
     }
   })
+}
+
+/** Окна обычной модели, где «в тот же день» — при том же утре. */
+function joinSame(plain: Record<Metric, Windows>, same: Record<Metric, Estimate>): Record<Metric, Windows> {
+  const out = {} as Record<Metric, Windows>
+  for (const metric of METRICS) out[metric] = { same: same[metric], next: plain[metric].next }
+  return out
 }
 
 /**
@@ -603,17 +729,20 @@ export function beforeAfter(c: Challenge, all: Challenge[], logs: DayLog[], toda
  * Эффект тегов дня — той же моделью, без соседа. Тег известен только в оценённый день:
  * день без оценки — «неизвестно», а не «без тега». У «выходного» нет поправки на выходные,
  * «болел» не выбрасывает сам себя. Теги реже `MIN_EARLY` дней не показываются, «похоже» у тега —
- * с `MIN_TAG_DAYS` дней в группе.
+ * с `MIN_TAG_DAYS` дней в группе. Утро на «в тот же день» у тегов не поправляется: часть тегов
+ * известна ещё до утра (выходной), и поправка съела бы их эффект.
  */
-export function tagEffects(logs: DayLog[]): TagEffect[] {
+export function tagEffects(logs: DayLog[], starts: DayStart[] = []): TagEffect[] {
   const closed = logs.filter((l) => l.closedAt !== null)
   const byDay = new Map(closed.map((l) => [l.day, l]))
   const tags = [...new Set(closed.flatMap((l) => l.tags))]
+  const mornings = morningsOf(starts)
+  const options: Options = { mornings, base: false, morningRow: mornings.size > 0 }
 
   return tags
     .map((tag) => {
       const tagDays = closed.filter((l) => l.tags.includes(tag)).length
-      const { windows, days, sickDays } = analyze(
+      const { windows, days, sickDays, morning } = analyze(
         {
           x: (day) => {
             const log = byDay.get(day)
@@ -625,8 +754,9 @@ export function tagEffects(logs: DayLog[]): TagEffect[] {
           dropSick: tag !== SICK,
         },
         closed,
+        options,
       )
-      return { tag, tagDays, windows, days, sickDays, ...verdictOf(windows.day) }
+      return { tag, tagDays, windows, days, sickDays, morning, ...verdictOf(windows.day) }
     })
     .filter((t) => t.tagDays >= MIN_EARLY)
     .sort((a, b) => b.tagDays - a.tagDays)

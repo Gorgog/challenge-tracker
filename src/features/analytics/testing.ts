@@ -59,13 +59,15 @@ export function effect(same: Estimate, next: Estimate, over: Partial<ChallengeEf
     days: 60,
     sickDays: 0,
     beforeAfter: null,
+    morningBase: false,
+    morning: null,
     ...over,
   }
 }
 
 export function tag(name: string, same: Estimate, next: Estimate, over: Partial<TagEffect> = {}): TagEffect {
   const w = windows(same, next)
-  return { tag: name, tagDays: 12, windows: w, ...verdictOf(w.day), days: 110, sickDays: 0, ...over }
+  return { tag: name, tagDays: 12, windows: w, ...verdictOf(w.day), days: 110, sickDays: 0, morning: null, ...over }
 }
 
 export const beforeAfterOf = (over: Partial<BeforeAfter> = {}): BeforeAfter => {

@@ -964,8 +964,9 @@ describe('утро — база окна «в тот же день» у челл
     expect(e.windows.day.same).toEqual(effectOf(w).windows.day.same)
   })
 
-  it('строк почти столько же, сколько столбцов, — окно «в тот же день» без поправки', () => {
-    const length = 10
+  it('строк сверх столбцов меньше пяти — окно «в тот же день» без поправки', () => {
+    // 14 дней: 12 строк при 8 столбцах модели с утром — она решается, но запаса мало.
+    const length = 14
     const c = challenge({ startDate: dayKey(addDays(TODAY, -length)) })
     const w = simulate(46, { ...energetic, score: (d) => 6 + 1.2 * d.state, morning: (d, _y, rnd) => wake(6 + 1.2 * d.state, rnd) }, length)
     const e = morningEffectOf(w, c)
@@ -1028,9 +1029,9 @@ describe('строка «Утро» — справочно, слов не даё
     const drinks = new Set(Array.from({ length: 30 }, (_, k) => 3 + k * 4))
     const w = simulate(50, {
       done: coin,
-      score: (d, y) => 6 - (y && drinks.has(y.i) ? 1.5 : 0),
+      score: (_d, y) => 6 - (y && drinks.has(y.i) ? 1.5 : 0),
       tags: (i) => (drinks.has(i) ? ['алкоголь'] : []),
-      morning: (d, y, rnd) => wake(6 - (y && drinks.has(y.i) ? 2 : 0), rnd),
+      morning: (_d, y, rnd) => wake(6 - (y && drinks.has(y.i) ? 2 : 0), rnd),
     })
     const beer = tagEffects(w.logs, w.starts).find((t) => t.tag === 'алкоголь')!
     expect(WORDED).toContain(beer.morning!.next.strength)
