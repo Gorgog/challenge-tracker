@@ -86,7 +86,7 @@ export type DemoOptions = {
 
 const STORAGE_KEY = 'tabel-demo'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 5
+const STORAGE_VERSION = 6
 
 type Snapshot = {
   version: number
@@ -234,7 +234,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     maybe(weekend ? 0 : 0.22, 'дедлайн')
     maybe(0.07, 'болел')
     maybe(energy < 0.55 ? 0.4 : 0, 'мало спал')
-    maybe(weekend ? 0.4 : 0.03, 'алкоголь')
+    maybe(weekend ? 0.35 : 0.1, 'алкоголь')
     maybe(0.1, 'дорога')
     maybe(weekend ? 0 : 0.2, 'встречи')
     maybe(0.06, 'ссора')
@@ -246,7 +246,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     const mood = clamp(
       Math.round(
         3.6 + energy * 5.4 + rnd() * 1.4 - (has('ссора') ? 2.6 : 0) - (has('болел') ? 1.8 : 0) + (has('отдых') ? 0.8 : 0) +
-          (afterWalk ? 1 : 0),
+          (afterWalk ? 1.5 : 0),
       ),
       SCORE_MIN,
       SCORE_MAX,
@@ -254,7 +254,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     const wellbeing = clamp(
       Math.round(
         3.8 + energy * 4.8 + rnd() * 1.2 - (has('мало спал') ? 2.4 : 0) - (has('болел') ? 3.4 : 0) +
-          (afterWalk ? 2 : 0) - (hangover ? 2.5 : 0),
+          (afterWalk ? 3 : 0) - (hangover ? 3 : 0),
       ),
       SCORE_MIN,
       SCORE_MAX,
@@ -262,7 +262,7 @@ function seedSnapshot(today: Date, seed: number): Snapshot {
     const productivity = clamp(
       Math.round(
         2.9 + energy * 5.6 + rnd() * 1.3 + (has('дедлайн') ? 1.4 : 0) - (has('болел') ? 3 : 0) - (has('выходной') ? 1.6 : 0) -
-          (hangover ? 1.5 : 0),
+          (hangover ? 2 : 0),
       ),
       SCORE_MIN,
       SCORE_MAX,
