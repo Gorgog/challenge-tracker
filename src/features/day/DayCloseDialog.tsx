@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { DAY_TAGS } from '@/domain/tags'
 import type { DayLog, ScoreField } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
+import { SCORE_MAX, SCORE_MIN, snapScore } from './score'
 
 type Scale = { field: ScoreField; label: string; low: string; high: string }
 
@@ -38,6 +39,9 @@ export type DayCloseDialogProps = {
   onCancel?: () => void
 }
 
+/** Сколько бегунок доезжает до засечки после отпускания. */
+const SNAP_MS = 150
+
 type Draft = Record<ScoreField, number | null>
 
 const emptyDraft: Draft = { mood: null, wellbeing: null, productivity: null }
@@ -57,6 +61,44 @@ export function DayCloseDialog({
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
   const [tags, setTags] = useState<string[]>(() => [...(existing?.tags ?? [])])
   const [note, setNote] = useState(() => existing?.note ?? '')
+
+  /*
+   * Пока ползунок ведут, он идёт за пальцем с мелким шагом — иначе бегунок скачет
+   * по десяти позициям и отстаёт от руки. Отпустили — оценка округляется до целого,
+   * и бегунок доезжает до засечки: за это отвечает data-snapping.
+   */
+  const [dragging, setDragging] = useState<Partial<Record<ScoreField, number>>>({})
+  const [snapping, setSnapping] = useState<ScoreField | null>(null)
+
+  const commit = (field: ScoreField, raw: number) => {
+    setScores((prev) => ({ ...prev, [field]: snapScore(raw) }))
+    setDragging((prev) => {
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+    setSnapping(field)
+    window.setTimeout(() => setSnapping((f) => (f === field ? null : f)), SNAP_MS)
+  }
+
+  /** Стрелки и Home/End двигают на целое: мелкий шаг нужен только пальцу. */
+  const onScaleKeyDown = (field: ScoreField, e: ReactKeyboardEvent) => {
+    const steps: Record<string, number> = {
+      ArrowRight: 1,
+      ArrowUp: 1,
+      PageUp: 1,
+      ArrowLeft: -1,
+      ArrowDown: -1,
+      PageDown: -1,
+    }
+    const step = steps[e.key]
+    const jump = e.key === 'Home' ? SCORE_MIN : e.key === 'End' ? SCORE_MAX : null
+    if (step === undefined && jump === null) return
+
+    e.preventDefault()
+    const base = scores[field] ?? 5
+    setScores((prev) => ({ ...prev, [field]: jump ?? snapScore(base + step!) }))
+  }
 
   const date = parseDay(day)
   const ready = SCALES.every((s) => scores[s.field] !== null)
@@ -109,26 +151,32 @@ export function DayCloseDialog({
 
         {SCALES.map((scale) => {
           const value = scores[scale.field]
+          const live = dragging[scale.field]
+          /* Под пальцем цифра показывает, во что округлится оценка при отпускании. */
+          const shown = live !== undefined ? snapScore(live) : value
           return (
             <div key={scale.field} className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between gap-3">
                 <b className="text-[13.5px] font-semibold">{scale.label}</b>
-                <em className="font-mono text-xs not-italic text-muted-foreground">
-                  {value === null ? 'не выбрано' : `${value} из 10`}
+                <em className="font-mono text-xs not-italic text-muted-foreground tabular-nums">
+                  {shown === null ? 'не выбрано' : `${shown} из 10`}
                 </em>
               </div>
 
               <Slider
-                min={1}
-                max={10}
-                step={1}
-                value={[value ?? 5]}
+                min={SCORE_MIN}
+                max={SCORE_MAX}
+                step={0.01}
+                value={[live ?? value ?? 5]}
                 thumbLabel={`${scale.label} от 1 до 10`}
+                data-snapping={snapping === scale.field ? '' : undefined}
                 onValueChange={([next]) =>
-                  setScores((prev) => ({ ...prev, [scale.field]: next ?? 5 }))
+                  setDragging((prev) => ({ ...prev, [scale.field]: next ?? 5 }))
                 }
+                onValueCommit={([next]) => commit(scale.field, next ?? 5)}
+                onKeyDown={(e) => onScaleKeyDown(scale.field, e)}
                 className={cn(
-                  value === null &&
+                  shown === null &&
                     '[&_[data-slot=slider-range]]:bg-transparent [&_[data-slot=slider-thumb]]:border-input [&_[data-slot=slider-thumb]]:bg-input',
                 )}
               />
