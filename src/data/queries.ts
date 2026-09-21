@@ -228,7 +228,7 @@ export function useSetPaused() {
       const closed = Boolean(
         client.getQueryData<DayLog[]>(queryKeys.dayLogs)?.some((l) => l.day === today && l.closedAt),
       )
-      return patchOne(list, id, (c) => (paused ? pause(c, entries, day, closed) : resume(c, day)))
+      return patchOne(list, id, (c) => (paused ? pause(c, entries, day, closed) : resume(c, day, closed)))
     },
   )
 }

@@ -16,18 +16,22 @@ export function lastDay(c: Challenge): Date | null {
   if (!length || !Number.isInteger(length) || length < 1) return null
 
   let end = addDays(parseDay(c.startDate), length - 1)
-  /* Первый день, который ещё не учтён паузами, — чтобы перекрытые паузы не сдвигали дважды. */
-  let cursor = c.startDate
+  /* Первый день, который ещё не учтён паузами, — чтобы перекрытые паузы не сдвигали дважды.
+     Сравниваются даты, а не ключи: у огромного срока год пятизначный, и строки врут. */
+  let cursor = parseDay(c.startDate)
   const pauses = [...c.pauses].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
   for (const p of pauses) {
-    if (p.from > dayKey(end)) break
+    const pauseFrom = parseDay(p.from)
+    if (daysBetween(end, pauseFrom) > 0) break
     if (p.to === null) return null
-    const from = p.from > cursor ? p.from : cursor
-    if (p.to < from) continue
-    end = addDays(end, daysBetween(parseDay(from), parseDay(p.to)) + 1)
-    cursor = dayKey(addDays(parseDay(p.to), 1))
+    const pauseTo = parseDay(p.to)
+    const from = daysBetween(cursor, pauseFrom) > 0 ? pauseFrom : cursor
+    if (daysBetween(from, pauseTo) < 0) continue
+    end = addDays(end, daysBetween(from, pauseTo) + 1)
+    cursor = addDays(pauseTo, 1)
   }
-  return end
+  /* Срок за пределами календаря даёт битую дату — такой срок считается бессрочным. */
+  return Number.isNaN(end.getTime()) ? null : end
 }
 
 /**

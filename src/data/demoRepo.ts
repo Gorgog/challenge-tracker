@@ -370,7 +370,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       const day = parseDay(today)
       const c = challenges[index]!
       const closed = Boolean(logs.get(today)?.closedAt)
-      challenges[index] = paused ? pause(c, entries[id] ?? {}, day, closed) : resume(c, day)
+      challenges[index] = paused ? pause(c, entries[id] ?? {}, day, closed) : resume(c, day, closed)
       persist()
     },
     async deleteChallenge(id) {

@@ -60,12 +60,13 @@ export function pause(c: Challenge, entries: EntryMap, today: Date, closed = fal
 }
 
 /**
- * Снимает с паузы: сегодня челлендж снова идёт, пауза заканчивается вчера.
- * Пауза, которая так и не успела начаться, исчезает из истории.
+ * Снимает с паузы: сегодня челлендж снова идёт, пауза заканчивается вчера. Если день уже
+ * закрыт итогом, пауза заканчивается сегодня и челлендж возвращается завтра — иначе закрытый
+ * день стал бы пропуском, который уже не отметить. Пауза, так и не успевшая начаться, исчезает.
  */
-export function resume(c: Challenge, today: Date): Challenge {
+export function resume(c: Challenge, today: Date, closed = false): Challenge {
   if (!isPaused(c)) return c
-  const to = dayKey(addDays(today, -1))
+  const to = dayKey(closed ? today : addDays(today, -1))
   const pauses = c.pauses
     .map((p) => (p.to === null ? { ...p, to } : p))
     .filter((p) => p.to !== null && p.to >= p.from)
