@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
@@ -205,6 +205,13 @@ describe('EffectCard — утро', () => {
     expect(morningRow()).toBeVisible()
     expect(morningRow()).toHaveTextContent('+2,1')
     expect(morningRow()).toHaveTextContent('похоже')
+  })
+
+  it('в строке «Утро» утро в дни выполнения — под «в тот же день», утро назавтра — под «назавтра»', () => {
+    render(<EffectCard effect={withMorning(est('likely', 1.0), est('likely', 2.1))} />)
+    const cells = within(morningRow()).getAllByRole('cell')
+    expect(cells[0]).toHaveTextContent('+1,0')
+    expect(cells[1]).toHaveTextContent('+2,1')
   })
 
   it('без утр строки «Утро» нет', () => {

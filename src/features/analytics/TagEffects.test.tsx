@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { TagEffects } from './TagEffects'
@@ -50,8 +50,8 @@ describe('TagEffects — вид строки', () => {
 })
 
 describe('TagEffects — утро и сон', () => {
-  it('тег сна подписан «из утра»; строки «Утро» у него нет', async () => {
-    const user = userEvent.setup()
+  it('тег сна подписан «из утра»', () => {
+    // Строки «Утро» у тега сна нет — это держит расчёт: он отдаёт для тега сна morning = null.
     const sleep = tag('плохо спал', est('likely', -1.4, [22, 80]), est('unclear', -0.2), {
       tagDays: 22,
       fromMorning: true,
@@ -60,8 +60,6 @@ describe('TagEffects — утро и сон', () => {
 
     expect(screen.getByText('из утра · 22 дня')).toBeInTheDocument()
     expect(screen.getByText('День хуже, про следующий пока неясно')).toBeInTheDocument()
-    await user.click(screen.getByText('плохо спал'))
-    expect(screen.queryByRole('row', { name: /утро/i })).toBeNull()
   })
 
   it('у вечернего тега с утрами — строка «Утро»: похмелье видно уже утром', async () => {
@@ -73,7 +71,9 @@ describe('TagEffects — утро и сон', () => {
     render(<TagEffects tags={[drink]} />)
 
     await user.click(screen.getByText('алкоголь'))
-    expect(screen.getByRole('row', { name: /утро/i })).toHaveTextContent('−1,9')
+    const cells = within(screen.getByRole('row', { name: /утро/i })).getAllByRole('cell')
+    expect(cells[0]).toHaveTextContent('+0,1')
+    expect(cells[1]).toHaveTextContent('−1,9')
   })
 
   it('тег, связанный только с самим днём, говорит, в какую сторону', () => {

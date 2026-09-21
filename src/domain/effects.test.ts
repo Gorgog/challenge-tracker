@@ -441,6 +441,19 @@ describe('effectText — вывод словами', () => {
     )
   })
 
+  it('направление вывода про сам день — по окну того же дня, а не «назавтра»', () => {
+    const up = { same: est('likely', 1.4), next: est('flat', -0.2) }
+    expect(effectText('coincidence', up, 'challenge', true)).toBe(
+      'при том же утре день лучше, назавтра следа нет — может быть и совпадением',
+    )
+    expect(effectText('coincidence', up, 'tag')).toBe('день лучше — назавтра следа нет')
+    const down = { same: est('possible', -1.1), next: est('unclear', 0.6) }
+    expect(effectText('sameDayOnly', down, 'challenge', true)).toBe(
+      'при том же утре день хуже — может быть и совпадением; про следующий пока неясно',
+    )
+    expect(effectText('sameDayOnly', down, 'tag')).toBe('день хуже, про следующий пока неясно')
+  })
+
   it('при том же утре, про следующий день неясно — с направлением и оговоркой', () => {
     const day = { same: est('possible', -1.1), next: est('unclear', 0.3) }
     expect(effectText('sameDayOnly', day, 'challenge', true)).toBe(
@@ -621,6 +634,23 @@ describe('до и после старта — когда дни сравнить
     // каждая болезнь выбивает свой день и следующий
     expect(ba.daysBefore).toBe(28)
     expect(ba.daysAfter).toBe(28)
+  })
+})
+
+describe('предел степеней свободы у окна при том же утре', () => {
+  it('степени свободы — не больше строк сверх столбцов: запас меньше группы — интервал шире', () => {
+    const est = { delta: 1.2, se: 0.5 }
+    const free = strengthOf(est, 12, 12, 10, null)
+    const capped = strengthOf(est, 12, 12, 10, null, 5)
+    expect(free.high - free.low).toBeCloseTo(2 * tQuantile(0.975, 11) * 0.5, 9)
+    expect(capped.high - capped.low).toBeCloseTo(2 * tQuantile(0.975, 5) * 0.5, 9)
+    expect(free.strength).toBe('likely')
+    expect(capped.strength).toBe('unclear')
+  })
+
+  it('предел больше, чем даёт группа, ничего не меняет', () => {
+    const est = { delta: 1.2, se: 0.5 }
+    expect(strengthOf(est, 12, 12, 10, null, 50)).toEqual(strengthOf(est, 12, 12, 10, null))
   })
 })
 
@@ -1140,6 +1170,12 @@ describe('тег «плохо спал» — из утренней шкалы с
     expect(STRONG).not.toContain(sleepTag(tagEffects(w.logs, w.starts))!.windows.day.same.strength)
   })
 
+  it('пять плохих ночей — уже «похоже»: у тега оно с четырёх дней, как у вечерних тегов', () => {
+    const five = new Set([15, 35, 55, 75, 95])
+    const w = nights(69, (i) => (five.has(i) ? 2 : 7), (d) => 6 - (five.has(d.i) ? 3 : 0))
+    expect(sleepTag(tagEffects(w.logs, w.starts))!.windows.day.same.strength).toBe('likely')
+  })
+
   it('три плохие ночи — вывод не сильнее «возможно», как у редкого вечернего тега', () => {
     const three = new Set([30, 60, 90])
     const w = nights(59, (i) => (three.has(i) ? 2 : 7), (d) => 6 - (three.has(d.i) ? 3 : 0))
@@ -1166,3 +1202,135 @@ describe('тег «плохо спал» — из утренней шкалы с
   })
 })
 
+describe('утро — дни с утром как отдельная выборка (по ревью)', () => {
+  /** Дни истории, которые попадают в расчёт: у первого нет «вчера», у последнего — «завтра». */
+  const rowDays = () => Array.from({ length: DAYS - 2 }, (_, k) => k + 1)
+  const energeticDay = (d: SimDay) => 6 + 1.2 * d.state
+
+  it('утро только в будни — поправка на утро есть, строка «Утро» посчитана', () => {
+    // На днях с утром «выходные» — одни нули: столбец там ничего не поправляет и выкидывается.
+    const w = simulate(60, {
+      ...energetic,
+      score: energeticDay,
+      morning: (d, _y, rnd) => (d.weekend ? null : wake(energeticDay(d), rnd)),
+    })
+    const e = morningEffectOf(w)
+    expect(e.morningBase).toBe(true)
+    expect(e.morning).not.toBeNull()
+    expect(WORDED).toContain(e.morning!.same.strength)
+  })
+
+  it('модель с утром всё равно не решается — окно без поправки, строки «Утро» нет', () => {
+    // Утро в будни и ещё в одну субботу: этот выходной — единственный, и модель на нём не решается.
+    const saturday = Array.from({ length: DAYS }, (_, i) => i).find(
+      (i) => i > 30 && isoDow(addDays(TODAY, i - DAYS)) === 5,
+    )!
+    const w = simulate(61, {
+      ...energetic,
+      score: energeticDay,
+      morning: (d, _y, rnd) => (d.weekend && d.i !== saturday ? null : wake(energeticDay(d), rnd)),
+    })
+    const e = morningEffectOf(w)
+    expect(e.morningBase).toBe(false)
+    expect(e.morning).toBeNull()
+    expect(e.windows.day.same).toEqual(effectOf(w).windows.day.same)
+  })
+
+  it('дни «с» и «без» окна при том же утре и строки «Утро» — дни с утром, а не все дни', () => {
+    const skip = tagged(62, () => 0.2)
+    const w = simulate(62, {
+      ...energetic,
+      score: energeticDay,
+      morning: (d, _y, rnd) => (skip.has(d.i) ? null : wake(energeticDay(d), rnd)),
+    })
+    const e = morningEffectOf(w)
+    const withMorning = rowDays().filter((i) => !skip.has(i)).length
+    expect(e.morningBase).toBe(true)
+    expect(e.days).toBe(FULL)
+    expect(withMorning).toBeLessThan(FULL)
+    expect(e.windows.day.same.withDays + e.windows.day.same.withoutDays).toBe(withMorning)
+    expect(e.morning!.same.withDays + e.morning!.same.withoutDays).toBe(withMorning)
+    expect(e.morning!.next.withDays + e.morning!.next.withoutDays).toBe(withMorning)
+  })
+
+  it('при том же утре в группе меньше трёх дней — окно обычное', () => {
+    // Три пропуска за всю историю, в один из них утро пропущено: при том же утре пропусков два.
+    const misses = [20, 50, 80]
+    const w = simulate(63, {
+      done: (d) => !misses.includes(d.i),
+      score: () => 6,
+      morning: (d, _y, rnd) => (d.i === 50 ? null : wake(6, rnd)),
+    })
+    const plain = effectOf(w)
+    const e = morningEffectOf(w)
+    expect(plain.windows.day.same.withoutDays).toBe(3)
+    expect(e.morningBase).toBe(false)
+    expect(e.windows.day.same).toEqual(plain.windows.day.same)
+  })
+
+  it('поправка на полосы — и при том же утре: утро о дне не знает, интервал не уже обычного', () => {
+    const w = simulate(64, {
+      state: (prev, noise) => 0.85 * prev + 0.5 * noise,
+      done: coin,
+      score: (d) => 6 + 1.5 * d.state,
+      morning: (_d, _y, rnd) => wake(6, rnd),
+    })
+    const plain = effectOf(w).windows.day.same
+    const e = morningEffectOf(w)
+    expect(e.morningBase).toBe(true)
+    expect(e.windows.day.same.high - e.windows.day.same.low).toBeGreaterThan(0.8 * (plain.high - plain.low))
+  })
+
+  it('утро, равное вечеру, даёт в строке «Утро» то же, что оценка дня: та же модель, те же поправки', () => {
+    const w = simulate(65, {
+      state: (prev, noise) => 0.7 * prev + 0.6 * noise,
+      done: coin,
+      score: (d, y) => 6 + d.state + (y?.done ? 1.2 : 0),
+    })
+    const starts = w.logs.map((l) => {
+      const score = (l.mood + l.wellbeing + l.productivity) / 3
+      return { day: l.day, morning: { sleep: 7, wellbeing: score, mood: score }, startedAt: `${l.day}T08:00:00.000Z` }
+    })
+    const cap = (x: Estimate): Estimate => (x.strength === 'strong' ? { ...x, strength: 'likely' } : x)
+    const plain = effectOf(w).windows.day
+    expect(morningEffectOf({ ...w, starts }).morning).toEqual({ same: cap(plain.same), next: cap(plain.next) })
+  })
+
+  it('запас строк сверх столбцов — ровно пять: окно при том же утре берётся; четыре — нет', () => {
+    const at = (length: number) => {
+      const c = challenge({ startDate: dayKey(addDays(TODAY, -length)) })
+      const w = simulate(66, { done: coin, score: () => 6, morning: (_d, _y, rnd) => wake(6, rnd) }, length)
+      return { plain: effectOf(w, c).windows.day.same, based: morningEffectOf(w, c).morningBase }
+    }
+    const five = at(15)
+    expect(five.plain.strength).not.toBe('few')
+    expect(five.based).toBe(true)
+    const four = at(14)
+    expect(four.plain.strength).not.toBe('few')
+    expect(four.based).toBe(false)
+  })
+
+  it('утр ровно две трети строк — окно при том же утре берётся; на одно меньше — нет', () => {
+    const rows = rowDays()
+    const need = Math.ceil((2 / 3) * rows.length)
+    const run = (count: number) => {
+      const keep = new Set(rows.slice(0, count))
+      const w = simulate(67, {
+        ...energetic,
+        score: energeticDay,
+        morning: (d, _y, rnd) => (keep.has(d.i) ? wake(energeticDay(d), rnd) : null),
+      })
+      return morningEffectOf(w).morningBase
+    }
+    expect(run(need)).toBe(true)
+    expect(run(need - 1)).toBe(false)
+  })
+
+  it('у челленджа нет дней с утром, хотя утра есть, — строки «Утро» нет', () => {
+    const w = simulate(68, { done: coin, score: () => 6, morning: (d, _y, rnd) => (d.i < 40 ? wake(6, rnd) : null) })
+    const late = challenge({ startDate: dayKey(addDays(TODAY, -60)) })
+    const e = morningEffectOf(w, late)
+    expect(e.morning).toBeNull()
+    expect(e.morningBase).toBe(false)
+  })
+})
