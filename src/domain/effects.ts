@@ -125,7 +125,8 @@ const WEEKEND = 'выходной'
 
 const shift = (day: string, by: number) => dayKey(addDays(parseDay(day), by))
 
-const scoreOf = (log: DayLog, metric: Metric) =>
+/** Оценка дня по метрике: `day` — среднее трёх шкал. */
+export const scoreOf = (log: DayLog, metric: Metric) =>
   metric === 'day' ? (log.mood + log.wellbeing + log.productivity) / 3 : log[metric]
 
 /** Уровень для «уверенно»: 99% для оценки дня, для отдельной шкалы — с поправкой на три шкалы. */

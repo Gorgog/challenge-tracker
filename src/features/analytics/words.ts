@@ -33,3 +33,12 @@ export function signed(delta: number): string {
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 export const daysText = (n: number) => `${n} ${plural(n, 'день', 'дня', 'дней')}`
+
+/** Оценка с одним знаком: «7,1». */
+export const score1 = (value: number) =>
+  value.toLocaleString('ru', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
+/** Короткая дата для подписей оси: «15 авг». */
+export const shortDate = (date: Date) => `${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`
