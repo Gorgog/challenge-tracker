@@ -1,10 +1,11 @@
-import type { Challenge, DayLog, EntryMap, Tag } from '@/domain/types'
+import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
 
-/** Что насыпает сценарий демо: челленджи, отметки, итоги дней и теги. */
+/** Что насыпает сценарий демо: челленджи, отметки, итоги и начала дней, теги. */
 export type Seed = {
   challenges: Challenge[]
   entries: Record<string, EntryMap>
   logs: DayLog[]
+  starts: DayStart[]
   tags: Tag[]
 }
 
@@ -48,3 +49,23 @@ export function mulberry32(seed: number) {
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+/**
+ * Утро тянет числа из своей последовательности: основная не сдвигается, поэтому вечер, отметки и
+ * приёмка методики остаются прежними (см. seeds/evening.test.ts).
+ */
+export const morningStream = (seed: number) => mulberry32(seed ^ 0x5bd1e995)
+
+/** Доля утр, которые пропускают. */
+export const SKIP_MORNING = 0.12
+
+/** Шум утренней оценки: заметно больше вечернего — утром себя оценивают грубее. Среднее как у вечера. */
+export const morningNoise = (rnd: () => number) => rnd() * 3.5 - 1.15
+
+/** Сон: после недосыпа 1–4, иначе 5–9. */
+export const sleepScore = (short: boolean, rnd: () => number) =>
+  short ? 1 + Math.floor(rnd() * 4) : 5 + Math.floor(rnd() * 5)
+
+/** Время начала дня в сиде — с 7 до 11 утра по местному времени. */
+export const startedAt = (date: Date, rnd: () => number) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 7 + Math.floor(rnd() * 4), Math.floor(rnd() * 60)).toISOString()

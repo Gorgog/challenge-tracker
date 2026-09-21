@@ -63,7 +63,7 @@ export function TagsDialog({ open, tags, usage, onCreate, onDelete, onClose }: T
         <DialogHeader>
           <DialogTitle className="text-lg font-bold tracking-tight">Теги челленджей</DialogTitle>
           <DialogDescription>
-            Группируют челленджи. С тегами дня («мало спал», «дедлайн») не пересекаются.
+            Группируют челленджи. С тегами дня («дедлайн», «алкоголь») не пересекаются.
           </DialogDescription>
         </DialogHeader>
 

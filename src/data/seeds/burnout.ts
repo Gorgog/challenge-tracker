@@ -1,7 +1,17 @@
 import { addDays, dayKey, isoDow } from '@/domain/date'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
-import type { Challenge, DayLog, EntryMap, Tag } from '@/domain/types'
-import { NOTES, clamp, mulberry32, type Seed } from './common'
+import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
+import {
+  NOTES,
+  SKIP_MORNING,
+  clamp,
+  morningNoise,
+  morningStream,
+  mulberry32,
+  sleepScore,
+  startedAt,
+  type Seed,
+} from './common'
 
 /*
  * Демо «Выход из выгорания» — месяц по сегодня. Человек прокрастинировал и выгорел; начал иногда
@@ -9,7 +19,8 @@ import { NOTES, clamp, mulberry32, type Seed } from './common'
  * дней отжимается по десять раз, пьёт пиво раз-два в будни.
  *
  * Заложено: прогулка вчера → сегодня лучше самочувствие и настроение; пиво вчера → сегодня хуже
- * самочувствие и продуктивность; недосып бьёт по своему дню. Чтение — по расписанию, нейтрально.
+ * самочувствие и продуктивность; недосып (сон 1–4 утром) бьёт по своему дню. Чтение — по
+ * расписанию, нейтрально. Утро — состояние начала дня, до событий дня.
  * Ловушка: прогулок становится больше вместе с общим подъёмом, и этот подъём нельзя приписать им.
  */
 
@@ -63,6 +74,39 @@ export function seedBurnout(today: Date, seed: number): Seed {
   const entries: Record<string, EntryMap> = {}
   for (const c of challenges) entries[c.id] = {}
   const logs: DayLog[] = []
+  const starts: DayStart[] = []
+  const mrnd = morningStream(seed)
+  const score = (value: number) => clamp(Math.round(value), SCORE_MIN, SCORE_MAX)
+
+  /**
+   * Утро — состояние начала дня: общий подъём, фон дня, сон, болезнь, вчерашняя прогулка и
+   * похмелье. События дня (ссора, дедлайн, отдых) в утро не попадают.
+   */
+  const morningOf = (
+    date: Date,
+    progress: number,
+    drift: number,
+    short: boolean,
+    sick: boolean,
+    afterWalk: boolean,
+    hangover: boolean,
+  ): DayStart => {
+    const day = dayKey(date)
+    const at = startedAt(date, mrnd)
+    if (mrnd() < SKIP_MORNING) return { day, morning: null, startedAt: at }
+    return {
+      day,
+      startedAt: at,
+      morning: {
+        sleep: sleepScore(short, mrnd),
+        wellbeing: score(
+          3.5 + 2.5 * progress + 2 * drift + morningNoise(mrnd) - (short ? 2 : 0) - (sick ? 3 : 0) +
+            (afterWalk ? 1.5 : 0) - (hangover ? 2 : 0),
+        ),
+        mood: score(3.5 + 3 * progress + 2 * drift + morningNoise(mrnd) - (sick ? 1.8 : 0) + (afterWalk ? 1 : 0)),
+      },
+    }
+  }
 
   let drift = 0
   let walkedYesterday = false
@@ -88,8 +132,14 @@ export function seedBurnout(today: Date, seed: number): Seed {
     walkedYesterday = walked
     drankYesterday = false
 
-    /* Сегодняшний день ещё идёт, позавчерашний оставлен незакрытым — виден долг по оценкам. */
-    if (back === 0 || back === 2) continue
+    /* Сегодня день ещё не начат: после сброса видно, как день начинается. */
+    if (back === 0) continue
+    /* Позавчерашний день начат, но не закрыт — виден долг по оценкам. Итога нет, поэтому и
+       недосып берётся из утренней последовательности. */
+    if (back === 2) {
+      starts.push(morningOf(date, progress, drift, mrnd() < 0.6 - 0.45 * progress, false, afterWalk, hangover))
+      continue
+    }
 
     const dayTags: string[] = []
     const maybe = (chance: number, tag: string) => {
@@ -98,7 +148,8 @@ export function seedBurnout(today: Date, seed: number): Seed {
     maybe(weekend ? 0.75 : 0, 'выходной')
     maybe(weekend ? 0 : 0.15, 'дедлайн')
     maybe(0.03, 'болел')
-    maybe(0.6 - 0.45 * progress, 'мало спал')
+    /* Недосып — та же случайная величина, из которой раньше выпадал тег «мало спал»: вечер прежний. */
+    const short = rnd() < 0.6 - 0.45 * progress
     maybe(weekend ? 0 : 0.3, 'алкоголь')
     maybe(0.05, 'дорога')
     maybe(weekend ? 0 : 0.2, 'встречи')
@@ -108,17 +159,16 @@ export function seedBurnout(today: Date, seed: number): Seed {
     const has = (t: string) => dayTags.includes(t)
     drankYesterday = has('алкоголь')
 
-    const score = (value: number) => clamp(Math.round(value), SCORE_MIN, SCORE_MAX)
     const mood = score(
       3.5 + 3 * progress + 2 * drift + rnd() * 1.2 - (has('ссора') ? 2.5 : 0) - (has('болел') ? 1.8 : 0) +
         (has('отдых') ? 0.8 : 0) + (afterWalk ? 1 : 0),
     )
     const wellbeing = score(
-      3.5 + 2.5 * progress + 2 * drift + rnd() * 1.2 - (has('мало спал') ? 2 : 0) - (has('болел') ? 3 : 0) +
+      3.5 + 2.5 * progress + 2 * drift + rnd() * 1.2 - (short ? 2 : 0) - (has('болел') ? 3 : 0) +
         (afterWalk ? 1.5 : 0) - (hangover ? 2 : 0),
     )
     const productivity = score(
-      2.5 + 4 * progress + 2 * drift + rnd() * 1.2 - (has('мало спал') ? 1 : 0) - (has('болел') ? 2.5 : 0) +
+      2.5 + 4 * progress + 2 * drift + rnd() * 1.2 - (short ? 1 : 0) - (has('болел') ? 2.5 : 0) +
         (has('дедлайн') ? 1 : 0) - (has('выходной') ? 1 : 0) - (hangover ? 1.5 : 0),
     )
 
@@ -131,8 +181,9 @@ export function seedBurnout(today: Date, seed: number): Seed {
       note = pool[Math.floor(rnd() * pool.length)]!
     }
 
+    starts.push(morningOf(date, progress, drift, short, has('болел'), afterWalk, hangover))
     logs.push({ day: key, mood, wellbeing, productivity, tags: dayTags, note, closedAt: `${key}T21:00:00.000Z` })
   }
 
-  return { challenges, entries, logs, tags }
+  return { challenges, entries, logs, starts, tags }
 }

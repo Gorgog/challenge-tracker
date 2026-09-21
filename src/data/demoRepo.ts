@@ -106,7 +106,6 @@ function seedSnapshot(today: Date, seed: number, scenario: DemoScenario): Snapsh
   const seedOf = scenario === 'burnout' ? seedBurnout : seedFull
   return {
     version: STORAGE_VERSION,
-    starts: [],
     ...seedOf(today, seed),
     dayGroups: [...DEFAULT_DAY_GROUPS],
     settings: { ...DEFAULT_SETTINGS },
