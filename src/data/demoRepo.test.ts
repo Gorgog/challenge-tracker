@@ -839,9 +839,12 @@ describe('утро в демо', () => {
     }
   })
 
-  it.each(SCENARIOS)('%s: после плохого сна и утреннее самочувствие ниже', async (scenario) => {
+  it.each(SCENARIOS)('%s: после плохого сна утреннее самочувствие ниже — не меньше чем на заложенные два балла', async (scenario) => {
+    // Недосып бьёт по утру напрямую: −2 в «выгорании», −2,4 в полном демо. В полном демо недосып
+    // бывает только в вялые дни, и эта связь сама даёт около полутора баллов — поэтому порог —
+    // заложенные два балла, а не «хоть сколько-то». Двадцать зёрен: среднее разрыва стабильно.
     const gaps = await Promise.all(
-      SEEDS.map(async (seed) => {
+      Array.from({ length: 20 }, (_, i) => 20260921 + i * 7919).map(async (seed) => {
         const { starts } = await load(scenario, seed)
         const mornings = starts.flatMap((s) => (s.morning ? [s.morning] : []))
         const poor = mornings.filter((m) => m.sleep <= 4).map((m) => m.wellbeing)
@@ -849,7 +852,7 @@ describe('утро в демо', () => {
         return mean(fine) - mean(poor)
       }),
     )
-    expect(mean(gaps)).toBeGreaterThan(1)
+    expect(mean(gaps)).toBeGreaterThan(2)
   })
 
   it.each(SCENARIOS)('%s: после плохого сна вечернее самочувствие ниже', async (scenario) => {

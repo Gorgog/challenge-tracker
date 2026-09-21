@@ -198,6 +198,8 @@ describe('экран дня — начало дня без ловушек', () =
     pageStart().focus()
     await user.keyboard('{Enter}')
     rerender(<DayPage />)
+    // новая кнопка — новый узел: фокус «Начать день» ей не достаётся
+    expect(screen.getByRole('button', { name: 'Завершить день' })).not.toHaveFocus()
     await user.keyboard('{Enter}')
 
     expect(screen.getByRole('button', { name: 'Завершить день' })).toBeInTheDocument()
@@ -232,6 +234,20 @@ describe('экран дня — начало дня без ловушек', () =
     await fillMorning(user)
 
     expect(mocked.startDay).toHaveBeenCalledWith(expect.objectContaining({ day: '2026-09-22' }), expect.anything())
+    expect(mocked.startDay).not.toHaveBeenCalledWith(expect.objectContaining({ day: TODAY }), expect.anything())
+    expect(screen.getByText(/22 сентября/)).toBeInTheDocument()
+  })
+
+  it('окно утра, открытое вечером до утреннего часа, а отправленное после полуночи, не пишет утро под вчерашним днём', async () => {
+    mocked.settings = { morningUntil: 20 }
+    at(19, 59)
+    const user = userEvent.setup()
+    render(<DayPage />)
+    await user.click(pageStart())
+
+    vi.setSystemTime(new Date(2026, 8, 22, 0, 5))
+    await fillMorning(user)
+
     expect(mocked.startDay).not.toHaveBeenCalledWith(expect.objectContaining({ day: TODAY }), expect.anything())
     expect(screen.getByText(/22 сентября/)).toBeInTheDocument()
   })
