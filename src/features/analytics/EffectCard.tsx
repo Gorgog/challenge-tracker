@@ -5,15 +5,37 @@ import { plural } from '@/lib/plural'
 import { BeforeAfterNote } from './BeforeAfterNote'
 import { ConfidenceBadge } from './ConfidenceBadge'
 import { WindowsTable } from './WindowsTable'
-import { capitalize, daysText } from './words'
+import { capitalize, daysText, score1 } from './words'
 
-/** Что челлендж делает с днём: вывод словами, оценка дня в двух окнах, шкалы — по раскрытию. */
+/**
+ * Заметка, когда утро в дни «с» и так другое — не слабее «похоже»: утро раньше дел, значит, дело не в
+ * челлендже, а в том, какими эти дни были с самого начала.
+ */
+function morningNote({ challenge, morning }: ChallengeEffect): string | null {
+  const same = morning?.same
+  if (!same || (same.strength !== 'likely' && same.strength !== 'strong')) return null
+  const by = score1(Math.abs(same.delta))
+  const quit = challenge.kind === 'quit'
+  const days = quit ? 'в дни без срыва' : 'в дни выполнения'
+  if (same.delta > 0) {
+    const why = quit ? 'в хорошие дни держаться легче' : 'в хорошие дни делаешь чаще'
+    return `Утро ${days} и так лучше — на ${by}: похоже, ${why}.`
+  }
+  return quit ? `Утро ${days} хуже — на ${by}.` : `Утро ${days} хуже — на ${by}: похоже, берёшься за это в плохие дни.`
+}
+
+/** Что челлендж делает с днём: вывод словами, оценка дня и утро в двух окнах, шкалы — по раскрытию. */
 export function EffectCard({ effect }: { effect: ChallengeEffect }) {
-  const { challenge: c, windows, verdict, confidence, partner, days, sickDays } = effect
+  const { challenge: c, windows, verdict, confidence, partner, days, sickDays, morningBase, morning } = effect
   const { same } = windows.day
+  const note = morningNote(effect)
 
+  const counted = `${plural(days, 'учтён', 'учтено', 'учтено')} ${daysText(days)}`
+  /* При том же утре окно «в тот же день» считалось по дням с утром — это и сказано. */
   const facts = [
-    `${plural(days, 'учтён', 'учтено', 'учтено')} ${daysText(days)}: с — ${same.withDays}, без — ${same.withoutDays}`,
+    morningBase
+      ? `${counted} · в тот же день — с утром: с — ${same.withDays}, без — ${same.withoutDays}`
+      : `${counted}: с — ${same.withDays}, без — ${same.withoutDays}`,
   ]
   if (sickDays > 0) {
     facts.push(`${daysText(sickDays)} ${plural(sickDays, 'не учтён', 'не учтены', 'не учтены')} из-за болезни`)
@@ -40,7 +62,7 @@ export function EffectCard({ effect }: { effect: ChallengeEffect }) {
               </span>
             )}
           </h3>
-          <p className="mt-0.5 text-[13px] leading-snug">{capitalize(effectText(verdict, windows.day, 'challenge'))}</p>
+          <p className="mt-0.5 text-[13px] leading-snug">{capitalize(effectText(verdict, windows.day, 'challenge', morningBase))}</p>
         </div>
         <ConfidenceBadge confidence={confidence} />
       </header>
@@ -49,7 +71,8 @@ export function EffectCard({ effect }: { effect: ChallengeEffect }) {
         <BeforeAfterNote effect={effect} />
       ) : (
         <>
-          <WindowsTable windows={windows} metrics={['day']} />
+          <WindowsTable windows={windows} metrics={['day']} morning={morning} />
+          {note && <p className="text-[12px] leading-snug text-muted-foreground">{note}</p>}
           <details>
             <summary className="w-fit cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">
               По шкалам

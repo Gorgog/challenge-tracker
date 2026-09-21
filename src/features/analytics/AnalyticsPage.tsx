@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { useChallenges, useDayLogs, useEntries } from '@/data/queries'
+import { useChallenges, useDayLogs, useDayStarts, useEntries } from '@/data/queries'
 import { parseDay, todayKey } from '@/domain/date'
 import { challengeEffects, tagEffects } from '@/domain/effects'
-import { averages, coverage, scoreSeries } from '@/domain/trend'
+import { averages, coverage, scoreSeries, sleepAverages, sleepSeries } from '@/domain/trend'
 import { plural } from '@/lib/plural'
 import { EffectCard } from './EffectCard'
 import { cardsOf, tagsOf } from './order'
@@ -18,28 +18,42 @@ export function AnalyticsPage() {
   const challenges = useChallenges()
   const entries = useEntries()
   const logs = useDayLogs()
+  const starts = useDayStarts()
   const todayK = todayKey()
 
   const all = challenges.data
   const entriesById = entries.data
   const dayLogs = logs.data
+  const dayStarts = starts.data
 
-  /* Расчёт — по всем челленджам, с удалёнными: они участвуют как соседи. Скрываются на экране. */
+  /* Расчёт — по всем челленджам, с удалёнными: они участвуют как соседи. Скрываются на экране.
+     Без начал дней не считаем: иначе экран сначала показал бы выводы без утра, а потом перестроился. */
   const cards = useMemo(
-    () => (all && entriesById && dayLogs ? cardsOf(challengeEffects(all, entriesById, dayLogs, parseDay(todayK))) : []),
-    [all, entriesById, dayLogs, todayK],
+    () =>
+      all && entriesById && dayLogs && dayStarts
+        ? cardsOf(challengeEffects(all, entriesById, dayLogs, parseDay(todayK), dayStarts))
+        : [],
+    [all, entriesById, dayLogs, dayStarts, todayK],
   )
-  const tags = useMemo(() => (dayLogs ? tagsOf(tagEffects(dayLogs)) : []), [dayLogs])
+  const tags = useMemo(
+    () => (dayLogs && dayStarts ? tagsOf(tagEffects(dayLogs, dayStarts)) : []),
+    [dayLogs, dayStarts],
+  )
   const days = useMemo(
     () =>
-      dayLogs
-        ? { series: scoreSeries(dayLogs, parseDay(todayK)), month: averages(dayLogs, parseDay(todayK)) }
+      dayLogs && dayStarts
+        ? {
+            series: scoreSeries(dayLogs, parseDay(todayK)),
+            month: averages(dayLogs, parseDay(todayK)),
+            sleep: sleepSeries(dayStarts, parseDay(todayK)),
+            sleepMonth: sleepAverages(dayStarts, parseDay(todayK)),
+          }
         : null,
-    [dayLogs, todayK],
+    [dayLogs, dayStarts, todayK],
   )
 
   const { rated, span, sick } = coverage(dayLogs ?? [], parseDay(todayK))
-  const loading = challenges.isPending || entries.isPending || logs.isPending
+  const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-7">
@@ -95,12 +109,12 @@ export function AnalyticsPage() {
               <h2 id="days-title" className={SECTION_TITLE}>
                 Как идут дни
               </h2>
-              <ScoreTiles averages={days.month} />
+              <ScoreTiles averages={days.month} sleep={days.sleepMonth} />
               <p className="text-[11px] text-muted-foreground">
                 Средние за последние 30 дней, рядом — сдвиг к предыдущим 30.
               </p>
               <div className="rounded-xl border border-border bg-card p-4">
-                <ScoreTrend series={days.series} />
+                <ScoreTrend series={days.series} sleep={days.sleep} />
               </div>
             </section>
           )}
@@ -112,6 +126,13 @@ export function AnalyticsPage() {
             примерно через раз, а когда дней набирается, его сменяют «похоже», «уверенно» или «неясно».
             Разницы «с» и «без» посчитаны с поправкой на выходные, на полосы хороших и плохих дней и на
             общий подъём или спад оценок; день старта, вчерашний день и дни болезни в расчёт не идут.
+          </p>
+          <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
+            Утро — до дел дня. У челленджей окно «в тот же день» сравнивает дни с одинаковым утром: так видно,
+            делает ли челлендж день лучше или ты просто берёшься за него в хорошие дни; дни без утра в это окно
+            не идут, а если утр мало, оно считается без поправки. Строка «Утро» — самочувствие и настроение
+            утром: в тот же день — каким было утро в дни «с», назавтра — утро на следующий день; слов
+            уверенности она не даёт. «Плохо спал» — дни, когда сон утром был от 0 до 4.
           </p>
         </>
       )}

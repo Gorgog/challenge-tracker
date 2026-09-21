@@ -22,12 +22,14 @@ export function TagEffects({ tags }: { tags: TagEffect[] }) {
   return (
     <ul className="grid gap-2 lg:grid-cols-2">
       {tags.map((t) => (
-        <li key={t.tag}>
+        <li key={`${t.fromMorning ? 'утро' : 'вечер'}:${t.tag}`}>
           <details className="group rounded-xl border border-border bg-card px-4 py-3">
             <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-0.5 [&::-webkit-details-marker]:hidden">
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="truncate text-[14px] font-medium">{t.tag}</span>
-                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{daysText(t.tagDays)}</span>
+                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                  {t.fromMorning ? `из утра · ${daysText(t.tagDays)}` : daysText(t.tagDays)}
+                </span>
               </span>
               <span>
                 <ConfidenceBadge confidence={t.confidence} />
@@ -41,7 +43,7 @@ export function TagEffects({ tags }: { tags: TagEffect[] }) {
               </span>
             </summary>
             <div className="mt-3">
-              <WindowsTable windows={t.windows} metrics={METRICS} />
+              <WindowsTable windows={t.windows} metrics={METRICS} morning={t.morning} />
             </div>
           </details>
         </li>

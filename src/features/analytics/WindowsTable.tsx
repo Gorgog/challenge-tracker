@@ -5,6 +5,8 @@ import { METRIC_LABEL, STRENGTH_WORD, signed } from './words'
 type WindowsTableProps = {
   windows: Record<Metric, Windows>
   metrics: Metric[]
+  /** Строка «Утро» — справочно, под шкалами; null — утр нет. */
+  morning?: Windows | null
   /** Заголовки колонок видны глазу; во второй таблице под раскрытием — только читалке. */
   showHead?: boolean
 }
@@ -30,7 +32,7 @@ function Cell({ estimate, window }: { estimate: Estimate; window: 'same' | 'next
 }
 
 /** Разница оценки в дни «с» против дней «без» — в тот же день и на следующий. */
-export function WindowsTable({ windows, metrics, showHead = true }: WindowsTableProps) {
+export function WindowsTable({ windows, metrics, morning = null, showHead = true }: WindowsTableProps) {
   return (
     <table className="w-full table-fixed text-[12.5px]">
       <colgroup>
@@ -61,6 +63,15 @@ export function WindowsTable({ windows, metrics, showHead = true }: WindowsTable
             <Cell estimate={windows[metric].next} window="next" />
           </tr>
         ))}
+        {morning && (
+          <tr className="border-t border-border/60">
+            <th scope="row" className="py-1 text-left font-normal">
+              Утро
+            </th>
+            <Cell estimate={morning.same} window="same" />
+            <Cell estimate={morning.next} window="next" />
+          </tr>
+        )}
       </tbody>
     </table>
   )
