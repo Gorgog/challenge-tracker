@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
 import { isPaused } from '@/domain/pauses'
 import { dayOutcome } from '@/domain/streaks'
@@ -449,8 +449,20 @@ describe('управление челленджем', () => {
     const r = repo()
     const c = await byCode(r, 'ЧТН')
     await r.deleteChallenge(c.id)
-    await r.restoreChallenge(c.id)
+    await r.restoreChallenge(c.id, dayKey(new Date()))
     expect((await byCode(r, 'ЧТН')).deletedAt).toBeNull()
+  })
+
+  it('дни, пока челлендж был удалён, после возврата — пауза', async () => {
+    const r = repo()
+    const c = await byCode(r, 'ЧТН')
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 10, 12))
+    await r.deleteChallenge(c.id)
+    vi.useRealTimers()
+
+    await r.restoreChallenge(c.id, '2026-09-21')
+    expect((await byCode(r, 'ЧТН')).pauses).toEqual([{ from: '2026-09-11', to: '2026-09-20' }])
   })
 
   it('удаление навсегда сносит и челлендж, и его отметки', async () => {
