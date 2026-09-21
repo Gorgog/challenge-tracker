@@ -1,7 +1,8 @@
-import { addDays, dayKey, isoDow, parseDay } from './date'
+import { addDays, dayKey, daysBetween, isoDow, parseDay } from './date'
+import { pausedOn } from './pauses'
 import { fitLinear, lag1, tQuantile } from './regression'
 import { MIN_GROUP, MIN_TAG_DAYS } from './stats'
-import { activeDays, dayOutcome } from './streaks'
+import { activeDays, dayOutcome, lastDay } from './streaks'
 import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
 
 /**
@@ -81,6 +82,26 @@ export type ChallengeEffect = {
   days: number
   /** Дней, выброшенных из-за болезни: «болел» в сам день или накануне. */
   sickDays: number
+  /** Запасное сравнение «до/после старта» — только когда дни «с» и «без» не набрать. */
+  beforeAfter: BeforeAfter | null
+}
+
+/** Окно «до/после» — не длиннее месяца с каждой стороны. */
+export const BA_SPAN = 30
+/** Старты ближе стольких дней друг к другу не разделить. */
+export const SAME_START_DAYS = 3
+
+export type BeforeAfter = {
+  /** Длина каждого из двух окон в календарных днях; 0 — сравнивать не с чем. */
+  span: number
+  /** Оценённых дней в окне «до» и «после» — без дней болезни и паузы. */
+  daysBefore: number
+  daysAfter: number
+  byMetric: Record<Metric, Estimate>
+  /** Челленджи, начатые или законченные внутри окон, — их влияние тоже в этой разнице. */
+  overlaps: Challenge[]
+  /** Начаты почти одновременно — чей это эффект, не сказать. */
+  inseparableFrom: Challenge[]
 }
 
 /** С такой совместностью выполнения (φ) челлендж становится соседом и делит с ним эффект. */
@@ -380,8 +401,83 @@ export function challengeEffects(
       },
       logs,
     )
-    return { challenge, partner, ...result, ...verdictOf(result.windows.day) }
+    const verdict = verdictOf(result.windows.day)
+    return {
+      challenge,
+      partner,
+      ...result,
+      ...verdict,
+      beforeAfter: verdict.verdict === 'insufficient' ? beforeAfter(challenge, all, logs, today) : null,
+    }
   })
+}
+
+/** Сравнение двух наборов дней по Уэлчу с поправкой на полосы; не сильнее «похоже». */
+function compare(before: DayLog[], after: DayLog[], metric: Metric, inseparable: boolean): Estimate {
+  if (Math.min(before.length, after.length) < MIN_GROUP) return few(after.length, before.length)
+
+  const rows = [...before.map((log) => ({ log, x: 0 })), ...after.map((log) => ({ log, x: 1 }))]
+  const fit = fitLinear(
+    rows.map((r) => [1, r.x]),
+    rows.map((r) => scoreOf(r.log, metric)),
+  )
+  if (!fit) return few(after.length, before.length)
+
+  const r = lag1(fit.residuals, rows.map((row) => row.log.day))
+  const se = Math.sqrt(fit.cov[1]![1]!) * Math.sqrt((1 + r) / (1 - r))
+  const est = classify({ delta: fit.beta[1]!, se }, after.length, before.length, MIN_GROUP, null)
+  /* Другой челлендж начат одновременно — чей это эффект, не сказать. */
+  if (inseparable && est.strength === 'likely') return { ...est, strength: 'unclear' }
+  return est
+}
+
+/**
+ * Запасное сравнение для челленджа, у которого дни «с» и «без» не набрать: отказ без срывов,
+ * привычка почти без пропусков. Месяц до старта против месяца после — и не сильнее «похоже»:
+ * челлендж обычно начинают после плохой полосы, и возврат к норме выглядит как эффект.
+ */
+export function beforeAfter(c: Challenge, all: Challenge[], logs: DayLog[], today: Date): BeforeAfter {
+  const closed = logs.filter((l) => l.closedAt !== null)
+  const byDay = new Map(closed.map((l) => [l.day, l]))
+  const start = parseDay(c.startDate)
+
+  const yesterday = addDays(today, -1)
+  const finish = lastDay(c)
+  const until = finish && daysBetween(finish, yesterday) > 0 ? finish : yesterday
+  const daysSinceStart = Math.max(0, daysBetween(start, until) + 1)
+  const firstRated = closed.reduce<string | null>((min, l) => (min === null || l.day < min ? l.day : min), null)
+  const daysBeforeStart =
+    firstRated !== null && firstRated < c.startDate ? daysBetween(parseDay(firstRated), start) : 0
+  const span = Math.min(BA_SPAN, daysSinceStart, daysBeforeStart)
+
+  const sick = (day: string) =>
+    Boolean(byDay.get(day)?.tags.includes(SICK) || byDay.get(shift(day, -1))?.tags.includes(SICK))
+  const pick = (from: Date) => {
+    const out: DayLog[] = []
+    for (let i = 0; i < span; i++) {
+      const key = dayKey(addDays(from, i))
+      const log = byDay.get(key)
+      if (log && !sick(key) && !pausedOn(c, key)) out.push(log)
+    }
+    return out
+  }
+  const before = pick(addDays(start, -span))
+  const after = pick(start)
+
+  const windowFrom = dayKey(addDays(start, -span))
+  const windowTo = dayKey(addDays(start, span - 1))
+  const inWindow = (d: Date | null) => d !== null && dayKey(d) >= windowFrom && dayKey(d) <= windowTo
+  const others = all.filter((o) => o.id !== c.id)
+  const overlaps = span ? others.filter((o) => inWindow(parseDay(o.startDate)) || inWindow(lastDay(o))) : []
+  const inseparableFrom = others.filter(
+    (o) => Math.abs(daysBetween(start, parseDay(o.startDate))) <= SAME_START_DAYS,
+  )
+
+  const byMetric = {} as Record<Metric, Estimate>
+  for (const metric of METRICS) {
+    byMetric[metric] = compare(before, after, metric, inseparableFrom.length > 0)
+  }
+  return { span, daysBefore: before.length, daysAfter: after.length, byMetric, overlaps, inseparableFrom }
 }
 
 /**
