@@ -594,9 +594,10 @@ describe('демо «Выход из выгорания» — 30 дней', () =
         return Object.keys((await r.listEntries())[(await byCode(r, 'ЧТН')).id]!).length
       }),
     )
-    // месяц — это четыре с лишним недели
-    expect(mean(counts)).toBeGreaterThanOrEqual(11)
-    expect(mean(counts)).toBeLessThanOrEqual(15)
+    // 29 прошедших дней — четыре с лишним недели; сегодня день не начат, и отметки за него нет.
+    // Прежний диапазон 11–15 считал и сегодняшний понедельник — день чтения (0,85 выполнения).
+    expect(mean(counts)).toBeGreaterThanOrEqual(10)
+    expect(mean(counts)).toBeLessThanOrEqual(14)
   })
 
   it('пиво — только в будни, раз-два в неделю', async () => {
@@ -636,7 +637,8 @@ describe('демо «Выход из выгорания» — 30 дней', () =
           Array.from({ length: to - from }, (_, k) => dayKey(addDays(TODAY, -(29 - from - k)))).filter(
             (key) => (steps[key] ?? 0) >= 10000,
           ).length
-        return [walks(0, 15), walks(15, 30)] as const
+        // две равные половины прошедших дней: сегодня день не начат, и отметки за него нет
+        return [walks(0, 14), walks(15, 29)] as const
       }),
     )
     // заметно: больше чем на полторы прогулки за полмесяца, а не случайный перевес
