@@ -36,6 +36,16 @@ describe('окно итога дня', () => {
     expect(saveButton()).toBeDisabled()
   })
 
+  it('с клавиатуры шаг — ровно единица, хоть под пальцем ползунок и плавный', async () => {
+    const { user } = setup()
+    slider('настроение').focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}')
+    expect(screen.getByText('7 из 10')).toBeInTheDocument()
+
+    await user.keyboard('{End}')
+    expect(screen.getByText('10 из 10')).toBeInTheDocument()
+  })
+
   it('кнопка включается, когда сдвинуты все три', async () => {
     const { user } = setup()
     for (const name of ['настроение', 'самочувствие', 'продуктивность']) await move(user, name)
