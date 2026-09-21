@@ -9,10 +9,15 @@ import {
   type Tag,
 } from '@/domain/types'
 import type { Repo } from './repo'
+import { seedBurnout } from './seeds/burnout'
 import { seedFull } from './seeds/full'
 
 
+/** Какую историю насыпать: полное демо на 120 дней или «выход из выгорания» на 30. */
+export type DemoScenario = 'full' | 'burnout'
+
 export type DemoOptions = {
+  scenario?: DemoScenario
   /** «Сегодня» для сида. По умолчанию — реальная текущая дата. */
   today?: Date
   seed?: number
@@ -73,8 +78,9 @@ function save(storage: Storage | null, snapshot: Snapshot) {
 }
 
 /** Насыпает снимок выбранного сценария. */
-function seedSnapshot(today: Date, seed: number): Snapshot {
-  return { version: STORAGE_VERSION, ...seedFull(today, seed), dayGroups: [...DEFAULT_DAY_GROUPS] }
+function seedSnapshot(today: Date, seed: number, scenario: DemoScenario): Snapshot {
+  const seedOf = scenario === 'burnout' ? seedBurnout : seedFull
+  return { version: STORAGE_VERSION, ...seedOf(today, seed), dayGroups: [...DEFAULT_DAY_GROUPS] }
 }
 
 /**
@@ -87,7 +93,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const storage = options.storage === undefined ? defaultStorage() : options.storage
 
   const restored = load(storage)
-  const state = restored ?? seedSnapshot(today, options.seed ?? 20260921)
+  const state = restored ?? seedSnapshot(today, options.seed ?? 20260921, options.scenario ?? 'full')
 
   const challenges = state.challenges
   const entries = state.entries
