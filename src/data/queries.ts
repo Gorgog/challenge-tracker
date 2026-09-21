@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { applyPatch, pause, resume, type ChallengePatch } from '@/domain/challenges'
+import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
 import type { Challenge, DayGroup, DayLog, EntryMap, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
@@ -240,10 +240,17 @@ export function useDeleteChallenge() {
   )
 }
 
+/** Как и пауза: `today` приходит снаружи, итоги дней берутся из кэша — страница на них подписана. */
 export function useRestoreChallenge() {
+  const client = useQueryClient()
   return useChallengeMutation(
-    (id: string) => repo.restoreChallenge(id),
-    (list, id) => patchOne(list, id, (c) => ({ ...c, deletedAt: null })),
+    ({ id, today }: { id: string; today: string }) => repo.restoreChallenge(id, today),
+    (list, { id, today }) => {
+      const closed = Boolean(
+        client.getQueryData<DayLog[]>(queryKeys.dayLogs)?.some((l) => l.day === today && l.closedAt),
+      )
+      return patchOne(list, id, (c) => restore(c, parseDay(today), closed))
+    },
   )
 }
 

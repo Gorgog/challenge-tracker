@@ -59,7 +59,7 @@ export function ChallengesPage() {
   const remove = (c: Challenge) => {
     deleteChallenge.mutate(c.id)
     toast(`«${c.name}» в удалённых`, {
-      action: { label: 'Вернуть', onClick: () => restoreChallenge.mutate(c.id) },
+      action: { label: 'Вернуть', onClick: () => restoreChallenge.mutate({ id: c.id, today: todayKey() }) },
     })
   }
 
@@ -111,7 +111,7 @@ export function ChallengesPage() {
 
       <DeletedChallenges
         challenges={trash}
-        onRestore={(id) => restoreChallenge.mutate(id)}
+        onRestore={(id) => restoreChallenge.mutate({ id, today: todayKey() })}
         onPurge={(id) => {
           const name = trash.find((c) => c.id === id)?.name
           purgeChallenge.mutate(id)

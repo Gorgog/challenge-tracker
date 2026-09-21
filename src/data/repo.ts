@@ -21,7 +21,8 @@ export type Repo = {
   setPaused(id: string, paused: boolean, today: string): Promise<void>
   /** Мягко: челлендж пропадает с глаз, а отметки и место в статистике остаются. */
   deleteChallenge(id: string): Promise<void>
-  restoreChallenge(id: string): Promise<void>
+  /** Возврат из корзины в день `today`: дни, пока челлендж был удалён, становятся паузой. */
+  restoreChallenge(id: string, today: string): Promise<void>
   /** Навсегда: челлендж и все его отметки. Вернуть нельзя. */
   purgeChallenge(id: string): Promise<void>
   listTags(): Promise<Tag[]>

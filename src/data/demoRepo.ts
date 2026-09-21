@@ -1,5 +1,5 @@
 import { addDays, dayKey, isoDow, parseDay, todayKey } from '@/domain/date'
-import { applyPatch, pause, resume } from '@/domain/challenges'
+import { applyPatch, pause, restore, resume } from '@/domain/challenges'
 import { pausedOn } from '@/domain/pauses'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import {
@@ -380,10 +380,11 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       c.deletedAt = new Date().toISOString()
       persist()
     },
-    async restoreChallenge(id) {
-      const c = find(id)
-      if (!c) return
-      c.deletedAt = null
+    async restoreChallenge(id, today) {
+      const index = challenges.findIndex((c) => c.id === id)
+      if (index < 0) return
+      const closed = Boolean(logs.get(today)?.closedAt)
+      challenges[index] = restore(challenges[index]!, parseDay(today), closed)
       persist()
     },
     async purgeChallenge(id) {
