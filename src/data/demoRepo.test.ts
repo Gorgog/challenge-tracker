@@ -4,7 +4,7 @@ import { isPaused } from '@/domain/pauses'
 import { activeDays, dayOutcome } from '@/domain/streaks'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
-import type { DayLog, ScoreField } from '@/domain/types'
+import type { DayLog, DayStart, ScoreField } from '@/domain/types'
 import { SCENARIO_KEY, createDemoRepo, demoScenario } from './demoRepo'
 
 const TODAY = parseDay('2026-09-21')
@@ -608,15 +608,23 @@ describe('демо «Выход из выгорания» — 30 дней', () =
     expect(mean(drinks.map((d) => d.length))).toBeLessThanOrEqual(9)
   })
 
-  it('недосып во второй половине месяца реже, чем в первой', async () => {
+  it('сон во второй половине месяца лучше, чем в первой', async () => {
     const halves = await Promise.all(
       SEEDS.map(async (seed) => {
-        const logs = await burnout(seed).listDayLogs()
-        const short = (part: DayLog[]) => part.filter((l) => l.tags.includes('мало спал')).length
-        return [short(logs.slice(0, 14)), short(logs.slice(14))] as const
+        const starts = await burnout(seed).listDayStarts()
+        const sleep = (part: DayStart[]) =>
+          mean(part.flatMap((s) => (s.morning ? [s.morning.sleep] : [])))
+        return [sleep(starts.slice(0, 14)), sleep(starts.slice(14))] as const
       }),
     )
-    expect(mean(halves.map((h) => h[1]))).toBeLessThan(mean(halves.map((h) => h[0])))
+    expect(mean(halves.map((h) => h[1]))).toBeGreaterThan(mean(halves.map((h) => h[0])))
+  })
+
+  it('позавчерашний день начат, но не закрыт — долг по оценке, а не пропущенное начало', async () => {
+    const r = burnout()
+    const twoDaysAgo = dayKey(addDays(TODAY, -2))
+    expect((await r.listDayStarts()).some((s) => s.day === twoDaysAgo)).toBe(true)
+    expect((await r.listDayLogs()).some((l) => l.day === twoDaysAgo)).toBe(false)
   })
 
   it('прогулки с месяцем учащаются', async () => {
@@ -741,5 +749,84 @@ describe('настройки', () => {
     storage.setItem('tabel-demo', JSON.stringify({ ...raw, version: 6 }))
 
     expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 15 })
+  })
+})
+
+describe('утро в демо', () => {
+  const SEEDS = [20260921, 20266840, 424242]
+  const SCENARIOS = ['full', 'burnout'] as const
+  const load = async (scenario: (typeof SCENARIOS)[number], seed: number) => {
+    const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario })
+    const [starts, logs] = await Promise.all([r.listDayStarts(), r.listDayLogs()])
+    return { starts, logs }
+  }
+  const mean = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.length
+
+  it.each(SCENARIOS)('%s: каждый закрытый день начат, а сегодня день ещё не начат', async (scenario) => {
+    for (const seed of SEEDS) {
+      const { starts, logs } = await load(scenario, seed)
+      const started = new Set(starts.map((s) => s.day))
+      expect(started.has(dayKey(TODAY))).toBe(false)
+      // отметки ставятся только в начатый день — закрыть не начатый нельзя
+      expect(logs.every((l) => started.has(l.day))).toBe(true)
+    }
+  })
+
+  it.each(SCENARIOS)('%s: утро пропущено примерно в каждом восьмом дне — не никогда и не часто', async (scenario) => {
+    const shares = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const { starts } = await load(scenario, seed)
+        return starts.filter((s) => s.morning === null).length / starts.length
+      }),
+    )
+    expect(mean(shares)).toBeGreaterThan(0.04)
+    expect(mean(shares)).toBeLessThan(0.25)
+  })
+
+  it.each(SCENARIOS)('%s: утренние оценки — целые от 0 до 10, день начат до 15:00', async (scenario) => {
+    const { starts } = await load(scenario, 20260921)
+    for (const s of starts) {
+      expect(new Date(s.startedAt).getHours()).toBeLessThan(15)
+      for (const v of Object.values(s.morning ?? {})) {
+        expect(Number.isInteger(v)).toBe(true)
+        expect(v).toBeGreaterThanOrEqual(SCORE_MIN)
+        expect(v).toBeLessThanOrEqual(SCORE_MAX)
+      }
+    }
+  })
+
+  it.each(SCENARIOS)('%s: тег «мало спал» больше не насыпается — сон спрашивается утром', async (scenario) => {
+    for (const seed of SEEDS) {
+      const { logs } = await load(scenario, seed)
+      expect(logs.some((l) => l.tags.includes('мало спал'))).toBe(false)
+    }
+  })
+
+  it.each(SCENARIOS)('%s: после плохого сна вечернее самочувствие ниже', async (scenario) => {
+    const gaps = await Promise.all(
+      SEEDS.map(async (seed) => {
+        const { starts, logs } = await load(scenario, seed)
+        const sleepOf = new Map(starts.flatMap((s) => (s.morning ? [[s.day, s.morning.sleep] as const] : [])))
+        const rated = logs.filter((l) => sleepOf.has(l.day))
+        const poor = rated.filter((l) => sleepOf.get(l.day)! <= 4).map((l) => l.wellbeing)
+        const fine = rated.filter((l) => sleepOf.get(l.day)! >= 5).map((l) => l.wellbeing)
+        return mean(fine) - mean(poor)
+      }),
+    )
+    expect(mean(gaps)).toBeGreaterThan(1)
+  })
+
+  it.each(SCENARIOS)('%s: утреннее самочувствие связано с вечерним, но утро шумнее', async (scenario) => {
+    const { starts, logs } = await load(scenario, 20260921)
+    const byDay = new Map(logs.map((l) => [l.day, l]))
+    const pairs = starts.flatMap((s) => (s.morning && byDay.has(s.day) ? [[s.morning.wellbeing, byDay.get(s.day)!.wellbeing]] : []))
+    const xs = pairs.map((p) => p[0]!)
+    const ys = pairs.map((p) => p[1]!)
+    const mx = mean(xs)
+    const my = mean(ys)
+    const cov = mean(pairs.map(([x, y]) => (x! - mx) * (y! - my)))
+    const r = cov / Math.sqrt(mean(xs.map((x) => (x - mx) ** 2)) * mean(ys.map((y) => (y - my) ** 2)))
+    expect(r).toBeGreaterThan(0.3)
+    expect(r).toBeLessThan(0.95)
   })
 })

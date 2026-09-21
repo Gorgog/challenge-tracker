@@ -97,15 +97,8 @@ describe('ранние выводы на месяце', () => {
     expect(found).toBeGreaterThanOrEqual(0.45)
   })
 
-  it('«мало спал»: хуже в тот же день, «возможно» и сильнее — не реже чем в 40% миров', () => {
-    // Порог снижен с 55% решением Georgy от 21.09: «возможно» ставится, только пока в группе меньше
-    // десяти дней, а недосыпа за месяц бывает и больше. Разведка на 300 свежих мирах — 65%.
-    const found = share(month, (w) => {
-      const same = w.tag('мало спал')?.windows.day.same
-      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
-    })
-    expect(found).toBeGreaterThanOrEqual(0.4)
-  })
+  // Проверки «мало спал» сняты вместе с тегом (решение Georgy от 21.09): сон теперь спрашивается
+  // утром шкалой, и его проверки появятся, когда утро дойдёт до аналитики.
 
   it('чтение: слово уверенности назавтра — не чаще чем в 35% миров', () => {
     expect(share(month, (w) => WORDED.includes(w.byCode('ЧТН').windows.day.next.strength))).toBeLessThanOrEqual(0.35)
@@ -119,14 +112,6 @@ describe('ранние выводы на месяце', () => {
 describe('первые 15 дней той же истории', () => {
   it('хоть одно слово уверенности на экране — не реже чем в 50% миров', () => {
     expect(share(early, (w) => w.anyWord)).toBeGreaterThanOrEqual(0.5)
-  })
-
-  it('«мало спал»: хуже в тот же день, «возможно» и сильнее — не реже чем в 30% миров', () => {
-    const found = share(early, (w) => {
-      const same = w.tag('мало спал')?.windows.day.same
-      return same !== undefined && WORDED.includes(same.strength) && same.delta < 0
-    })
-    expect(found).toBeGreaterThanOrEqual(0.3)
   })
 
   it('чтение: слово уверенности назавтра — не чаще чем в 40% миров', () => {
