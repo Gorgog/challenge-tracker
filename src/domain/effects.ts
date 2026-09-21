@@ -2,7 +2,7 @@ import { addDays, dayKey, daysBetween, isoDow, parseDay } from './date'
 import { pausedOn } from './pauses'
 import { fitLinear, lag1, tQuantile } from './regression'
 import { MIN_GROUP, MIN_TAG_DAYS } from './stats'
-import { activeDays, dayOutcome, lastDay } from './streaks'
+import { activeDays, dayOutcome, deletedDay, lastDay } from './streaks'
 import type { Challenge, DayLog, EntryMap, ScoreField } from './types'
 
 /**
@@ -517,7 +517,9 @@ export function beforeAfter(c: Challenge, all: Challenge[], logs: DayLog[], toda
 
   const yesterday = addDays(today, -1)
   const finish = lastDay(c)
-  const until = finish && daysBetween(finish, yesterday) > 0 ? finish : yesterday
+  let until = finish && daysBetween(finish, yesterday) > 0 ? finish : yesterday
+  const gone = deletedDay(c)
+  if (gone && daysBetween(parseDay(gone), until) > 0) until = parseDay(gone)
   const daysSinceStart = Math.max(0, daysBetween(start, until) + 1)
   const firstRated = closed.reduce<string | null>((min, l) => (min === null || l.day < min ? l.day : min), null)
   const daysBeforeStart =

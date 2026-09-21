@@ -35,17 +35,27 @@ export function lastDay(c: Challenge): Date | null {
 }
 
 /**
+ * День удаления — последний день челленджа, дальше он вне: не пропуск и не выполнение.
+ * Берётся локальная дата момента удаления. null — челлендж не удалён.
+ */
+export function deletedDay(c: Challenge): string | null {
+  return c.deletedAt ? dayKey(new Date(c.deletedAt)) : null
+}
+
+/**
  * Что случилось с челленджем в конкретный день.
  *
  * Привычка: запись есть — сравниваем с целью; записи нет — пропуск, но только для
  * прошедших дней, сегодняшний ещё идёт.
  * Отказ: день засчитывается сам, запись появляется только когда отмечен срыв.
- * День паузы — вне челленджа, как и дни до старта и после финиша.
+ * Дни паузы и дни после удаления — вне челленджа, как и дни до старта и после финиша.
  */
 export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Date): Outcome {
   const start = parseDay(c.startDate)
   if (daysBetween(start, day) < 0) return 'outside'
   if (pausedOn(c, dayKey(day))) return 'outside'
+  const gone = deletedDay(c)
+  if (gone && dayKey(day) > gone) return 'outside'
   const end = lastDay(c)
   if (end && daysBetween(end, day) > 0) return 'outside'
   if (daysBetween(today, day) > 0) return 'outside'
@@ -62,13 +72,15 @@ export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Da
 
 /**
  * Прошедшие дни, за которые челлендж отвечает. Сегодняшний не входит: он ещё не закончен.
- * Дни паузы не входят тоже.
+ * Дни паузы и дни после удаления не входят тоже.
  */
 export function activeDays(c: Challenge, today: Date): string[] {
   const start = parseDay(c.startDate)
   const end = lastDay(c)
   const lastPassed = addDays(today, -1)
-  const until = end && daysBetween(end, lastPassed) > 0 ? end : lastPassed
+  let until = end && daysBetween(end, lastPassed) > 0 ? end : lastPassed
+  const gone = deletedDay(c)
+  if (gone && daysBetween(parseDay(gone), until) > 0) until = parseDay(gone)
 
   const out: string[] = []
   for (let d = start; daysBetween(d, until) >= 0; d = addDays(d, 1)) {
