@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyPatch, isLive, onDay, pause, resume } from './challenges'
+import { applyPatch, isLive, onDay, pause, restore, resume } from './challenges'
 import { parseDay } from './date'
 import type { Challenge } from './types'
 
@@ -203,5 +203,50 @@ describe('resume', () => {
   it('поставил утром, закрыл день, снял вечером — сегодняшний день остаётся днём паузы', () => {
     const c = make({ pauses: [{ from: '2026-09-21', to: null }] })
     expect(resume(c, TODAY, true).pauses).toEqual([{ from: '2026-09-21', to: '2026-09-21' }])
+  })
+})
+
+/** Момент удаления — локальный полдень нужного дня: день не зависит от часового пояса. */
+const deletedOn = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y!, m! - 1, d!, 12).toISOString()
+}
+
+describe('restore', () => {
+  it('период удаления становится паузой — эти дни не оживают пропусками', () => {
+    const back = restore(make({ deletedAt: deletedOn('2026-09-10') }), TODAY)
+    expect(back.deletedAt).toBeNull()
+    expect(back.pauses).toEqual([{ from: '2026-09-11', to: '2026-09-20' }])
+  })
+
+  it('вернул в день удаления — паузы нет', () => {
+    expect(restore(make({ deletedAt: deletedOn('2026-09-21') }), TODAY).pauses).toEqual([])
+  })
+
+  it('вернул назавтра — паузы нет: пропавших дней не было', () => {
+    expect(restore(make({ deletedAt: deletedOn('2026-09-20') }), TODAY).pauses).toEqual([])
+  })
+
+  it('вернул после «Завершить день» — пауза и на сегодня, челлендж идёт с завтра', () => {
+    const back = restore(make({ deletedAt: deletedOn('2026-09-10') }), TODAY, true)
+    expect(back.pauses).toEqual([{ from: '2026-09-11', to: '2026-09-21' }])
+  })
+
+  it('был на паузе, когда удалили, — пауза и так идёт, новая не добавляется', () => {
+    const c = make({ deletedAt: deletedOn('2026-09-10'), pauses: [{ from: '2026-09-05', to: null }] })
+    expect(restore(c, TODAY).pauses).toEqual([{ from: '2026-09-05', to: null }])
+  })
+
+  it('прошлые паузы остаются в истории', () => {
+    const c = make({ deletedAt: deletedOn('2026-09-10'), pauses: [{ from: '2026-09-01', to: '2026-09-03' }] })
+    expect(restore(c, TODAY).pauses).toEqual([
+      { from: '2026-09-01', to: '2026-09-03' },
+      { from: '2026-09-11', to: '2026-09-20' },
+    ])
+  })
+
+  it('не удалён — ничего не меняет', () => {
+    const c = make()
+    expect(restore(c, TODAY)).toEqual(c)
   })
 })
