@@ -288,8 +288,8 @@ function outcomes(c: Challenge, entries: EntryMap, today: Date): Map<string, 0 |
   return out
 }
 
-/** Совместность выполнения двух челленджей — φ по дням, известным у обоих. */
-function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): number {
+/** Совместность выполнения двух челленджей — φ по дням, известным у обоих, и число этих дней. */
+function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): { phi: number; days: number } {
   let n = 0
   let sa = 0
   let sb = 0
@@ -302,23 +302,28 @@ function phi(a: Map<string, 0 | 1>, b: Map<string, 0 | 1>): number {
     sb += xb
     sab += xa * xb
   }
-  if (n < MIN_GROUP) return 0
+  if (n < MIN_GROUP) return { phi: 0, days: n }
   const pa = sa / n
   const pb = sb / n
   const spread = Math.sqrt(pa * (1 - pa) * pb * (1 - pb))
-  return spread === 0 ? 0 : (sab / n - pa * pb) / spread
+  return { phi: spread === 0 ? 0 : (sab / n - pa * pb) / spread, days: n }
 }
 
-/** Самый совместный с `c` челлендж, если совместность заметная. */
+/**
+ * Сосед `c` — челлендж с заметной совместностью (|φ| ≥ PARTNER_PHI), а из нескольких — тот,
+ * чья совместность надёжнее: |φ|·√дней. Иначе недавний челлендж, случайно совпавший на двух
+ * неделях, перебил бы давний, с которым история общая, и чужой эффект остался бы неучтённым.
+ */
 function partnerOf(c: Challenge, all: Challenge[], known: Map<string, Map<string, 0 | 1>>) {
   let best: Challenge | null = null
-  let bestPhi = 0
+  let bestWeight = 0
   for (const other of all) {
     if (other.id === c.id) continue
-    const p = Math.abs(phi(known.get(c.id)!, known.get(other.id)!))
-    if (p >= PARTNER_PHI && p > bestPhi) {
+    const { phi: p, days } = phi(known.get(c.id)!, known.get(other.id)!)
+    const weight = Math.abs(p) * Math.sqrt(days)
+    if (Math.abs(p) >= PARTNER_PHI && weight > bestWeight) {
       best = other
-      bestPhi = p
+      bestWeight = weight
     }
   }
   return best
