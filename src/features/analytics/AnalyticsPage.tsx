@@ -60,8 +60,8 @@ export function AnalyticsPage() {
           {rated < FEW_RATED && (
             <div className="rounded-xl border border-dashed border-border p-6 text-center">
               <p className="text-sm text-muted-foreground">
-                Оценено {rated} {plural(rated, 'день', 'дня', 'дней')} — данных пока мало: выводы ранние
-                и с новыми днями часто меняются.
+                Оценено {rated} {plural(rated, 'день', 'дня', 'дней')} — данных пока мало: первые выводы обычно
+                появляются на второй неделе и поначалу часто меняются.
               </p>
             </div>
           )}

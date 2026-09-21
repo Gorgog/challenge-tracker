@@ -6,10 +6,22 @@ import { STRENGTH_WORD, daysText, signed } from './words'
 
 const codes = (list: Challenge[]) => list.map((c) => c.code).join(', ')
 
-/** Сколько дней в группе есть и сколько нужно: «Срывов пока 2 — …»; ни одного — без «пока 0». */
-function shortOf(group: string, none: string, count: number): string {
-  if (count === 0) return `${group} ${none} — дни не с чем сравнить.`
-  return `${group} пока ${count} — для сравнения нужно хотя бы ${MIN_EARLY}.`
+/** Как называются дни группы: формы для «учтено N …» и «учтённых … пока нет», глагол при одном. */
+type Noun = { one: string; few: string; many: string; verb: 'Учтён' | 'Учтено' }
+
+const MISSES: Noun = { one: 'пропуск', few: 'пропуска', many: 'пропусков', verb: 'Учтён' }
+const RELAPSES: Noun = { one: 'срыв', few: 'срыва', many: 'срывов', verb: 'Учтён' }
+const HITS: Noun = { one: 'выполнение', few: 'выполнения', many: 'выполнений', verb: 'Учтено' }
+const HELD: Noun = { one: 'выдержанный день', few: 'выдержанных дня', many: 'выдержанных дней', verb: 'Учтён' }
+
+/**
+ * Сколько дней группы учтено и сколько нужно. «Учтено», а не «было»: день старта, вчерашний день и
+ * дни болезни в расчёт не идут, поэтому учтённых бывает меньше, чем видно в календаре.
+ */
+function shortOf(noun: Noun, count: number): string {
+  if (count === 0) return `Учтённых ${noun.many} пока нет — дни не с чем сравнить.`
+  const verb = count === 1 ? noun.verb : 'Учтено'
+  return `${verb} ${count} ${plural(count, noun.one, noun.few, noun.many)} — для сравнения нужно хотя бы ${MIN_EARLY}.`
 }
 
 /** Почему дни «с» и «без» не с чем сравнить — по тому, чего на самом деле не хватает, с числами. */
@@ -17,14 +29,17 @@ function reason({ challenge, days, windows, beforeAfter }: ChallengeEffect): str
   const { withDays, withoutDays } = windows.day.same
   const quit = challenge.kind === 'quit'
   if (days === 0 || beforeAfter?.sinceStart === 0) return 'Челлендж только начат — сравнивать пока не с чем.'
-  if (withoutDays < MIN_EARLY && withDays >= MIN_EARLY) {
-    return shortOf(quit ? 'Срывов' : 'Пропусков', 'не было', withoutDays)
+  if (withDays >= MIN_EARLY && withoutDays >= MIN_EARLY) {
+    /* Дней хватает, а модель не решается: выполнения легли слишком ровным рисунком. */
+    const pattern = quit ? 'срывы и выдержанные дни' : 'выполнения и пропуски'
+    return `Дни пока не разделить: ${pattern} идут слишком ровным рисунком — нужны дни, которые из него выбиваются.`
   }
-  if (withDays < MIN_EARLY && withoutDays >= MIN_EARLY) {
-    return shortOf(quit ? 'Выдержанных дней' : 'Выполнений', 'пока нет', withDays)
-  }
-  const groups = quit ? 'со срывом и без' : 'с выполнением и без'
-  return `Оценённых дней пока ${days} — для сравнения нужно хотя бы по ${MIN_EARLY} ${groups}.`
+  if (withoutDays < MIN_EARLY && withDays >= MIN_EARLY) return shortOf(quit ? RELAPSES : MISSES, withoutDays)
+  if (withDays < MIN_EARLY && withoutDays >= MIN_EARLY) return shortOf(quit ? HELD : HITS, withDays)
+  const groups = quit
+    ? `без срыва — ${withDays}, со срывом — ${withoutDays}`
+    : `с выполнением — ${withDays}, без — ${withoutDays}`
+  return `${plural(days, 'Учтён', 'Учтено', 'Учтено')} ${daysText(days)}: ${groups}. Для сравнения нужно хотя бы по ${MIN_EARLY}.`
 }
 
 /** Запасное сравнение для челленджа, у которого дни «с» и «без» не набрать. */
