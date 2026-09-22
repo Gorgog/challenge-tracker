@@ -347,6 +347,21 @@ describe('periodReport — неделя и 30 дней', () => {
     expect(r.changes).toEqual([])
   })
 
+  it('прошлый период записан меньше чем наполовину — сравнения нет', () => {
+    /* записи только за последние 40 дней: из предыдущих 30 (59…30) записано 11 */
+    const w = world(range(40, 1).map((b) => flat(b)))
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -89), TODAY)
+    const month = periodReport(days, days.length - 2, 30, days.slice(-30), challenge(), {}, TODAY)
+    expect(month.hasPrev).toBe(false)
+    expect(month.verdict).toBe('noPrev')
+    /* у недели прошлая записана целиком */
+    expect(periodReport(days, days.length - 2, 7, days.slice(-30), challenge(), {}, TODAY).hasPrev).toBe(true)
+    /* половина записана — сравниваем: 45 дней истории, из 59…30 записано 15 */
+    const w2 = world(range(45, 1).map((b) => flat(b)))
+    const days2 = timeline(w2.logs, w2.starts, addDays(TODAY, -89), TODAY)
+    expect(periodReport(days2, days2.length - 2, 30, days2.slice(-30), challenge(), {}, TODAY).hasPrev).toBe(true)
+  })
+
   it('выполнение челленджа — X из известных дней', () => {
     const days = build(() => null)
     const entries: EntryMap = Object.fromEntries(range(7, 1).filter((b) => b % 2).map((b) => [key(b), 20]))
