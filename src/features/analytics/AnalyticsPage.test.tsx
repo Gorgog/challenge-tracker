@@ -197,7 +197,10 @@ describe('AnalyticsPage — график челленджа и разбор', ()
     mocked.startsError = true
     render(<AnalyticsPage />)
     expect(svg().querySelectorAll('[data-sleep]')).toHaveLength(0)
+    /* сегодня без утра и вечера — сначала показан вчерашний день, последний с записями */
+    expect(dayTitle()).toBe('вт, 22 сентября')
     act(() => fireEvent.keyDown(svg(), { key: 'ArrowLeft' }))
-    expect(screen.getByText(/утро пропущено/i)).toBeInTheDocument()
+    expect(dayTitle()).toBe('пн, 21 сентября')
+    expect(screen.getByText('Утро пропущено — не видно, что сделала ночь, а что сам день.')).toBeInTheDocument()
   })
 })

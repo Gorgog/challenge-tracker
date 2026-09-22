@@ -2,16 +2,10 @@ import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type Poin
 import { isoDow, parseDay } from '@/domain/date'
 import { BAD_SLEEP, HARMFUL_TAGS, stateOf, type TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
+import { SERIES, type Series } from './series'
 import { dayName, num1, shortDate } from './words'
 
 export type ChartMode = 'norm' | 'lines'
-export type Series = 'wellbeing' | 'mood' | 'sleep'
-
-export const SERIES: { id: Series; label: string; color: string }[] = [
-  { id: 'wellbeing', label: 'Самочувствие', color: 'var(--chart-1)' },
-  { id: 'mood', label: 'Настроение', color: 'var(--chart-2)' },
-  { id: 'sleep', label: 'Сон', color: 'var(--chart-4)' },
-]
 
 const H_PLOT = 180
 const PAD = { top: 16, right: 8, left: 58 }

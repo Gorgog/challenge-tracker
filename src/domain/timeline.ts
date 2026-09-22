@@ -248,10 +248,12 @@ function scaleAvg(days: TimelineDay[], scale: Scale): number | null {
   return avg(days.flatMap((d) => [d.morning?.[scale], d.evening?.[scale]].filter((v): v is number => v !== undefined)))
 }
 
-const hasData = (days: TimelineDay[]) => days.some((d) => d.morning || d.evening)
+/** Дней с утром или вечером. */
+const recorded = (days: TimelineDay[]) => days.filter((d) => d.morning || d.evening).length
 
 /**
- * Период из `len` дней по `days[index]` включительно против `len` дней перед ним. `window` — окно
+ * Период из `len` дней по `days[index]` включительно против `len` дней перед ним, если тот записан
+ * хотя бы наполовину. `window` — окно
  * графика: по нему «обычно» (сколько раз за `len` дней в среднем) и сравнение для недели; у 30 дней
  * сравнение — внутри самого периода. Что поменялось — от 2 дней у недели и от 4 у 30 дней.
  */
@@ -267,7 +269,9 @@ export function periodReport(
   const cur = days.slice(Math.max(0, index - len + 1), index + 1)
   const prevStart = index - 2 * len + 1
   const prev = prevStart >= 0 ? days.slice(prevStart, index - len + 1) : []
-  const hasPrev = prev.length === len && hasData(prev)
+  /* Прошлый период, записанный меньше чем наполовину, — не мерка: «алкоголь 6 против 0» там значило
+     бы «тогда не записывал», а не «тогда не пил». */
+  const hasPrev = prev.length === len && recorded(prev) * 2 >= len
 
   const scales = Object.fromEntries(
     SCALES.map((s) => [s, { now: scaleAvg(cur, s), was: hasPrev ? scaleAvg(prev, s) : null }]),
