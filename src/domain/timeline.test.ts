@@ -134,6 +134,18 @@ describe('morningsAfter и afterBadSleep — «с» против «без»', ()
     expect(morningsAfter(timeline(w.logs, w.starts, addDays(TODAY, -3), TODAY), 'алкоголь')).toBeNull()
   })
 
+  it('порог — три дня в группе: два «с» — нет сравнения, три — есть', () => {
+    const run = (drinks: number[]) => {
+      const w = world([
+        ...range(12, 1).map((b) => ({ log: log(b, 6, 6, drinks.includes(b) ? ['алкоголь'] : []), start: start(b, [7, 6, 6]) })),
+        { start: start(0, [7, 6, 6]) },
+      ])
+      return morningsAfter(timeline(w.logs, w.starts, addDays(TODAY, -12), TODAY), 'алкоголь')
+    }
+    expect(run([10, 6])).toBeNull()
+    expect(run([10, 6, 2])?.withDays).toBe(3)
+  })
+
   it('незакрытый вечер накануне не идёт ни в «с», ни в «без»', () => {
     const w = world([
       ...range(8, 1).map((b) => ({ log: log(b, 6, 6, b % 2 ? ['алкоголь'] : [], b !== 4), start: start(b, [7, 6, 6]) })),
@@ -198,6 +210,11 @@ describe('dayReport — разбор дня', () => {
     expect(report({ 1: { log: log(1, 6, 6), start: start(1, null) } }).shift).toEqual({ kind: 'noMorning' })
   })
 
+  it('ночь и день оба вверх — говорим про день', () => {
+    const r = report({ 2: { log: log(2, 4, 4), start: start(2, [7, 6, 6]) }, 1: { log: log(1, 8, 8), start: start(1, [7, 6, 6]) } })
+    expect(r.shift).toEqual({ kind: 'dayUp', by: 2 })
+  })
+
   it('обычный и лучше обычного — от балла к норме', () => {
     expect(report({ 1: { log: log(1, 7, 7), start: start(1, [7, 6, 6]) } }).verdict).toBe('usual')
     expect(report({ 1: { log: log(1, 8, 8), start: start(1, [7, 7, 7]) } }).verdict).toBe('better')
@@ -235,6 +252,25 @@ describe('dayReport — разбор дня', () => {
     const bad = Object.fromEntries([19, 15, 11, 1].map((b) => [b, { log: log(b, 3, 3), start: start(b, [2, 6, 6]) }]))
     expect(report(bad).compare?.subject).toEqual({ kind: 'badSleep' })
     expect(report({}).compare).toBeNull()
+  })
+})
+
+describe('dayReport — какой тег сравнивать', () => {
+  it('накануне «встречи» и «алкоголь» — сравниваем алкоголь, даже если он второй', () => {
+    const w = world([
+      ...range(29, 2).map((b) => ({
+        log: log(b, 6, 6, b % 4 === 2 ? ['встречи', 'алкоголь'] : b % 4 === 0 ? ['встречи'] : []),
+        start: start(b, [7, 6, 6]),
+      })),
+      { log: log(1, 5, 5), start: start(1, [3, 4, 4]) },
+    ])
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -29), TODAY)
+    const r = dayReport(days, days.findIndex((d) => d.day === key(1)), days, challenge(), {}, TODAY)
+    expect(r.facts.slice(0, 2)).toEqual([
+      { kind: 'tagBefore', tag: 'встречи' },
+      { kind: 'tagBefore', tag: 'алкоголь' },
+    ])
+    expect(r.compare?.subject).toEqual({ kind: 'tag', tag: 'алкоголь' })
   })
 })
 
@@ -290,6 +326,16 @@ describe('periodReport — неделя и 30 дней', () => {
       [key(7), key(1)],
     ])
     expect(r.weeks[4]).toMatchObject({ badSleep: 1, harmful: { алкоголь: 1 } })
+  })
+
+  it('30 дней: сдвиг на три дня — не изменение; «обычно» — на 30 дней', () => {
+    const days = build((b) => (b === 3 || b === 9 || b === 15 ? { log: log(b, 6, 6, ['встречи']), start: start(b, [7, 6, 6]) } : null))
+    const r = periodReport(days, days.length - 2, 30, days.slice(-30), challenge(), {}, TODAY)
+    const meetings = r.events.find((e) => e.kind === 'tag' && e.tag === 'встречи')!
+    expect([meetings.now, meetings.was]).toEqual([3, 0])
+    /* окно — те же 30 дней, поэтому «обычно за 30 дней» равно числу в окне */
+    expect(meetings.usual).toBeCloseTo(3)
+    expect(r.changes).toEqual([])
   })
 
   it('прошлого периода в истории нет — сравнения нет', () => {
