@@ -366,7 +366,24 @@ describe('periodReport — неделя и 30 дней', () => {
     const days = build(() => null)
     const entries: EntryMap = Object.fromEntries(range(7, 1).filter((b) => b % 2).map((b) => [key(b), 20]))
     const r = periodReport(days, days.length - 2, 7, days.slice(-30), challenge(), entries, TODAY)
-    expect(r.challenge).toEqual({ hits: 4, known: 7, wasHits: 0, wasKnown: 7 })
+    expect(r.challenge).toEqual({ hits: 4, known: 7, wasHits: 0, wasKnown: 7, comparable: true })
+  })
+
+  it('челлендж шёл меньше полпериода сейчас или тогда — пропуски не сравниваем (демо 24.09: «0 → 11»)', () => {
+    const days = build(() => null)
+    /* начат 20 дней назад: в прошлых 30 днях его не было — «пропусков 0» значило бы «не было челленджа» */
+    const young = periodReport(days, days.length - 2, 30, days.slice(-30), challenge({ startDate: key(20) }), {}, TODAY)
+    expect(young.challenge.comparable).toBe(false)
+    expect(young.changes.map((c) => c.event.kind)).not.toContain('misses')
+    /* удалён 20 дней назад: в прошлых 30 шёл целиком, в этих — меньше половины */
+    const gone = challenge({ deletedAt: `${key(20)}T10:00:00.000Z` })
+    const baby = periodReport(days, days.length - 2, 30, days.slice(-30), gone, {}, TODAY)
+    expect(baby.challenge.wasKnown).toBe(30)
+    expect(baby.challenge.comparable).toBe(false)
+    /* шёл полпериода и там и там — сравниваем: 45 дней, из 59…30 — 15 */
+    const half = periodReport(days, days.length - 2, 30, days.slice(-30), challenge({ startDate: key(45) }), {}, TODAY)
+    expect(half.challenge.comparable).toBe(true)
+    expect(half.changes.map((c) => c.event.kind)).toContain('misses')
   })
 })
 
