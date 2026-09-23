@@ -173,7 +173,7 @@ export function PeriodTab({
             rows={report.events.map((e) => [
               eventLabel(e, challenge),
               String(e.now),
-              report.hasPrev ? String(e.was) : '—',
+              report.hasPrev && (e.kind !== 'misses' || report.challenge.comparable) ? String(e.was) : '—',
               ...(week ? [`~${Math.round(e.usual)}`] : []),
             ])}
           />

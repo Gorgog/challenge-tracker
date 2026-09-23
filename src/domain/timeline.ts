@@ -282,7 +282,8 @@ export type PeriodReport = {
   verdict: 'worse' | 'better' | 'mixed' | 'same' | 'noPrev'
   events: PeriodEvent[]
   changes: Change[]
-  challenge: { hits: number; known: number; wasHits: number; wasKnown: number }
+  /** `comparable` — челлендж шёл хотя бы полпериода и сейчас, и в прошлом: иначе пропуски не сравниваются. */
+  challenge: { hits: number; known: number; wasHits: number; wasKnown: number; comparable: boolean }
   compare: Comparison | null
   /** Только у 30 дней — недели с конца периода, первая может быть короче. */
   weeks: WeekRow[]
@@ -359,10 +360,13 @@ export function periodReport(
   ]
   const events = all.filter((e) => e.now > 0 || e.was > 0)
 
+  /* челлендж, которого в прошлом периоде почти не было, — не мерка: «пропусков 0 → 11» значило бы
+     «тогда его не было», а не «тогда не пропускал» (демо 24.09) */
+  const comparable = hasPrev && known(cur).length * 2 >= len && known(prev).length * 2 >= len
   const minDiff = len >= 30 ? 4 : 2
   const changes: Change[] = hasPrev
     ? events
-        .filter((e) => e.kind !== 'skippedMornings' && Math.abs(e.now - e.was) >= minDiff)
+        .filter((e) => e.kind !== 'skippedMornings' && (e.kind !== 'misses' || comparable) && Math.abs(e.now - e.was) >= minDiff)
         .map((event) => {
           const fewer = event.now < event.was
           const good = event.kind === 'tag' ? (HARMFUL_TAGS.includes(event.tag) ? fewer : null) : fewer
@@ -415,7 +419,7 @@ export function periodReport(
     verdict,
     events,
     changes,
-    challenge: { hits: hitsOf(cur), known: known(cur).length, wasHits: hitsOf(prev), wasKnown: known(prev).length },
+    challenge: { hits: hitsOf(cur), known: known(cur).length, wasHits: hitsOf(prev), wasKnown: known(prev).length, comparable },
     compare,
     weeks,
     norms: ns,
