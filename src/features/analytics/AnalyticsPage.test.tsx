@@ -14,20 +14,23 @@ const mocked = vi.hoisted(() => ({
   logs: [] as DayLog[],
   starts: [] as DayStart[],
   startsPending: false,
-  startsError: false,
+  /** Какой запрос не загрузился. */
+  failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts',
 }))
 
-vi.mock('@/data/queries', () => ({
-  useChallenges: () => ({ data: mocked.challenges, isPending: false, isError: false }),
-  useEntries: () => ({ data: mocked.entries, isPending: false, isError: false }),
-  useDayLogs: () => ({ data: mocked.logs, isPending: false, isError: false }),
-  useDayStarts: () =>
-    mocked.startsError
-      ? { data: undefined, isPending: false, isError: true }
-      : mocked.startsPending
+vi.mock('@/data/queries', () => {
+  const result = (name: typeof mocked.failed, data: unknown) =>
+    mocked.failed === name ? { data: undefined, isPending: false, isError: true } : { data, isPending: false, isError: false }
+  return {
+    useChallenges: () => result('challenges', mocked.challenges),
+    useEntries: () => result('entries', mocked.entries),
+    useDayLogs: () => result('logs', mocked.logs),
+    useDayStarts: () =>
+      mocked.startsPending && mocked.failed !== 'starts'
         ? { data: undefined, isPending: true, isError: false }
-        : { data: mocked.starts, isPending: false, isError: false },
-}))
+        : result('starts', mocked.starts),
+  }
+})
 
 const push: Challenge = {
   id: 'push',
@@ -91,7 +94,7 @@ beforeEach(() => {
     logs,
     starts,
     startsPending: false,
-    startsError: false,
+    failed: null,
   })
 })
 afterEach(() => vi.useRealTimers())
@@ -193,14 +196,32 @@ describe('AnalyticsPage — график челленджа и разбор', ()
     expect(screen.getByText('Хорошо спал: сон 8')).toBeInTheDocument()
   })
 
-  it('утра не загрузились — считаем без утра, а не гасим аналитику', () => {
-    mocked.startsError = true
-    render(<AnalyticsPage />)
-    expect(svg().querySelectorAll('[data-sleep]')).toHaveLength(0)
-    /* сегодня без утра и вечера — сначала показан вчерашний день, последний с записями */
-    expect(dayTitle()).toBe('вт, 22 сентября')
+  it.each(['challenges', 'entries', 'logs', 'starts'] as const)(
+    'не загрузилось (%s) — сообщение вместо графика, а не «пропущено» и не «челленджей нет»',
+    (name) => {
+      mocked.failed = name
+      render(<AnalyticsPage />)
+      expect(screen.getByRole('alert')).toHaveTextContent('Не удалось загрузить данные')
+      expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+      expect(screen.queryByText(/заведи челлендж/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/пропущен/i)).not.toBeInTheDocument()
+    },
+  )
+
+  it('выбранный день держится за дату: после полуночи не съезжает на соседний', () => {
+    const { rerender } = render(<AnalyticsPage />)
+    act(() => fireEvent.keyDown(svg(), { key: 'ArrowLeft' }))
     act(() => fireEvent.keyDown(svg(), { key: 'ArrowLeft' }))
     expect(dayTitle()).toBe('пн, 21 сентября')
-    expect(screen.getByText('Утро пропущено — не видно, что сделала ночь, а что сам день.')).toBeInTheDocument()
+    vi.setSystemTime(new Date(2026, 8, 24, 0, 5))
+    rerender(<AnalyticsPage />)
+    expect(dayTitle()).toBe('пн, 21 сентября')
+    expect(svg()).toHaveAttribute('aria-valuetext', 'пн, 21 сентября')
+  })
+
+  it('график не держит вертикальный свайп: страница прокручивается пальцем', () => {
+    render(<AnalyticsPage />)
+    expect(svg()).toHaveClass('touch-pan-y')
+    expect(svg()).not.toHaveClass('touch-none')
   })
 })
