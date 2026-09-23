@@ -16,12 +16,18 @@ const mocked = vi.hoisted(() => ({
   startsPending: false,
   /** Какой запрос не загрузился. */
   failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts',
+  /** Какой запрос не обновился в фоне — данные прежние, `isError` поднят. */
+  stale: null as null | 'challenges' | 'entries' | 'logs' | 'starts',
+  morningUntil: 15,
 }))
 
 vi.mock('@/data/queries', () => {
   const result = (name: typeof mocked.failed, data: unknown) =>
-    mocked.failed === name ? { data: undefined, isPending: false, isError: true } : { data, isPending: false, isError: false }
+    mocked.failed === name
+      ? { data: undefined, isPending: false, isError: true }
+      : { data, isPending: false, isError: mocked.stale === name }
   return {
+    useSettings: () => ({ data: { morningUntil: mocked.morningUntil }, isPending: false, isError: false }),
     useChallenges: () => result('challenges', mocked.challenges),
     useEntries: () => result('entries', mocked.entries),
     useDayLogs: () => result('logs', mocked.logs),
@@ -95,6 +101,8 @@ beforeEach(() => {
     starts,
     startsPending: false,
     failed: null,
+    stale: null,
+    morningUntil: 15,
   })
 })
 afterEach(() => vi.useRealTimers())
@@ -207,6 +215,41 @@ describe('AnalyticsPage — график челленджа и разбор', ()
       expect(screen.queryByText(/пропущен/i)).not.toBeInTheDocument()
     },
   )
+
+  it.each(['logs', 'starts'] as const)('фоновое обновление не прошло (%s) — график остаётся с прежними данными', (name) => {
+    mocked.stale = name
+    render(<AnalyticsPage />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(svg()).toBeInTheDocument()
+    expect(dayTitle()).toBe('ср, 23 сентября')
+  })
+
+  it('сегодня не начат: до часа утра — не «пропущено», после — пропущено', () => {
+    mocked.starts = mocked.starts.filter((s) => s.day !== key(0))
+    const missed = 'Утро пропущено — не видно, что сделала ночь, а что сам день.'
+    const { unmount } = render(<AnalyticsPage />)
+    act(() => fireEvent.keyDown(svg(), { key: 'End' }))
+    expect(dayTitle()).toBe('ср, 23 сентября')
+    expect(screen.queryByText(missed)).not.toBeInTheDocument()
+    unmount()
+    vi.setSystemTime(new Date(2026, 8, 23, 16, 0))
+    render(<AnalyticsPage />)
+    act(() => fireEvent.keyDown(svg(), { key: 'End' }))
+    expect(screen.getByText(missed)).toBeInTheDocument()
+  })
+
+  it('«Неделя»: точки дней — утро к обычному утру, вечер к обычному вечеру', async () => {
+    /* утро всегда 4, вечер 8: общая норма 6 красила бы каждое утро «ниже» */
+    mocked.logs = mocked.logs.map((l) => ({ ...l, wellbeing: 8, mood: 8, tags: [] }))
+    mocked.starts = mocked.starts.map((s) => ({ ...s, morning: { sleep: 7, wellbeing: 4, mood: 4 } }))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<AnalyticsPage />)
+    await user.click(screen.getByRole('tab', { name: 'Неделя' }))
+    expect(screen.getAllByRole('img', { name: 'утро: не ниже обычного' })).toHaveLength(7)
+    expect(screen.queryAllByRole('img', { name: 'утро: ниже обычного' })).toHaveLength(0)
+    expect(screen.getAllByRole('img', { name: 'вечер: не ниже обычного' })).toHaveLength(6)
+    expect(screen.getAllByRole('img', { name: 'вечер: нет записи' })).toHaveLength(1)
+  })
 
   it('выбранный день держится за дату: после полуночи не съезжает на соседний', () => {
     const { rerender } = render(<AnalyticsPage />)
