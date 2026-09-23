@@ -21,7 +21,8 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
+        {/* путь сайта: на GitHub Pages — /challenge-tracker/ (vite build --base) */}
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <App />
         </BrowserRouter>
         <Toaster position="bottom-center" />

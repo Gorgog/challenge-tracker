@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { supabase } from '@/data/supabaseClient'
+import { siteUrl } from '@/lib/siteUrl'
 
 export function LoginPage() {
   const [email, setEmail] = useState('')
@@ -15,7 +16,8 @@ export function LoginPage() {
     setStatus('sending')
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
+      /* с путём сайта: на GitHub Pages это /challenge-tracker/, а не корень домена */
+      options: { emailRedirectTo: siteUrl() },
     })
     if (error) {
       setError(error.message)
