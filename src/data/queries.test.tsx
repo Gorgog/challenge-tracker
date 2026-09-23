@@ -7,14 +7,16 @@ import { createQueryClient } from './queryClient'
 
 /* Хранилище — подделка, чьи записи отвечают, когда тест скажет: видно, идут ли записи одна за другой. */
 const repo = vi.hoisted(() => {
-  const pending: { name: string; resolve: () => void }[] = []
-  const call = (name: string) => () => new Promise<void>((resolve) => pending.push({ name, resolve }))
+  const pending: { name: string; resolve: (v?: unknown) => void; reject: (e: unknown) => void }[] = []
+  const call = (name: string) => () =>
+    new Promise<never>((resolve, reject) => pending.push({ name, resolve: resolve as (v?: unknown) => void, reject }))
   return {
     pending,
     listChallenges: vi.fn(async () => []),
     reorderChallenges: vi.fn(call('reorder')),
     updateChallenge: vi.fn(call('update')),
     setPaused: vi.fn(call('pause')),
+    createChallenge: vi.fn(call('create')),
     startDay: vi.fn(async () => {
       throw { code: '23505', message: 'День 2026-09-23 уже начат: утро не правится' }
     }),
@@ -27,7 +29,8 @@ vi.mock('./demoRepo', () => ({ createDemoRepo: () => repo }))
 vi.mock('./supabaseClient', () => ({ supabase: {} }))
 vi.mock('./supabaseRepo', () => ({ createSupabaseRepo: () => ({}) }))
 
-const { useChallenges, useReorderChallenges, useSetPaused, useStartDay, useUpdateChallenge } = await import('./queries')
+const { useChallenges, useCreateChallenge, useReorderChallenges, useSetPaused, useStartDay, useUpdateChallenge } =
+  await import('./queries')
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient()
@@ -71,6 +74,63 @@ describe('записи челленджей идут по очереди, а н�
     expect(reads()).toBe(before)
     act(() => repo.pending[1]!.resolve())
     await waitFor(() => expect(reads()).toBeGreaterThan(before))
+  })
+})
+
+describe('очередь заканчивается перечитыванием, если в ней было что-то кроме удачной перестановки', () => {
+  async function queue(run: (h: ReturnType<typeof hooks>) => void) {
+    repo.pending.length = 0
+    const { result } = renderHook(hooks, { wrapper })
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true))
+    const before = repo.listChallenges.mock.calls.length
+    act(() => run(result.current))
+    return { before, reads: () => repo.listChallenges.mock.calls.length }
+  }
+  const hooks = () => ({
+    list: useChallenges(),
+    create: useCreateChallenge(),
+    update: useUpdateChallenge(),
+    reorder: useReorderChallenges(),
+  })
+  const draft = { name: 'Новый', code: 'НВ' } as never
+
+  it('завёл и сразу переставил — новый челлендж подтягивается', async () => {
+    const q = await queue((h) => {
+      h.create.mutate(draft)
+      h.reorder.mutate(['b', 'a'])
+    })
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.resolve({ id: 'new' }))
+    await waitFor(() => expect(repo.pending).toHaveLength(2))
+    act(() => repo.pending[1]!.resolve())
+    await waitFor(() => expect(q.reads()).toBeGreaterThan(q.before))
+  })
+
+  it('правка упала, перестановка прошла — список перечитан, а не остался с отменённым', async () => {
+    const q = await queue((h) => {
+      h.update.mutate({ id: 'a', patch: { name: 'А2' } })
+      h.reorder.mutate(['b', 'a'])
+    })
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.reject(new Error('нет сети')))
+    await waitFor(() => expect(repo.pending).toHaveLength(2))
+    act(() => repo.pending[1]!.resolve())
+    await waitFor(() => expect(q.reads()).toBeGreaterThan(q.before))
+  })
+
+  it('перестановка упала — список перечитан', async () => {
+    const q = await queue((h) => h.reorder.mutate(['b', 'a']))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.reject(new Error('нет сети')))
+    await waitFor(() => expect(q.reads()).toBeGreaterThan(q.before))
+  })
+
+  it('одна удачная перестановка — без перечитывания: оно рвёт анимацию карточек', async () => {
+    const q = await queue((h) => h.reorder.mutate(['b', 'a']))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.resolve())
+    await new Promise((r) => setTimeout(r, 50))
+    expect(q.reads()).toBe(q.before)
   })
 })
 

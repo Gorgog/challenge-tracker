@@ -19,6 +19,14 @@ async function move(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.keyboard('{ArrowRight}')
 }
 
+describe('окно итога дня — пока база отвечает', () => {
+  it('«Сохраняю…», кнопка выключена, «Отмены» нет — оценки не потеряются на полпути', () => {
+    render(<DayCloseDialog open day="2026-09-21" saving onSave={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Сохраняю…' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /отмена/i })).toBeNull()
+  })
+})
+
 describe('окно итога дня', () => {
   it('три оценки стартуют не выставленными', () => {
     setup()

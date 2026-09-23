@@ -19,6 +19,7 @@ const mocked = vi.hoisted(() => ({
   startDay: vi.fn(),
   setEntry: vi.fn(),
   saveDayLog: vi.fn(),
+  savePending: false,
   /** Фоновое обновление не прошло: данные есть, `isError` поднят. */
   stale: false,
 }))
@@ -39,7 +40,7 @@ vi.mock('@/data/queries', () => ({
     mocked.startsPending ? { data: undefined, isPending: true } : answer('starts', mocked.starts),
   useSettings: () => answer('settings', mocked.settings),
   useSetEntry: () => ({ mutate: mocked.setEntry }),
-  useSaveDayLog: () => ({ mutate: mocked.saveDayLog }),
+  useSaveDayLog: () => ({ mutate: mocked.saveDayLog, isPending: mocked.savePending }),
   useStartDay: () => ({ mutate: mocked.startDay, isPending: false }),
   useReorderChallenges: () => ({ mutate: vi.fn() }),
   useSaveDayGroups: () => ({ mutate: vi.fn() }),
@@ -116,6 +117,7 @@ beforeEach(() => {
   mocked.startDay.mockReset()
   mocked.setEntry.mockReset()
   mocked.saveDayLog.mockReset()
+  mocked.savePending = false
   mocked.stale = false
   vi.mocked(toast).mockReset()
   vi.mocked(toast.error).mockReset()
@@ -175,6 +177,41 @@ describe('экран дня — данные с сервера', () => {
     render(<DayPage />)
     expect(screen.queryByRole('alert')).toBeNull()
     expect(markButton()).toBeInTheDocument()
+  })
+
+  it('база отказала — окно с оценками остаётся, но из него можно выйти; пока ждём — выйти нельзя', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    /* как настоящая оптимистичная запись: итог сразу в кэше, запрос идёт */
+    mocked.saveDayLog.mockImplementation((log: DayLog) => {
+      mocked.logs = [...mocked.logs, log]
+      mocked.savePending = true
+    })
+    const user = userEvent.setup()
+    const { rerender } = render(<DayPage />)
+    await user.click(screen.getByRole('button', { name: 'Завершить день' }))
+    const dialog = screen.getByRole('dialog')
+    for (const name of [/настроение/i, /самочувствие/i, /продуктивность/i]) {
+      within(dialog).getByRole('slider', { name }).focus()
+      await user.keyboard('{ArrowRight}')
+    }
+    await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
+    rerender(<DayPage />)
+
+    /* окно не превратилось в «Оценку дня» с «Отменой» из-за итога в кэше */
+    expect(screen.getByText('Как прошёл день')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сохраняю…' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /отмена/i })).toBeNull()
+
+    /* отказ: кэш откатился, окно с оценками на месте, выйти можно */
+    mocked.logs = []
+    mocked.savePending = false
+    act(() => mocked.saveDayLog.mock.calls[0]![1].onError(new Error('нет сети')))
+    rerender(<DayPage />)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryAllByText('не выбрано')).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: /отмена/i }))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('«День закрыт» и закрытие окна — только когда база приняла итог; иначе окно с оценками остаётся', async () => {
