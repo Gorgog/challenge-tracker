@@ -11,6 +11,7 @@ import {
   type Settings,
   type Tag,
 } from '@/domain/types'
+import { orderAfter } from './order'
 import type { Repo } from './repo'
 import { seedBurnout } from './seeds/burnout'
 import { seedFull } from './seeds/full'
@@ -268,13 +269,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       persist()
     },
     async reorderChallenges(orderedIds) {
-      /* Не упомянутые идут следом, сохраняя прежний относительный порядок. */
-      const rest = challenges
-        .filter((c) => !orderedIds.includes(c.id))
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((c) => c.id)
-
-      const order = [...orderedIds.filter((id) => challenges.some((c) => c.id === id)), ...rest]
+      const order = orderAfter(challenges, orderedIds)
       for (const c of challenges) c.sortOrder = order.indexOf(c.id)
       persist()
     },
