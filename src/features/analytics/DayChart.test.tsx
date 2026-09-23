@@ -171,6 +171,17 @@ describe('DayChart — выбранный день', () => {
     expect(onCursor.mock.calls.map(([i]) => i)).toEqual([3, 4])
   })
 
+  it('браузер забрал касание под прокрутку — день возвращается на прежний', () => {
+    const onCursor = vi.fn()
+    const { svg } = chart({ cursor: 12, onCursor })
+    const [left, right] = all(svg, '[data-bracket]').map((l) => Number(l.getAttribute('x1')))
+    const step = right! - left!
+    const x = (i: number) => left! - 12 * step + i * step + step / 2
+    fireEvent.pointerDown(svg, { clientX: x(3), pointerId: 1 })
+    fireEvent.pointerCancel(svg, { pointerId: 1 })
+    expect(onCursor.mock.calls.map(([i]) => i)).toEqual([3, 12])
+  })
+
   it('период подсвечен: неделя — 7 дней по выбранный', () => {
     const { svg } = chart({ cursor: 12, period: 7 })
     const band = svg.querySelector('[data-period]')!
