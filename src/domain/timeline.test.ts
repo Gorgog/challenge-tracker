@@ -392,6 +392,8 @@ describe('утро к утру, вечер к вечеру — пропуски 
     const r = week(build((b) => (b >= 8 && b <= 14 ? split(b, false) : null)))
     expect(r.hasPrev).toBe(true)
     expect(r.scales.wellbeing).toEqual({ morning: { now: 4, was: null }, evening: { now: 8, was: 8 }, by: 0 })
+    /* обычное утро и вечер — для точек дней недели */
+    expect(r.norms).toEqual({ morning: 4, evening: 8 })
     expect(r.moves).toEqual([])
     expect(r.verdict).toBe('same')
   })
@@ -456,10 +458,17 @@ describe('утро к утру, вечер к вечеру — пропуски 
 })
 
 describe('сегодня и молодой челлендж (ревью 23.09)', () => {
-  it('сегодня день ещё не начат — не «утро пропущено»', () => {
+  it('сегодня: утро ещё можно записать — не «пропущено»; час прошёл или утро пропущено явно — пропущено', () => {
     const w = world(range(29, 1).map((b) => flat(b)))
     const days = timeline(w.logs, w.starts, addDays(TODAY, -29), TODAY)
-    expect(dayReport(days, days.length - 1, days, challenge(), {}, TODAY).shift).toBeNull()
+    expect(dayReport(days, days.length - 1, days, challenge(), {}, TODAY, true).shift).toBeNull()
+    /* после часа утра (Settings.morningUntil) утро уже не записать */
+    expect(dayReport(days, days.length - 1, days, challenge(), {}, TODAY, false).shift).toEqual({ kind: 'noMorning' })
+    /* день начат без утра («Пропустить утро») — пропущено, даже если час утра не прошёл */
+    const skippedToday = world([...range(29, 1).map((b) => flat(b)), { start: start(0, null) }])
+    const days3 = timeline(skippedToday.logs, skippedToday.starts, addDays(TODAY, -29), TODAY)
+    expect(days3[days3.length - 1]!.started).toBe(true)
+    expect(dayReport(days3, days3.length - 1, days3, challenge(), {}, TODAY, true).shift).toEqual({ kind: 'noMorning' })
     /* вчерашний день без утра — пропущено */
     const w2 = world([...range(29, 2).map((b) => flat(b)), { log: log(1, 6, 6), start: start(1, null) }])
     const days2 = timeline(w2.logs, w2.starts, addDays(TODAY, -29), TODAY)
@@ -477,9 +486,20 @@ describe('сегодня и молодой челлендж (ревью 23.09)',
     expect(misses.now).toBe(4)
     expect(misses.usual).toBeCloseTo(3.5)
   })
+
+  it('пропущенные утра недели: сегодняшнее — только когда его уже не записать', () => {
+    const w = world(range(89, 1).map((b) => flat(b)))
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -89), TODAY)
+    const skipped = (open: boolean) =>
+      periodReport(days, days.length - 1, 7, days.slice(-30), challenge(), {}, TODAY, open).events.find(
+        (e) => e.kind === 'skippedMornings',
+      )?.now ?? 0
+    expect(skipped(true)).toBe(0)
+    expect(skipped(false)).toBe(1)
+  })
 })
 
 it('TimelineDay — только данные, без дат-объектов (удобно для мемо и тестов)', () => {
   const [d] = timeline([], [], TODAY, TODAY) as TimelineDay[]
-  expect(Object.keys(d!).sort()).toEqual(['day', 'evening', 'morning', 'tags'])
+  expect(Object.keys(d!).sort()).toEqual(['day', 'evening', 'morning', 'started', 'tags'])
 })
