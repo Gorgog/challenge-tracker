@@ -31,8 +31,13 @@ const PAGE = 1000
 
 type Result<T> = { data: T | null; error: { code?: string; message: string } | null }
 
+/** Ошибка postgrest — простой объект; наружу — настоящий `Error` с его текстом и кодом. */
+function failure(error: { code?: string; message: string }): Error {
+  return Object.assign(new Error(error.message), { code: error.code })
+}
+
 function ok<T>({ data, error }: Result<T>): T {
-  if (error) throw error
+  if (error) throw failure(error)
   return data as T
 }
 
@@ -169,7 +174,7 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
       if (!clean) throw new Error('Имя тега не может быть пустым')
       const { data, error } = await db.from('tags').insert({ name: clean }).select('id, name').single<{ id: string; name: string }>()
       if (duplicate(error)) throw new Error(`Тег «${clean}» уже есть`)
-      if (error) throw error
+      if (error) throw failure(error)
       return { id: data!.id, name: data!.name }
     },
 
@@ -198,7 +203,7 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
     async startDay(start) {
       const { error } = await db.from('day_starts').insert(dayStartToRow(start))
       if (duplicate(error)) throw new Error(`День ${start.day} уже начат: утро не правится`)
-      if (error) throw error
+      if (error) throw failure(error)
     },
 
     async getSettings() {

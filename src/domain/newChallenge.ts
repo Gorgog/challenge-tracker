@@ -18,6 +18,14 @@ export function suggestCode(name: string): string {
     .toUpperCase()
 }
 
+/**
+ * Код из названия — никогда не пустой: у «100» или «5×5» нет слов для `suggestCode`, а база пустой код
+ * не примет. Тогда — первые три знака без пробелов (по символам, эмодзи не режутся пополам).
+ */
+export function codeFor(name: string): string {
+  return suggestCode(name) || Array.from(name.replace(/\s+/g, '')).slice(0, 3).join('').toUpperCase()
+}
+
 /** Первый свободный цвет: два челленджа одного цвета в списке неразличимы. */
 export function pickColor(existing: Challenge[]): string {
   const used = new Set(existing.map((c) => c.color))
@@ -37,8 +45,7 @@ export function buildChallenge(
 
   return {
     name: draft.name.trim(),
-    /* код не бывает пустым: у «100» или «5×5» нет слов для suggestCode, а база пустой код не примет */
-    code: (draft.code.trim() || suggestCode(draft.name) || draft.name.replace(/\s+/g, '').slice(0, 3)).toUpperCase(),
+    code: (draft.code.trim() || codeFor(draft.name)).toUpperCase(),
     kind: draft.kind,
     measure: counted ? 'count' : 'binary',
     goal: counted ? draft.goal : 1,

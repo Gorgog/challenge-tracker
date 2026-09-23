@@ -114,8 +114,7 @@ export function ChallengesPage() {
         onRestore={(id) => restoreChallenge.mutate({ id, today: todayKey() })}
         onPurge={(id) => {
           const name = trash.find((c) => c.id === id)?.name
-          purgeChallenge.mutate(id)
-          toast(`«${name}» удалён навсегда`)
+          purgeChallenge.mutate(id, { onSuccess: () => toast(`«${name}» удалён навсегда`) })
         }}
       />
 

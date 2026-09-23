@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
 import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
@@ -21,6 +21,13 @@ export const usingDemo = () => demo
 
 /** Одна очередь на все записи челленджей. */
 const CHALLENGES = { id: 'challenges' }
+
+/**
+ * Эта запись — последняя в очереди челленджей? Перечитывать список раньше нельзя: ответ придёт до
+ * следующей записи и затрёт её оптимистичную правку на экране. В `onSettled` запись ещё считается.
+ */
+const lastInQueue = (client: QueryClient) =>
+  client.isMutating({ predicate: (m) => m.options.scope?.id === CHALLENGES.id }) <= 1
 
 export const queryKeys = {
   challenges: ['challenges'] as const,
@@ -65,8 +72,7 @@ export function useStartDay() {
 
   return useMutation({
     mutationFn: (start: DayStart) => repo.startDay(start),
-    /* ошибку показывает экран дня */
-    meta: { ownError: true },
+    meta: { errorText: 'Не получилось начать день' },
 
     onMutate(start) {
       const previous = client.getQueryData<DayStart[]>(queryKeys.dayStarts)
@@ -176,7 +182,7 @@ export function useCreateChallenge() {
     /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
     scope: CHALLENGES,
     onSuccess() {
-      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
     },
   })
@@ -280,7 +286,7 @@ function useChallengeMutation<Args>(
     },
 
     onSettled() {
-      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
     },
   })
 }
@@ -345,7 +351,7 @@ export function usePurgeChallenge() {
     /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
     scope: CHALLENGES,
     onSuccess() {
-      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
     },
   })
@@ -382,7 +388,7 @@ export function useDeleteTag() {
     onSuccess() {
       void client.invalidateQueries({ queryKey: queryKeys.tags })
       /* Тег снимается со всех челленджей — их тоже надо перечитать. */
-      void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
     },
   })
 }

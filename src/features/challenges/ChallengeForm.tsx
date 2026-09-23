@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import type { ChallengePatch } from '@/domain/challenges'
 import { todayKey } from '@/domain/date'
-import { buildChallenge, suggestCode } from '@/domain/newChallenge'
+import { buildChallenge, codeFor } from '@/domain/newChallenge'
 import type { Challenge, ChallengeKind, ChallengeMeasure, Tag } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { TagPicker } from './TagPicker'
@@ -63,7 +63,7 @@ export function ChallengeForm({
    * не трогает: у челленджей из прототипа он задан руками (ОТЖ), а автокод дал бы «ДО».
    */
   const code =
-    challenge && name.trim() === challenge.name ? challenge.code : suggestCode(name)
+    challenge && name.trim() === challenge.name ? challenge.code : codeFor(name)
   const counted = kind === 'do' && measure === 'count'
   const ready = name.trim().length > 0
 

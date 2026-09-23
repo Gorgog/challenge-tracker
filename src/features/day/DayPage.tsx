@@ -170,7 +170,7 @@ export function DayPage() {
                 ? 'Утро уже прошло — день начат без утренних оценок'
                 : 'День начат без утренних оценок',
           ),
-        onError: (error) => toast.error(`Не получилось начать день: ${error.message}`),
+        /* ошибку показывает хук (meta.errorText): её видно, даже если со страницы уже ушли */
       },
     )
   }
@@ -231,7 +231,8 @@ export function DayPage() {
 
     const next = arrayMove(groups, from, to)
     setGroupOrder(next)
-    saveDayGroups.mutate(next, { onSuccess: () => setGroupOrder(null) })
+    /* и при ошибке: кэш откатился — экран тоже возвращается к прежнему порядку */
+    saveDayGroups.mutate(next, { onSettled: () => setGroupOrder(null) })
   }
 
   /** Перестановка карточек внутри блока. Между блоками они не ходят: контексты разные. */
@@ -249,7 +250,7 @@ export function DayPage() {
     const fullOrder = allChallenges.map((c) => (groupIds.includes(c.id) ? moved[next++]! : c.id))
 
     setRowOrder(fullOrder)
-    reorderChallenges.mutate(fullOrder, { onSuccess: () => setRowOrder(null) })
+    reorderChallenges.mutate(fullOrder, { onSettled: () => setRowOrder(null) })
   }
 
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */
@@ -491,9 +492,13 @@ export function DayPage() {
           existing={logs.find((l) => l.day === dialogDay) ?? null}
           pendingCount={dialogDay === todayK ? pendingCount : 0}
           onSave={(log) => {
-            saveDayLog.mutate(log)
-            setDialogDay(null)
-            toast(log.day === todayK ? 'День закрыт' : `День ${formatHuman(parseDay(log.day))} оценён`)
+            /* окно закрывается, когда база приняла итог: при отказе оценки, заметка и теги остаются в окне */
+            saveDayLog.mutate(log, {
+              onSuccess: () => {
+                setDialogDay(null)
+                toast(log.day === todayK ? 'День закрыт' : `День ${formatHuman(parseDay(log.day))} оценён`)
+              },
+            })
           }}
           onCancel={
             logs.some((l) => l.day === dialogDay) ? () => setDialogDay(null) : undefined
