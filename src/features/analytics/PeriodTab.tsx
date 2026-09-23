@@ -173,7 +173,7 @@ export function PeriodTab({
             ])}
           />
         </div>
-        {week && <p className="mt-1.5 text-[11.5px] text-muted-foreground">«Обычно» — сколько раз за 7 дней в среднем по 30 дням.</p>}
+        {week && <p className="mt-1.5 text-[11.5px] text-muted-foreground">«Обычно» — сколько раз за 7 дней в среднем по 30 дням; у пропусков — по дням, когда челлендж шёл.</p>}
       </details>
     </div>
   )

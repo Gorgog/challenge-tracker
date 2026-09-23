@@ -208,7 +208,8 @@ export function dayReport(
   const verdict = delta === null ? 'empty' : delta <= -DAY_VS_NORM ? 'worse' : delta >= DAY_VS_NORM ? 'better' : 'usual'
 
   let shift: Shift = null
-  if (morning === null) shift = { kind: 'noMorning' }
+  /* сегодняшнее утро ещё можно записать — оно не пропущено */
+  if (morning === null) shift = d.day === dayKey(today) ? null : { kind: 'noMorning' }
   else if (prevEvening !== null && morning - prevEvening <= -SHIFT) shift = { kind: 'nightDown', by: prevEvening - morning }
   else if (evening !== null && evening - morning <= -SHIFT) shift = { kind: 'dayDown', by: morning - evening }
   else if (evening !== null && evening - morning >= SHIFT) shift = { kind: 'dayUp', by: evening - morning }
@@ -323,11 +324,13 @@ export function periodReport(
   const verdict = !hasPrev ? 'noPrev' : downs && ups ? 'mixed' : downs ? 'worse' : ups ? 'better' : 'same'
 
   const todayKey = dayKey(today)
-  const usual = (count: number) => (window.length ? (count * len) / window.length : 0)
+  /* сколько раз за `len` дней в среднем по окну; у пропусков — по дням, когда челлендж шёл */
+  const usual = (count: number, base = window.length) => (base ? (count * len) / base : 0)
   const tagDays = (list: TimelineDay[], t: string) => list.filter((d) => d.tags.includes(t)).length
   const badSleep = (list: TimelineDay[]) => list.filter((d) => d.morning && d.morning.sleep <= BAD_SLEEP).length
   const outcomes = (list: TimelineDay[]) => list.map((d) => outcomeOf(challenge, entries, d.day, today))
   const misses = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'miss').length
+  const known = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'hit' || o === 'miss')
   const skipped = (list: TimelineDay[]) => list.filter((d) => d.day !== todayKey && !d.morning).length
 
   const names = [...new Set([...cur, ...prev].flatMap((d) => d.tags))]
@@ -337,7 +340,7 @@ export function periodReport(
   const all: PeriodEvent[] = [
     ...tags,
     { kind: 'badSleep', now: badSleep(cur), was: badSleep(prev), usual: usual(badSleep(window)) },
-    { kind: 'misses', now: misses(cur), was: misses(prev), usual: usual(misses(window)) },
+    { kind: 'misses', now: misses(cur), was: misses(prev), usual: usual(misses(window), known(window).length) },
     { kind: 'skippedMornings', now: skipped(cur), was: skipped(prev), usual: usual(skipped(window)) },
   ]
   const events = all.filter((e) => e.now > 0 || e.was > 0)
@@ -354,7 +357,6 @@ export function periodReport(
         .sort((a, b) => Math.abs(b.by) - Math.abs(a.by))
     : []
 
-  const known = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'hit' || o === 'miss')
   const hitsOf = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'hit').length
 
   const topTag = changes.find((c) => c.event.kind === 'tag')?.event
