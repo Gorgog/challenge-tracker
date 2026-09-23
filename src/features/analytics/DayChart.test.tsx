@@ -15,6 +15,7 @@ function days(spec: (i: number) => Partial<{ m: number | null; e: number | null;
     return {
       day: key(i),
       morning: m === null ? null : { sleep, wellbeing: m, mood: m },
+      started: m !== null,
       evening: e === null ? null : { wellbeing: e, mood: e, productivity: 5 },
       tags,
     }

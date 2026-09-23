@@ -15,6 +15,8 @@ export type TimelineDay = {
   day: string
   /** Утро пропущено или день не начат — null, а не среднее. */
   morning: Morning | null
+  /** День начат — есть `DayStart`, даже без утра («Пропустить утро»). */
+  started: boolean
   /** Только закрытый день. */
   evening: Evening | null
   /** Теги ставятся при закрытии дня — у незакрытого их нет. */
@@ -48,6 +50,7 @@ export function timeline(logs: DayLog[], starts: DayStart[], from: Date, to: Dat
     out.push({
       day,
       morning: startBy.get(day)?.morning ?? null,
+      started: startBy.has(day),
       evening: closed ? { mood: closed.mood, wellbeing: closed.wellbeing, productivity: closed.productivity } : null,
       tags: closed ? [...closed.tags] : [],
     })
@@ -146,6 +149,13 @@ export function afterBadSleep(days: TimelineDay[]): Comparison | null {
 const outcomeOf = (c: Challenge, entries: EntryMap, day: string, today: Date): Outcome =>
   dayOutcome(c, entries, parseDay(day), today)
 
+/**
+ * Утро ещё можно записать: это сегодня, день не начат и час утра из настроек не прошёл (`morningOpen`
+ * из `domain/dayStart.ts`). Такое утро не пропущено; начатый без утра день и прошедший час — пропущено.
+ */
+const morningPending = (d: TimelineDay, today: Date, morningOpen: boolean) =>
+  morningOpen && !d.started && d.day === dayKey(today)
+
 /* ---------- разбор дня ---------- */
 
 export type Shift =
@@ -190,6 +200,8 @@ export function dayReport(
   challenge: Challenge,
   entries: EntryMap,
   today: Date,
+  /** Час утра из настроек ещё не прошёл. */
+  morningOpen = false,
 ): DayReport {
   const d = days[index]!
   const prev = index > 0 ? days[index - 1]! : null
@@ -208,8 +220,7 @@ export function dayReport(
   const verdict = delta === null ? 'empty' : delta <= -DAY_VS_NORM ? 'worse' : delta >= DAY_VS_NORM ? 'better' : 'usual'
 
   let shift: Shift = null
-  /* сегодняшнее утро ещё можно записать — оно не пропущено */
-  if (morning === null) shift = d.day === dayKey(today) ? null : { kind: 'noMorning' }
+  if (morning === null) shift = morningPending(d, today, morningOpen) ? null : { kind: 'noMorning' }
   else if (prevEvening !== null && morning - prevEvening <= -SHIFT) shift = { kind: 'nightDown', by: prevEvening - morning }
   else if (evening !== null && evening - morning <= -SHIFT) shift = { kind: 'dayDown', by: morning - evening }
   else if (evening !== null && evening - morning >= SHIFT) shift = { kind: 'dayUp', by: evening - morning }
@@ -275,6 +286,8 @@ export type PeriodReport = {
   compare: Comparison | null
   /** Только у 30 дней — недели с конца периода, первая может быть короче. */
   weeks: WeekRow[]
+  /** Обычное утро и вечер за окно — для точек дней. */
+  norms: Norms
 }
 
 type Pair = { now: number | null; was: number | null }
@@ -300,6 +313,8 @@ export function periodReport(
   challenge: Challenge,
   entries: EntryMap,
   today: Date,
+  /** Час утра из настроек ещё не прошёл. */
+  morningOpen = false,
 ): PeriodReport {
   const cur = days.slice(Math.max(0, index - len + 1), index + 1)
   const prevStart = index - 2 * len + 1
@@ -323,7 +338,6 @@ export function periodReport(
   const ups = moves.some((m) => m.by > 0)
   const verdict = !hasPrev ? 'noPrev' : downs && ups ? 'mixed' : downs ? 'worse' : ups ? 'better' : 'same'
 
-  const todayKey = dayKey(today)
   /* сколько раз за `len` дней в среднем по окну; у пропусков — по дням, когда челлендж шёл */
   const usual = (count: number, base = window.length) => (base ? (count * len) / base : 0)
   const tagDays = (list: TimelineDay[], t: string) => list.filter((d) => d.tags.includes(t)).length
@@ -331,7 +345,7 @@ export function periodReport(
   const outcomes = (list: TimelineDay[]) => list.map((d) => outcomeOf(challenge, entries, d.day, today))
   const misses = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'miss').length
   const known = (list: TimelineDay[]) => outcomes(list).filter((o) => o === 'hit' || o === 'miss')
-  const skipped = (list: TimelineDay[]) => list.filter((d) => d.day !== todayKey && !d.morning).length
+  const skipped = (list: TimelineDay[]) => list.filter((d) => !d.morning && !morningPending(d, today, morningOpen)).length
 
   const names = [...new Set([...cur, ...prev].flatMap((d) => d.tags))]
   const tags: PeriodEvent[] = names
@@ -363,8 +377,8 @@ export function periodReport(
   const compare = topTag && topTag.kind === 'tag' ? morningsAfter(len >= 30 ? cur : window, topTag.tag) : null
 
   const weeks: WeekRow[] = []
+  const ns = norms(window)
   if (len >= 30) {
-    const ns = norms(window)
     const firstIndex = index - cur.length + 1
     for (let end = cur.length; end > 0; end -= 7) {
       const chunk = cur.slice(Math.max(0, end - 7), end)
@@ -404,5 +418,6 @@ export function periodReport(
     challenge: { hits: hitsOf(cur), known: known(cur).length, wasHits: hitsOf(prev), wasKnown: known(prev).length },
     compare,
     weeks,
+    norms: ns,
   }
 }
