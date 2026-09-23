@@ -20,6 +20,7 @@ const mocked = vi.hoisted(() => ({
   setEntry: vi.fn(),
   saveDayLog: vi.fn(),
   savePending: false,
+  savePaused: false,
   /** Фоновое обновление не прошло: данные есть, `isError` поднят. */
   stale: false,
 }))
@@ -40,7 +41,7 @@ vi.mock('@/data/queries', () => ({
     mocked.startsPending ? { data: undefined, isPending: true } : answer('starts', mocked.starts),
   useSettings: () => answer('settings', mocked.settings),
   useSetEntry: () => ({ mutate: mocked.setEntry }),
-  useSaveDayLog: () => ({ mutate: mocked.saveDayLog, isPending: mocked.savePending }),
+  useSaveDayLog: () => ({ mutate: mocked.saveDayLog, isPending: mocked.savePending, isPaused: mocked.savePaused }),
   useStartDay: () => ({ mutate: mocked.startDay, isPending: false }),
   useReorderChallenges: () => ({ mutate: vi.fn() }),
   useSaveDayGroups: () => ({ mutate: vi.fn() }),
@@ -118,6 +119,7 @@ beforeEach(() => {
   mocked.setEntry.mockReset()
   mocked.saveDayLog.mockReset()
   mocked.savePending = false
+  mocked.savePaused = false
   mocked.stale = false
   vi.mocked(toast).mockReset()
   vi.mocked(toast.error).mockReset()
@@ -211,6 +213,31 @@ describe('экран дня — данные с сервера', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.queryAllByText('не выбрано')).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: /отмена/i }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('нет сети — запись ждёт связь, окно не запирает: «Нет связи» и выход', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    /* TanStack без сети ставит запись на паузу: isPending и isPaused, запроса нет, ошибки нет */
+    mocked.saveDayLog.mockImplementation((log: DayLog) => {
+      mocked.logs = [...mocked.logs, log]
+      mocked.savePending = true
+      mocked.savePaused = true
+    })
+    const user = userEvent.setup()
+    const { rerender } = render(<DayPage />)
+    await user.click(screen.getByRole('button', { name: 'Завершить день' }))
+    const dialog = screen.getByRole('dialog')
+    for (const name of [/настроение/i, /самочувствие/i, /продуктивность/i]) {
+      within(dialog).getByRole('slider', { name }).focus()
+      await user.keyboard('{ArrowRight}')
+    }
+    await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
+    rerender(<DayPage />)
+
+    expect(screen.getByText(/Нет связи/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /отмена|закрыть окно/i }))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

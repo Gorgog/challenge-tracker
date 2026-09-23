@@ -27,6 +27,15 @@ describe('окно итога дня — пока база отвечает', ()
   })
 })
 
+describe('окно итога дня — нет сети', () => {
+  it('запись ждёт сеть: так и сказано, и из окна можно выйти', () => {
+    const onCancel = vi.fn()
+    render(<DayCloseDialog open day="2026-09-21" offline onSave={vi.fn()} onCancel={onCancel} />)
+    expect(screen.getByText(/Нет связи/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /отмена|закрыть окно/i })).toBeEnabled()
+  })
+})
+
 describe('окно итога дня', () => {
   it('три оценки стартуют не выставленными', () => {
     setup()

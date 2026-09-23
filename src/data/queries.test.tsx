@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
-import { createQueryClient } from './queryClient'
+import { createQueryClient, resetCache } from './queryClient'
 
 /* Хранилище — подделка, чьи записи отвечают, когда тест скажет: видно, идут ли записи одна за другой. */
 const repo = vi.hoisted(() => {
@@ -12,7 +12,14 @@ const repo = vi.hoisted(() => {
     new Promise<never>((resolve, reject) => pending.push({ name, resolve: resolve as (v?: unknown) => void, reject }))
   return {
     pending,
-    listChallenges: vi.fn(async () => []),
+    /* перечитывание можно задержать: slowList — ответ списка ждёт, пока тест не отпустит */
+    slowList: null as null | { release: () => void },
+    listChallenges: vi.fn(function (this: unknown) {
+      return new Promise<never[]>((resolve) => {
+        if (repo.slowList) repo.slowList.release = () => resolve([])
+        else resolve([])
+      })
+    }),
     reorderChallenges: vi.fn(call('reorder')),
     updateChallenge: vi.fn(call('update')),
     setPaused: vi.fn(call('pause')),
@@ -78,15 +85,16 @@ describe('записи челленджей идут по очереди, а н�
 })
 
 describe('очередь заканчивается перечитыванием, если в ней было что-то кроме удачной перестановки', () => {
-  async function queue(run: (h: ReturnType<typeof hooks>) => void) {
+  async function queue(run: (h: ReturnType<typeof useHooks>) => void) {
     repo.pending.length = 0
-    const { result } = renderHook(hooks, { wrapper })
+    repo.slowList = null
+    const { result } = renderHook(useHooks, { wrapper })
     await waitFor(() => expect(result.current.list.isSuccess).toBe(true))
     const before = repo.listChallenges.mock.calls.length
     act(() => run(result.current))
     return { before, reads: () => repo.listChallenges.mock.calls.length }
   }
-  const hooks = () => ({
+  const useHooks = () => ({
     list: useChallenges(),
     create: useCreateChallenge(),
     update: useUpdateChallenge(),
@@ -125,12 +133,60 @@ describe('очередь заканчивается перечитыванием
     await waitFor(() => expect(q.reads()).toBeGreaterThan(q.before))
   })
 
+  it('две удачные перестановки подряд — тоже без перечитывания', async () => {
+    const q = await queue((h) => {
+      h.reorder.mutate(['b', 'a'])
+      h.reorder.mutate(['a', 'b'])
+    })
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.resolve())
+    await waitFor(() => expect(repo.pending).toHaveLength(2))
+    act(() => repo.pending[1]!.resolve())
+    await new Promise((r) => setTimeout(r, 50))
+    expect(q.reads()).toBe(q.before)
+  })
+
+  it('перестановка, отменившая идущее перечитывание, сама его повторяет', async () => {
+    let h!: ReturnType<typeof useHooks>
+    const q = await queue((hooks) => {
+      h = hooks
+      hooks.create.mutate({ name: 'Новый', code: 'НВ' } as never)
+    })
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    /* перечитывание после создания зависнет — его отменит перестановка */
+    repo.slowList = { release: () => {} }
+    act(() => repo.pending[0]!.resolve({ id: 'new' }))
+    await waitFor(() => expect(q.reads()).toBe(q.before + 1))
+    act(() => h.reorder.mutate(['b', 'a']))
+    await waitFor(() => expect(repo.pending).toHaveLength(2))
+    repo.slowList = null
+    act(() => repo.pending[1]!.resolve())
+    await waitFor(() => expect(q.reads()).toBe(q.before + 2))
+  })
+
   it('одна удачная перестановка — без перечитывания: оно рвёт анимацию карточек', async () => {
     const q = await queue((h) => h.reorder.mutate(['b', 'a']))
     await waitFor(() => expect(repo.pending).toHaveLength(1))
     act(() => repo.pending[0]!.resolve())
     await new Promise((r) => setTimeout(r, 50))
     expect(q.reads()).toBe(q.before)
+  })
+})
+
+describe('выход во время записи: откат не возвращает данные прошлого пользователя', () => {
+  it('кэш очищен, запись упала — в кэше пусто, а не снимок прошлого пользователя', async () => {
+    repo.pending.length = 0
+    const client = new QueryClient()
+    client.setQueryData(['challenges'], [{ id: 'a', name: 'данные А', pauses: [], tagIds: [] }])
+    const { result } = renderHook(() => useUpdateChallenge(), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    })
+    act(() => result.current.mutate({ id: 'a', patch: { name: 'А2' } }))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => resetCache(client))
+    act(() => repo.pending[0]!.reject(new Error('нет сети')))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(client.getQueryData(['challenges'])).toBeUndefined()
   })
 })
 

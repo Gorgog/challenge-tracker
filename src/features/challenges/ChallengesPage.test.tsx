@@ -6,6 +6,25 @@ import type { Challenge } from '@/domain/types'
 import { ChallengesPage } from './ChallengesPage'
 
 const mocked = vi.hoisted(() => ({
+  /*
+   * Как useMutation в TanStack v5: у mutate колбэки срабатывают только у последнего вызова, у mutateAsync
+   * — у каждого свой промис. Ответы отдаёт тест.
+   */
+  purgeHook: (() => {
+    const answers: { resolve: () => void; reject: (e: unknown) => void }[] = []
+    let last: unknown = null
+    const run = () => new Promise<void>((resolve, reject) => answers.push({ resolve, reject }))
+    return {
+      answers,
+      mutate: (_id: string, callbacks?: { onSuccess?: () => void }) => {
+        last = callbacks
+        run().then(() => {
+          if (last === callbacks) callbacks?.onSuccess?.()
+        }, () => {})
+      },
+      mutateAsync: (_id: string) => run(),
+    }
+  })(),
   purge: vi.fn(),
   failed: false,
   list: [] as Challenge[],
@@ -22,7 +41,7 @@ vi.mock('@/data/queries', () => ({
   useSetPaused: mocked.idle,
   useDeleteChallenge: mocked.idle,
   useRestoreChallenge: mocked.idle,
-  usePurgeChallenge: () => ({ mutateAsync: mocked.purge }),
+  usePurgeChallenge: () => mocked.purgeHook,
   useCreateTag: mocked.idle,
   useDeleteTag: mocked.idle,
   useUpdateChallenge: mocked.idle,
@@ -58,8 +77,8 @@ describe('экран челленджей — тост по факту', () => {
   it('«удалён навсегда» — у каждого удаления, когда база его приняла', async () => {
     const other: Challenge = { ...gone, id: 'other', name: 'Бегать' }
     mocked.list = [gone, other]
-    const answers: { resolve: () => void; reject: (e: unknown) => void }[] = []
-    mocked.purge.mockImplementation(() => new Promise<void>((resolve, reject) => answers.push({ resolve, reject })))
+    const answers = mocked.purgeHook.answers
+    answers.length = 0
     const user = userEvent.setup()
     render(<ChallengesPage />)
     await user.click(screen.getByRole('button', { name: /Удалённые/ }))
@@ -67,7 +86,7 @@ describe('экран челленджей — тост по факту', () => {
       await user.click(screen.getAllByRole('button', { name: 'Удалить навсегда' })[i]!)
       await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить навсегда' }))
     }
-    expect(mocked.purge).toHaveBeenCalledTimes(2)
+    expect(answers).toHaveLength(2)
     expect(toast).not.toHaveBeenCalled()
 
     await act(async () => answers[0]!.resolve())
