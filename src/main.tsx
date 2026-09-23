@@ -1,24 +1,21 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import { App } from '@/app/App'
 import { Toaster } from '@/components/ui/sonner'
+import { watchMode } from '@/data/mode'
+import { createQueryClient } from '@/data/queryClient'
 import { AuthProvider } from '@/features/auth/AuthProvider'
+import { reloadPage } from '@/lib/reload'
 import { startThemeSync } from '@/lib/theme'
 import './index.css'
 
 startThemeSync()
+/* режим сменили в другой вкладке — эта перезагружается, чтобы хранилище и плашка не разошлись */
+watchMode(reloadPage)
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      retry: 1,
-      refetchOnWindowFocus: true,
-    },
-  },
-})
+const queryClient = createQueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

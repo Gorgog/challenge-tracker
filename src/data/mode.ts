@@ -22,6 +22,15 @@ export function isDemo(storage: Storage | null = defaultStorage()): boolean {
   }
 }
 
+/** Режим сменили в другой вкладке — `onChange` (перезагрузка). Возвращает отписку. */
+export function watchMode(onChange: () => void): () => void {
+  const listener = (e: StorageEvent) => {
+    if (e.key === MODE_KEY) onChange()
+  }
+  window.addEventListener('storage', listener)
+  return () => window.removeEventListener('storage', listener)
+}
+
 export function setDemo(on: boolean, storage: Storage | null = defaultStorage()) {
   try {
     if (on) storage?.setItem(MODE_KEY, 'demo')

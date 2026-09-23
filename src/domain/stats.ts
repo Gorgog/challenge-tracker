@@ -45,12 +45,16 @@ export function weekProfile(
   return buckets.map((b) => (b.total ? { rate: b.hits / b.total, hits: b.hits, total: b.total } : null))
 }
 
-/** Дни без оценки за последние `back` дней, самый ранний первым. */
-export function unratedDays(logs: DayLog[], today: Date, back = 14): string[] {
+/**
+ * Дни без оценки за последние `back` дней, самый ранний первым. `since` — первый день пользования
+ * (ключ дня): дни до него — не долг, иначе новый пользователь должен оценить две недели до входа.
+ */
+export function unratedDays(logs: DayLog[], today: Date, back = 14, since: string | null = null): string[] {
   const closed = new Set(logs.filter((l) => l.closedAt).map((l) => l.day))
   const out: string[] = []
   for (let i = back; i >= 1; i--) {
     const key = dayKey(addDays(today, -i))
+    if (since !== null && key < since) continue
     if (!closed.has(key)) out.push(key)
   }
   return out

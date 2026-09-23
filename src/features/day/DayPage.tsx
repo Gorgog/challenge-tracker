@@ -128,11 +128,15 @@ export function DayPage() {
 
   const doneCount = tasks.filter(isDone).length
   const pendingCount = tasks.length - doneCount
-  const debt = unratedDays(logs, today)
+  const starts = startsQuery.data ?? []
+  /* первый день пользования: самое раннее из стартов челленджей, начал дней и итогов */
+  const since = [...fetched.map((c) => c.startDate), ...starts.map((s) => s.day), ...logs.map((l) => l.day)].reduce<
+    string | null
+  >((min, d) => (min === null || d < min ? d : min), null)
+  const debt = unratedDays(logs, today, 14, since ?? todayK)
   const todayLog = logs.find((l) => l.day === todayK) ?? null
   /* Закрытый день не правится задним числом: иначе оценка перестаёт что-либо значить. */
   const frozen = Boolean(todayLog)
-  const starts = startsQuery.data ?? []
   const settings = settingsQuery.data ?? DEFAULT_SETTINGS
   const todayStart = starts.find((s) => s.day === todayK) ?? null
   /* Не начатый день тоже под блюром: отметки — только после начала, утро — до дел дня. */
@@ -265,8 +269,19 @@ export function DayPage() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  /* Пока неизвестно, начат ли день, он не «не начат»: иначе мелькнули бы блюр и «Начать день». */
-  if (challenges.isPending || startsQuery.isPending || settingsQuery.isPending) {
+  /*
+   * Не загрузилось — ничего не показываем: по пустым отметкам и итогам экран записал бы поверх (цель вместо
+   * 35, заново оценённый день без заметки). Пока грузится — тоже: и не «не начат», и не «14 дней без оценки».
+   */
+  const queries = [challenges, entriesQuery, logsQuery, startsQuery, settingsQuery]
+  if (queries.some((q) => q.isError && q.data === undefined)) {
+    return (
+      <div role="alert" className="mx-auto m-8 max-w-md rounded-xl border border-destructive/40 p-6 text-center text-sm">
+        Не удалось загрузить данные дня — отметки не показываю, чтобы не записать поверх. Обнови страницу.
+      </div>
+    )
+  }
+  if (queries.some((q) => q.isPending)) {
     return <p className="p-8 text-center text-sm text-muted-foreground">Загружаю…</p>
   }
 

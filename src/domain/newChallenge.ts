@@ -37,7 +37,8 @@ export function buildChallenge(
 
   return {
     name: draft.name.trim(),
-    code: (draft.code.trim() || suggestCode(draft.name)).toUpperCase(),
+    /* код не бывает пустым: у «100» или «5×5» нет слов для suggestCode, а база пустой код не примет */
+    code: (draft.code.trim() || suggestCode(draft.name) || draft.name.replace(/\s+/g, '').slice(0, 3)).toUpperCase(),
     kind: draft.kind,
     measure: counted ? 'count' : 'binary',
     goal: counted ? draft.goal : 1,

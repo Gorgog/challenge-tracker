@@ -12,7 +12,15 @@ import { createSupabaseRepo } from './supabaseRepo'
  * Единственное место, где выбирается хранилище: база (Supabase) или демо в браузере — режим из
  * настроек (`mode.ts`), смена режима перезагружает страницу. Экраны о хранилище не знают.
  */
-const repo: Repo = isDemo() ? createDemoRepo() : createSupabaseRepo(supabase)
+const demo = isDemo()
+const repo: Repo = demo ? createDemoRepo() : createSupabaseRepo(supabase)
+
+/** Хранилище этой страницы — демо? Плашка и настройки смотрят сюда, а не на ключ режима: ключ могли
+ *  сменить в другой вкладке, а хранилище выбрано при загрузке. */
+export const usingDemo = () => demo
+
+/** Одна очередь на все записи челленджей. */
+const CHALLENGES = { id: 'challenges' }
 
 export const queryKeys = {
   challenges: ['challenges'] as const,
@@ -57,6 +65,8 @@ export function useStartDay() {
 
   return useMutation({
     mutationFn: (start: DayStart) => repo.startDay(start),
+    /* ошибку показывает экран дня */
+    meta: { ownError: true },
 
     onMutate(start) {
       const previous = client.getQueryData<DayStart[]>(queryKeys.dayStarts)
@@ -107,6 +117,8 @@ export function useReorderChallenges() {
 
   return useMutation({
     mutationFn: (orderedIds: string[]) => repo.reorderChallenges(orderedIds),
+    /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
+    scope: CHALLENGES,
 
     async onMutate(orderedIds) {
       await client.cancelQueries({ queryKey: queryKeys.challenges })
@@ -161,6 +173,8 @@ export function useCreateChallenge() {
 
   return useMutation({
     mutationFn: (challenge: Omit<Challenge, 'id'>) => repo.createChallenge(challenge),
+    /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
+    scope: CHALLENGES,
     onSuccess() {
       void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
@@ -249,6 +263,8 @@ function useChallengeMutation<Args>(
 
   return useMutation({
     mutationFn: run,
+    /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
+    scope: CHALLENGES,
 
     onMutate(args: Args) {
       const previous = client.getQueryData<Challenge[]>(queryKeys.challenges)
@@ -326,6 +342,8 @@ export function usePurgeChallenge() {
 
   return useMutation({
     mutationFn: (id: string) => repo.purgeChallenge(id),
+    /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
+    scope: CHALLENGES,
     onSuccess() {
       void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
@@ -343,6 +361,7 @@ export function useCreateTag() {
 
   return useMutation({
     mutationFn: (name: string) => repo.createTag(name),
+    meta: { ownError: true },
     onSuccess(tag) {
       /* Сразу в кэш: тег, созданный из выбора, должен появиться чипом, не дожидаясь перечитывания. */
       client.setQueryData<Tag[]>(queryKeys.tags, (old) =>
@@ -358,6 +377,8 @@ export function useDeleteTag() {
 
   return useMutation({
     mutationFn: (id: string) => repo.deleteTag(id),
+    /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
+    scope: CHALLENGES,
     onSuccess() {
       void client.invalidateQueries({ queryKey: queryKeys.tags })
       /* Тег снимается со всех челленджей — их тоже надо перечитать. */

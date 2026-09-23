@@ -1,5 +1,5 @@
-import { isDemo, setDemo } from '@/data/mode'
-import { useSaveSettings, useSettings } from '@/data/queries'
+import { setDemo } from '@/data/mode'
+import { useSaveSettings, useSettings, usingDemo } from '@/data/queries'
 import { DEFAULT_SETTINGS } from '@/domain/types'
 import { reloadPage } from '@/lib/reload'
 
@@ -57,9 +57,9 @@ export function SettingsPage() {
           Демо: выдуманные истории вместо твоих данных
           <input
             type="checkbox"
-            checked={isDemo()}
-            onChange={(e) => {
-              setDemo(e.target.checked)
+            checked={usingDemo()}
+            onChange={() => {
+              setDemo(!usingDemo())
               reloadPage()
             }}
             className="size-4 accent-foreground"

@@ -138,9 +138,10 @@ export function ChallengesPage() {
           onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setEditing(null)}
           onSave={(patch) => {
-            updateChallenge.mutate({ id: editing.id, patch })
+            const name = patch.name?.trim() || editing.name
+            /* «сохранён» — когда база приняла; отказ покажет общий тост ошибки */
+            updateChallenge.mutate({ id: editing.id, patch }, { onSuccess: () => toast(`«${name}» сохранён`) })
             setEditing(null)
-            toast(`«${patch.name?.trim() || editing.name}» сохранён`)
           }}
         />
       )}
@@ -154,9 +155,8 @@ export function ChallengesPage() {
           onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setFormOpen(false)}
           onCreate={(draft) => {
-            createChallenge.mutate(draft)
+            createChallenge.mutate(draft, { onSuccess: () => toast(`Челлендж «${draft.name}» заведён`) })
             setFormOpen(false)
-            toast(`Челлендж «${draft.name}» заведён`)
           }}
         />
       )}

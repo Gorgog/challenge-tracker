@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase, supabaseConfigured } from '@/data/supabaseClient'
 
 type AuthState = {
@@ -55,7 +55,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null)
   }
 
-  return <AuthContext value={{ session, loading, signOut }}>{children}</AuthContext>
+  /* Экран — заново для каждого пользователя: очистка кэша не перерисовывает уже показанные данные. */
+  return (
+    <AuthContext value={{ session, loading, signOut }}>
+      <Fragment key={session?.user.id ?? 'гость'}>{children}</Fragment>
+    </AuthContext>
+  )
 }
 
 export function useAuth() {

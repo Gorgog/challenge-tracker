@@ -3,7 +3,8 @@ import { NavLink, Outlet } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { DemoResetButton } from '@/features/dev/DemoResetButton'
-import { isDemo, setDemo } from '@/data/mode'
+import { setDemo } from '@/data/mode'
+import { usingDemo } from '@/data/queries'
 import { reloadPage } from '@/lib/reload'
 import { formatHuman, todayKey, parseDay, DOW, isoDow } from '@/domain/date'
 import { cn } from '@/lib/utils'
@@ -18,7 +19,7 @@ const SECTIONS = [
 export function Layout() {
   const { signOut } = useAuth()
   const today = parseDay(todayKey())
-  const demo = isDemo()
+  const demo = usingDemo()
 
   return (
     <div className="flex min-h-dvh flex-col gap-3 p-3 sm:p-4">
