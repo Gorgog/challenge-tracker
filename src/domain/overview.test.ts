@@ -160,6 +160,16 @@ describe('changes — «Что изменилось»', () => {
     const r = changes(h, 27, 14, [all, young], { push: entries, new: {} }, TODAY)
     expect(r.hasPrev && r.lines).toEqual([{ kind: 'challenge', challenge: all, hits: 5, known: 13, wasHits: 12, wasKnown: 14, good: false }])
   })
+  it('челлендж сравнивается долей выполнения, а не числом пропусков (демо 24.09: «6 из 13, было 3 из 7»)', () => {
+    const h = days(28)
+    /* прошлые 14: челлендж с 7-го дня, выполнено 3 из 7; эти 14: 6 из 13 — доля почти та же */
+    const c = challenge({ startDate: key(7, 28) })
+    const done = [7, 9, 11, 14, 16, 18, 20, 22, 24]
+    const entries: EntryMap = Object.fromEntries(done.map((i) => [key(i, 28), 1]))
+    const r = changes(h, 27, 14, [c], { push: entries }, TODAY)
+    expect(r).toEqual({ hasPrev: true, lines: [] })
+  })
+
   it('прошлый период записан меньше чем наполовину — сравнивать не с чем', () => {
     const h = days(28, (i) => (i < 8 ? { m: null, e: null } : {}))
     expect(changes(h, 27, 14, [], {}, TODAY)).toEqual({ hasPrev: false })
