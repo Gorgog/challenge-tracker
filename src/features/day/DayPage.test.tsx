@@ -18,6 +18,9 @@ const mocked = vi.hoisted(() => ({
   settings: { morningUntil: 15 } as Settings,
   startDay: vi.fn(),
   setEntry: vi.fn(),
+  saveDayLog: vi.fn(),
+  /** Фоновое обновление не прошло: данные есть, `isError` поднят. */
+  stale: false,
 }))
 
 const answer = (name: string, data: unknown) =>
@@ -25,7 +28,7 @@ const answer = (name: string, data: unknown) =>
     ? { data: undefined, isPending: false, isError: true }
     : mocked.pending === name
       ? { data: undefined, isPending: true, isError: false }
-      : { data, isPending: false, isError: false }
+      : { data, isPending: false, isError: mocked.stale }
 
 vi.mock('@/data/queries', () => ({
   useChallenges: () => answer('challenges', mocked.challenges),
@@ -36,7 +39,7 @@ vi.mock('@/data/queries', () => ({
     mocked.startsPending ? { data: undefined, isPending: true } : answer('starts', mocked.starts),
   useSettings: () => answer('settings', mocked.settings),
   useSetEntry: () => ({ mutate: mocked.setEntry }),
-  useSaveDayLog: () => ({ mutate: vi.fn() }),
+  useSaveDayLog: () => ({ mutate: mocked.saveDayLog }),
   useStartDay: () => ({ mutate: mocked.startDay, isPending: false }),
   useReorderChallenges: () => ({ mutate: vi.fn() }),
   useSaveDayGroups: () => ({ mutate: vi.fn() }),
@@ -112,6 +115,8 @@ beforeEach(() => {
   })
   mocked.startDay.mockReset()
   mocked.setEntry.mockReset()
+  mocked.saveDayLog.mockReset()
+  mocked.stale = false
   vi.mocked(toast).mockReset()
   vi.mocked(toast.error).mockReset()
 })
@@ -143,6 +148,55 @@ describe('экран дня — данные с сервера', () => {
     mocked.challenges = [{ ...read, startDate: TODAY }]
     render(<DayPage />)
     expect(screen.queryByText(/без оценки/)).toBeNull()
+  })
+
+  it('ничего нет совсем — долга нет', () => {
+    mocked.challenges = []
+    render(<DayPage />)
+    expect(screen.queryByText(/без оценки/)).toBeNull()
+  })
+
+  it('первый день пользования — по самому раннему началу дня, даже если челлендж моложе', () => {
+    mocked.challenges = [{ ...read, startDate: TODAY }]
+    mocked.starts = [{ day: '2026-09-19', morning: null, startedAt: '2026-09-19T08:00:00.000Z' }]
+    render(<DayPage />)
+    expect(screen.getByText('2 дня без оценки')).toBeInTheDocument()
+  })
+
+  it('первый день пользования — и по самому раннему итогу', () => {
+    mocked.challenges = [{ ...read, startDate: TODAY }]
+    mocked.logs = [{ ...closed, day: '2026-09-17', closedAt: '2026-09-17T20:00:00.000Z' }]
+    render(<DayPage />)
+    expect(screen.getByText('3 дня без оценки')).toBeInTheDocument()
+  })
+
+  it('фоновое обновление не прошло, данные есть — экран работает, а не «не удалось загрузить»', () => {
+    mocked.stale = true
+    render(<DayPage />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(markButton()).toBeInTheDocument()
+  })
+
+  it('«День закрыт» и закрытие окна — только когда база приняла итог; иначе окно с оценками остаётся', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    const user = userEvent.setup()
+    render(<DayPage />)
+    await user.click(screen.getByRole('button', { name: 'Завершить день' }))
+    const dialog = screen.getByRole('dialog')
+    for (const name of [/настроение/i, /самочувствие/i, /продуктивность/i]) {
+      within(dialog).getByRole('slider', { name }).focus()
+      await user.keyboard('{ArrowRight}')
+    }
+    await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
+
+    expect(mocked.saveDayLog).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(toast).not.toHaveBeenCalledWith('День закрыт')
+
+    act(() => mocked.saveDayLog.mock.calls[0]![1].onSuccess())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(toast).toHaveBeenCalledWith('День закрыт')
   })
 })
 
@@ -331,7 +385,8 @@ describe('экран дня — начало дня без ловушек', () =
     )
   })
 
-  it('тост «День начат» — только когда хранилище приняло начало, а ошибка видна', async () => {
+  /* Ошибку начала дня показывает сам хук (meta.errorText, queries.test.tsx): страницу могли уже покинуть. */
+  it('тост «День начат» — только когда хранилище приняло начало', async () => {
     at(16)
     mocked.startDay.mockImplementation((_start: DayStart, options?: { onError?: (e: Error) => void }) =>
       options?.onError?.(new Error('День 2026-09-21 уже начат: утро не правится')),
@@ -341,7 +396,6 @@ describe('экран дня — начало дня без ловушек', () =
     await user.click(pageStart())
 
     expect(toast).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalled()
   })
 })
 

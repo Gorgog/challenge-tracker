@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChallenge, pickColor, suggestCode } from './newChallenge'
+import { buildChallenge, codeFor, pickColor, suggestCode } from './newChallenge'
 import type { Challenge, ChallengeDraft } from './types'
 
 const existing = (over: Partial<Challenge> = {}): Challenge => ({
@@ -42,6 +42,17 @@ describe('код челленджа не бывает пустым — база 
     ['Я', 'Я'],
   ])('«%s» без своего кода → «%s»', (name, code) => {
     expect(buildChallenge(draft({ name, code: '' }), [], '2026-09-23').code).toBe(code)
+  })
+})
+
+describe('codeFor — код из названия, никогда не пустой', () => {
+  it('слова — как suggestCode, без слов — первые три знака', () => {
+    expect(codeFor('Без сигарет навсегда')).toBe('БСН')
+    expect(codeFor('10 000')).toBe('100')
+  })
+
+  it('эмодзи не режутся пополам', () => {
+    expect(codeFor('🏃🏃🏃🏃')).toBe('🏃🏃🏃')
   })
 })
 

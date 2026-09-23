@@ -9,7 +9,7 @@ type Call = { table: string; op: string; payload?: unknown; filters: [string, un
  * Поддельный клиент: таблицы в памяти, фильтр `eq`, страницы `range` и потолок строк за ответ, как у
  * PostgREST (`maxRows`). Правил базы здесь нет — их проверяют `rls.db.test.ts` и `rls-check.sql`.
  */
-function fakeDb(tables: Record<string, Row[]>, maxRows = 1000) {
+function fakeDb(tables: Record<string, Row[]>, maxRows = 1000, errors: Record<string, Row> = {}) {
   const calls: Call[] = []
   const rpc: { fn: string; args: unknown }[] = []
   const from = (table: string) => {
@@ -31,6 +31,7 @@ function fakeDb(tables: Record<string, Row[]>, maxRows = 1000) {
       single: () => ((single = true), b),
       then(res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) {
         calls.push({ table, op, payload, filters })
+        if (errors[table]) return Promise.resolve({ data: null, error: errors[table] }).then(res, rej)
         const rows = (tables[table] ?? []).filter((r) => filters.every(([c, v]) => r[c] === v))
         let data: unknown = null
         if (op === 'select') {
@@ -109,6 +110,13 @@ describe('хранилище Supabase: как оно разговаривает 
     const { client, calls } = fakeDb({ challenges: [challengeRow()] })
     await createSupabaseRepo(client).updateChallenge('c1', { name: 'Читать' })
     expect(calls.some((c) => c.op === 'update')).toBe(false)
+  })
+
+  it('отказ базы — настоящая ошибка с текстом и кодом, а не простой объект', async () => {
+    const { client } = fakeDb({}, 1000, { challenges: { code: '42501', message: 'permission denied for table challenges', details: null, hint: null } })
+    const error = await createSupabaseRepo(client).purgeChallenge('c1').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toMatchObject({ message: 'permission denied for table challenges', code: '42501' })
   })
 
   it('порядок — одним вызовом функции базы со всем списком, а не N запросами', async () => {

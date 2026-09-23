@@ -221,6 +221,15 @@ describe('форма правки челленджа', () => {
     expect(screen.queryByLabelText(/код/i)).not.toBeInTheDocument()
   })
 
+  it('переименование в «100» даёт непустой код — база пустой не примет', async () => {
+    const { user, onSave } = edit()
+    const input = screen.getByDisplayValue(existing.name)
+    await user.clear(input)
+    await user.type(input, '100')
+    await user.click(save())
+    expect(saved(onSave).code).toBe('100')
+  })
+
   it('если название не меняли — код остаётся прежним, а не пересчитывается', async () => {
     const { user, onSave } = edit()
     await user.click(save())
