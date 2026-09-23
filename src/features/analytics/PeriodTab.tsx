@@ -20,7 +20,6 @@ export function PeriodTab({
   report,
   days,
   windowStart,
-  norm,
   challenge,
   outcomeOf,
   onOpenDay,
@@ -31,7 +30,6 @@ export function PeriodTab({
   days: TimelineDay[]
   /** Индекс первого дня окна графика в истории: строки до него открыть нельзя. */
   windowStart: number
-  norm: number | null
   challenge: Challenge
   outcomeOf: (day: string) => Outcome
   onOpenDay: (index: number) => void
@@ -84,8 +82,8 @@ export function PeriodTab({
                   <Row key={d.day} disabled={i < windowStart} onClick={() => onOpenDay(i)}>
                     <span className="font-mono text-[12px] text-muted-foreground">{dowDate(d.day)}</span>
                     <span className="inline-flex gap-1.5" title="утро и вечер">
-                      <Dot value={stateOf(d.morning)} norm={norm} />
-                      <Dot value={stateOf(d.evening)} norm={norm} />
+                      <Dot value={stateOf(d.morning)} norm={report.norms.morning} label="утро" />
+                      <Dot value={stateOf(d.evening)} norm={report.norms.evening} label="вечер" />
                     </span>
                     <span className="flex flex-wrap gap-1">
                       {d.tags.map((t) => (
@@ -106,7 +104,7 @@ export function PeriodTab({
                     {shortDate(w.from)}–{shortDate(w.to)}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <Dot value={w.vsNorm} norm={0} />
+                    <Dot value={w.vsNorm} norm={0} label="неделя" />
                     <span className="font-mono text-[11.5px]">{w.vsNorm === null ? '' : signed1(w.vsNorm)}</span>
                   </span>
                   <span className="flex flex-wrap gap-1">
@@ -124,7 +122,7 @@ export function PeriodTab({
         </div>
         <p className="text-[11.5px] text-muted-foreground">
           {week
-            ? 'Точки — утро и вечер: зелёная выше твоей нормы, красная ниже. Нажми на день — откроется его разбор.'
+            ? 'Точки — утро и вечер: зелёная — не ниже твоего обычного утра или вечера, красная — ниже. Нажми на день — откроется его разбор.'
             : 'Точка и число — насколько утра и вечера недели выше или ниже твоих обычных: утро к обычному утру, вечер к обычному вечеру. Нажми на неделю — откроется её разбор.'}
         </p>
       </Section>

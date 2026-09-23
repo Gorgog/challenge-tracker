@@ -50,9 +50,19 @@ export function Chip({ text, tone }: { text: string; tone: 'up' | 'down' | 'flat
   return <span className={`rounded-md px-2 py-0.5 font-mono text-[12px] ${cls}`}>{text}</span>
 }
 
-/** Точка замера: выше нормы — зелёная, ниже — красная, нет замера — пунктирный круг. */
-export function Dot({ value, norm }: { value: number | null; norm: number | null }) {
-  if (value === null) return <span className="inline-block size-2.5 rounded-full border-[1.5px] border-dashed border-axis" />
+/** Точка замера: не ниже обычного — зелёная, ниже — красная, нет замера — пунктирный круг. */
+export function Dot({ value, norm, label }: { value: number | null; norm: number | null; label: string }) {
+  if (value === null) {
+    return (
+      <span role="img" aria-label={`${label}: нет записи`} className="inline-block size-2.5 rounded-full border-[1.5px] border-dashed border-axis" />
+    )
+  }
   const hi = norm !== null && value >= norm
-  return <span className={`inline-block size-2.5 rounded-full ${hi ? 'bg-good' : 'bg-destructive'}`} />
+  return (
+    <span
+      role="img"
+      aria-label={`${label}: ${hi ? 'не ниже обычного' : 'ниже обычного'}`}
+      className={`inline-block size-2.5 rounded-full ${hi ? 'bg-good' : 'bg-destructive'}`}
+    />
+  )
 }

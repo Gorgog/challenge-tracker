@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useChallenges, useDayLogs, useDayStarts, useEntries } from '@/data/queries'
+import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
+import { morningOpen } from '@/domain/dayStart'
 import { dayOutcome } from '@/domain/streaks'
 import { dayReport, norm as normOf, periodReport, timeline } from '@/domain/timeline'
-import type { EntryMap } from '@/domain/types'
+import { DEFAULT_SETTINGS, type EntryMap } from '@/domain/types'
+import { useClock } from '@/features/day/useClock'
 import { DayChart, type ChartMode } from './DayChart'
 import { SERIES, type Series } from './series'
 import { DayTab } from './DayTab'
@@ -39,7 +41,11 @@ export function AnalyticsPage() {
   const entries = useEntries()
   const logs = useDayLogs()
   const starts = useDayStarts()
+  const settings = useSettings()
   const todayK = todayKey()
+  /* сегодняшнее утро не «пропущено», пока его можно записать; часы — чтобы час утра прошёл и на открытой странице */
+  const { now } = useClock()
+  const open = morningOpen(now, (settings.data ?? DEFAULT_SETTINGS).morningUntil)
 
   const startsData = starts.data
   const live = useMemo(
@@ -80,13 +86,14 @@ export function AnalyticsPage() {
   const report = useMemo(() => {
     if (!history || !challenge || cursor < 0) return null
     const today = parseDay(todayK)
-    if (tab === 'day') return { kind: 'day' as const, value: dayReport(history, index, window, challenge, challengeEntries, today) }
+    if (tab === 'day') return { kind: 'day' as const, value: dayReport(history, index, window, challenge, challengeEntries, today, open) }
     const len = tab === 'week' ? 7 : 30
-    return { kind: 'period' as const, value: periodReport(history, index, len, window, challenge, challengeEntries, today) }
-  }, [history, challenge, cursor, tab, index, window, challengeEntries, todayK])
+    return { kind: 'period' as const, value: periodReport(history, index, len, window, challenge, challengeEntries, today, open) }
+  }, [history, challenge, cursor, tab, index, window, challengeEntries, todayK, open])
 
-  /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
-  const failed = challenges.isError || entries.isError || logs.isError || starts.isError
+  /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски. Не обновилось в фоне —
+     прежние данные верны, график остаётся */
+  const failed = [challenges, entries, logs, starts].some((q) => q.isError && q.data === undefined)
   const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending
 
   const toggle = (s: Series) =>
@@ -220,7 +227,6 @@ export function AnalyticsPage() {
                   report={report.value}
                   days={history}
                   windowStart={windowStart}
-                  norm={norm}
                   challenge={challenge}
                   outcomeOf={outcomeOf}
                   onOpenDay={(i) => {
