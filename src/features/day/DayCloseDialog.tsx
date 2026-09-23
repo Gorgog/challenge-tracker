@@ -31,8 +31,10 @@ export type DayCloseDialogProps = {
   /** Сколько задач останется невыполненными, если закрыть день сейчас. */
   pendingCount?: number
   onSave: (log: DayLog) => void
-  /** Передаётся только там, где отказаться можно: при правке уже закрытого дня. */
+  /** Передаётся только там, где отказаться можно: при правке уже закрытого дня или после отказа базы. */
   onCancel?: () => void
+  /** База ещё отвечает: кнопка выключена, выйти нельзя — иначе оценки потеряются на полпути. */
+  saving?: boolean
 }
 
 type Draft = Record<ScoreField, number | null>
@@ -49,6 +51,7 @@ export function DayCloseDialog({
   pendingCount = 0,
   onSave,
   onCancel,
+  saving = false,
 }: DayCloseDialogProps) {
   /* Черновик начинается заново для каждого дня: вызывающий передаёт key={day}. */
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
@@ -58,13 +61,13 @@ export function DayCloseDialog({
   const date = parseDay(day)
   const ready = SCALES.every((s) => scores[s.field] !== null)
   const editing = Boolean(existing)
-  const canCancel = Boolean(onCancel)
+  const canCancel = Boolean(onCancel) && !saving
 
   const toggleTag = (tag: string) =>
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
 
   const save = () => {
-    if (!ready) return
+    if (!ready || saving) return
     onSave({
       day,
       mood: scores.mood!,
@@ -173,8 +176,8 @@ export function DayCloseDialog({
                 Отмена
               </Button>
             )}
-            <Button size="lg" disabled={!ready} onClick={save}>
-              {editing ? 'Сохранить' : 'Закрыть день'}
+            <Button size="lg" disabled={!ready || saving} onClick={save}>
+              {saving ? 'Сохраняю…' : editing ? 'Сохранить' : 'Закрыть день'}
             </Button>
           </span>
         </DialogFooter>

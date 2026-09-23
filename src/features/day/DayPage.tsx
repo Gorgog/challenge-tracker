@@ -93,7 +93,14 @@ export function DayPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const [dialogDay, setDialogDay] = useState<string | null>(null)
+  /*
+   * Окно итога помнит, каким открылось: прошлый итог и можно ли отказаться берутся в момент открытия, а не из
+   * кэша — оптимистичная запись кладёт итог в кэш сразу, и окно посреди запроса менялось бы на «правку».
+   * `failed` — база отказала: оценки остаются в окне, но выйти уже можно.
+   */
+  const [dialog, setDialog] = useState<{ day: string; existing: DayLog | null; failed: boolean } | null>(null)
+  const setDialogDay = (day: string) =>
+    setDialog({ day, existing: logsQuery.data?.find((l) => l.day === day) ?? null, failed: false })
   const [startOpen, setStartOpen] = useState(false)
   /** Когда день начат на этой странице — для паузы у «Завершить день». */
   const [startedMs, setStartedMs] = useState(0)
@@ -256,7 +263,7 @@ export function DayPage() {
   /* Цифра отмечает задачу по её номеру в списке — как в прототипе. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (locked || dialogDay || startOpen || e.ctrlKey || e.metaKey || e.altKey) return
+      if (locked || dialog || startOpen || e.ctrlKey || e.metaKey || e.altKey) return
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       if (!/^[1-9]$/.test(e.key)) return
@@ -484,25 +491,25 @@ export function DayPage() {
         />
       )}
 
-      {dialogDay && (
+      {dialog && (
         <DayCloseDialog
-          key={dialogDay}
+          key={dialog.day}
           open
-          day={dialogDay}
-          existing={logs.find((l) => l.day === dialogDay) ?? null}
-          pendingCount={dialogDay === todayK ? pendingCount : 0}
+          day={dialog.day}
+          existing={dialog.existing}
+          pendingCount={dialog.day === todayK ? pendingCount : 0}
+          saving={saveDayLog.isPending}
           onSave={(log) => {
             /* окно закрывается, когда база приняла итог: при отказе оценки, заметка и теги остаются в окне */
             saveDayLog.mutate(log, {
               onSuccess: () => {
-                setDialogDay(null)
+                setDialog(null)
                 toast(log.day === todayK ? 'День закрыт' : `День ${formatHuman(parseDay(log.day))} оценён`)
               },
+              onError: () => setDialog((d) => d && { ...d, failed: true }),
             })
           }}
-          onCancel={
-            logs.some((l) => l.day === dialogDay) ? () => setDialogDay(null) : undefined
-          }
+          onCancel={dialog.existing || dialog.failed ? () => setDialog(null) : undefined}
         />
       )}
     </div>

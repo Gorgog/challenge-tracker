@@ -63,6 +63,17 @@ export function ChallengesPage() {
     })
   }
 
+  /* Не загрузилось — не «челленджей пока нет»: новый челлендж по пустому списку взял бы занятый цвет. */
+  if (challenges.isError && challenges.data === undefined) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-6">
+        <div role="alert" className="rounded-xl border border-destructive/40 p-6 text-center text-sm">
+          Не удалось загрузить челленджи. Обнови страницу.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -114,7 +125,7 @@ export function ChallengesPage() {
         onRestore={(id) => restoreChallenge.mutate({ id, today: todayKey() })}
         onPurge={(id) => {
           const name = trash.find((c) => c.id === id)?.name
-          purgeChallenge.mutate(id, { onSuccess: () => toast(`«${name}» удалён навсегда`) })
+          purgeChallenge.mutateAsync(id).then(() => toast(`«${name}» удалён навсегда`), () => {})
         }}
       />
 
@@ -139,7 +150,10 @@ export function ChallengesPage() {
           onSave={(patch) => {
             const name = patch.name?.trim() || editing.name
             /* «сохранён» — когда база приняла; отказ покажет общий тост ошибки */
-            updateChallenge.mutate({ id: editing.id, patch }, { onSuccess: () => toast(`«${name}» сохранён`) })
+            /* тост — у каждого вызова: колбэки mutate срабатывают только у последнего */
+            updateChallenge
+              .mutateAsync({ id: editing.id, patch })
+              .then(() => toast(`«${name}» сохранён`), () => {})
             setEditing(null)
           }}
         />
@@ -154,7 +168,7 @@ export function ChallengesPage() {
           onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setFormOpen(false)}
           onCreate={(draft) => {
-            createChallenge.mutate(draft, { onSuccess: () => toast(`Челлендж «${draft.name}» заведён`) })
+            createChallenge.mutateAsync(draft).then(() => toast(`Челлендж «${draft.name}» заведён`), () => {})
             setFormOpen(false)
           }}
         />

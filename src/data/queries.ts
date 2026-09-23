@@ -23,11 +23,23 @@ export const usingDemo = () => demo
 const CHALLENGES = { id: 'challenges' }
 
 /**
- * Эта запись — последняя в очереди челленджей? Перечитывать список раньше нельзя: ответ придёт до
- * следующей записи и затрёт её оптимистичную правку на экране. В `onSettled` запись ещё считается.
+ * Запись очереди челленджей закончилась: перечитать список, но только когда очередь опустела — ответ,
+ * пришедший раньше следующей записи, затёр бы её оптимистичную правку. Пропущенное перечитывание —
+ * долг, его платит последняя запись. Удачная перестановка без долга список не перечитывает: это рвёт
+ * анимацию карточек, а её порядок и так совпадает с базой. В `onSettled` запись ещё считается идущей.
  */
-const lastInQueue = (client: QueryClient) =>
-  client.isMutating({ predicate: (m) => m.options.scope?.id === CHALLENGES.id }) <= 1
+const owed = new WeakMap<QueryClient, boolean>()
+function settleQueue(client: QueryClient, refetch: boolean) {
+  const last = client.isMutating({ predicate: (m) => m.options.scope?.id === CHALLENGES.id }) <= 1
+  if (!last) {
+    owed.set(client, true)
+    return
+  }
+  if (refetch || owed.get(client)) {
+    owed.delete(client)
+    void client.invalidateQueries({ queryKey: queryKeys.challenges })
+  }
+}
 
 export const queryKeys = {
   challenges: ['challenges'] as const,
@@ -146,10 +158,13 @@ export function useReorderChallenges() {
     },
 
     /*
-     * Инвалидации нет намеренно: перечитывание сразу после броска перерисовывало
-     * список и рвало анимацию возврата карточки. Оптимистичный порядок совпадает
-     * с тем, что вернёт хранилище, а ошибка откатывается выше.
+     * После удачной перестановки перечитывания нет намеренно: оно перерисовывало список и рвало
+     * анимацию возврата карточки, а оптимистичный порядок совпадает с базой. После ошибки или
+     * с долгом очереди — перечитать: откат мог вернуть снимок с чужой отменённой правкой.
      */
+    onSettled(_data, error) {
+      settleQueue(client, error !== null)
+    },
   })
 }
 
@@ -182,8 +197,10 @@ export function useCreateChallenge() {
     /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
     scope: CHALLENGES,
     onSuccess() {
-      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
+    },
+    onSettled() {
+      settleQueue(client, true)
     },
   })
 }
@@ -286,7 +303,7 @@ function useChallengeMutation<Args>(
     },
 
     onSettled() {
-      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
+      settleQueue(client, true)
     },
   })
 }
@@ -351,8 +368,10 @@ export function usePurgeChallenge() {
     /* записи челленджей — по очереди: иначе перестановка и правка перемешиваются в базе */
     scope: CHALLENGES,
     onSuccess() {
-      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
       void client.invalidateQueries({ queryKey: queryKeys.entries })
+    },
+    onSettled() {
+      settleQueue(client, true)
     },
   })
 }
@@ -387,8 +406,10 @@ export function useDeleteTag() {
     scope: CHALLENGES,
     onSuccess() {
       void client.invalidateQueries({ queryKey: queryKeys.tags })
-      /* Тег снимается со всех челленджей — их тоже надо перечитать. */
-      if (lastInQueue(client)) void client.invalidateQueries({ queryKey: queryKeys.challenges })
+    },
+    /* Тег снимается со всех челленджей — их тоже надо перечитать. */
+    onSettled() {
+      settleQueue(client, true)
     },
   })
 }

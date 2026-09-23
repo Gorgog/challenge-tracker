@@ -64,7 +64,7 @@ describe('экран челленджей — тост по факту', () => {
     render(<ChallengesPage />)
     await user.click(screen.getByRole('button', { name: /Удалённые/ }))
     for (let i = 0; i < 2; i++) {
-      await user.click(screen.getAllByRole('button', { name: 'Удалить навсегда' })[0]!)
+      await user.click(screen.getAllByRole('button', { name: 'Удалить навсегда' })[i]!)
       await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить навсегда' }))
     }
     expect(mocked.purge).toHaveBeenCalledTimes(2)
