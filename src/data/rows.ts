@@ -86,6 +86,15 @@ export function challengeToRow(c: Omit<Challenge, 'id'>): Omit<ChallengeRow, 'id
   }
 }
 
+/** Поля строки, которые отличаются, — чтобы правка не затирала то, что поменял другой запрос. */
+export function changedFields<T extends object>(before: T, after: T): Partial<T> {
+  const out: Partial<T> = {}
+  for (const key of Object.keys(after) as (keyof T)[]) {
+    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) out[key] = after[key]
+  }
+  return out
+}
+
 /** Отметки по челленджам. У челленджа без отметок — пустая карта, как у демо. */
 export function entriesFromRows(challengeIds: string[], rows: EntryRow[]): Record<string, EntryMap> {
   const out: Record<string, EntryMap> = Object.fromEntries(challengeIds.map((id) => [id, {}]))

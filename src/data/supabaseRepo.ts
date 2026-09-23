@@ -5,6 +5,7 @@ import { DEFAULT_DAY_GROUPS, DEFAULT_SETTINGS, type DayGroup } from '@/domain/ty
 import { orderAfter } from './order'
 import type { Repo } from './repo'
 import {
+  changedFields,
   challengeFromRow,
   challengeToRow,
   dayLogFromRow,
@@ -22,7 +23,10 @@ const CHALLENGE =
   'id, name, code, kind, measure, goal, unit, color, tag_ids, start_date, length_days, pauses, rules_locked, deleted_at, sort_order'
 const DAY_LOG = 'day, mood, wellbeing, productivity, tags, note, closed_at'
 const DAY_START = 'day, morning_sleep, morning_wellbeing, morning_mood, started_at'
-/** PostgREST отдаёт не больше 1000 строк за раз — длинные списки читаем страницами. */
+/**
+ * PostgREST отдаёт ограниченное число строк за раз (по умолчанию 1000, настраивается в проекте) — длинные
+ * списки читаем страницами до пустой, не полагаясь на размер ответа.
+ */
 const PAGE = 1000
 
 type Result<T> = { data: T | null; error: { code?: string; message: string } | null }
@@ -48,13 +52,13 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
     return id
   }
 
-  /** Все строки запроса — страницами по `PAGE`; порядок задаёт `build`, он нужен для страниц. */
+  /** Все строки запроса — страницами до пустой; порядок задаёт `build`, он нужен для страниц. */
   async function all<T>(build: (from: number, to: number) => PromiseLike<Result<T[]>>): Promise<T[]> {
     const out: T[] = []
-    for (let from = 0; ; from += PAGE) {
-      const rows = ok(await build(from, from + PAGE - 1)) ?? []
+    for (;;) {
+      const rows = ok(await build(out.length, out.length + PAGE - 1)) ?? []
+      if (!rows.length) return out
       out.push(...rows)
-      if (rows.length < PAGE) return out
     }
   }
 
@@ -112,8 +116,11 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
     async updateChallenge(id, patch) {
       const row = await challengeRow(id)
       if (!row) return
-      const { id: _, ...next } = applyPatch(challengeFromRow(row), patch)
-      await saveChallenge(id, challengeToRow(next))
+      const before = challengeFromRow(row)
+      const { id: _, ...next } = applyPatch(before, patch)
+      /* только изменённое: порядок, паузы и удаление могли поменяться другим запросом */
+      const diff = changedFields(challengeToRow(before), challengeToRow(next))
+      if (Object.keys(diff).length) await saveChallenge(id, diff)
     },
 
     async setPaused(id, paused, today) {
@@ -124,7 +131,10 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
       const day = parseDay(today)
       let next
       if (paused) {
-        const entries = ok(await db.from('entries').select('challenge_id, day, value').eq('challenge_id', id)) as EntryRow[]
+        /* паузе нужна только сегодняшняя отметка — прицельно, а не весь список (он длиннее ответа) */
+        const entries = ok(
+          await db.from('entries').select('challenge_id, day, value').eq('challenge_id', id).eq('day', today),
+        ) as EntryRow[]
         next = pause(c, entriesFromRows([id], entries)[id]!, day, closed)
       } else {
         next = resume(c, day, closed)
@@ -210,8 +220,8 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
         rows.map((r) => ({ id: r.id, sortOrder: r.sort_order })),
         orderedIds,
       )
-      const moved = rows.filter((r) => r.sort_order !== order.indexOf(r.id))
-      await Promise.all(moved.map((r) => saveChallenge(r.id, { sort_order: order.indexOf(r.id) })))
+      /* одним запросом: весь порядок меняется целиком или никак (миграция reorder_challenges) */
+      ok(await db.rpc('reorder_challenges', { ids: order }))
     },
 
     async getDayGroups() {

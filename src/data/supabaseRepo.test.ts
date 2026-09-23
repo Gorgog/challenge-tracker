@@ -61,7 +61,7 @@ const challengeRow = (over: Row = {}): Row => ({
   unit: null,
   color: 'var(--chart-1)',
   tag_ids: [],
-  start_date: '2026-01-01',
+  start_date: '2019-01-01',
   length_days: null,
   pauses: [],
   rules_locked: false,
