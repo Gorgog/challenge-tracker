@@ -1,0 +1,95 @@
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { TimelineDay } from '@/domain/timeline'
+import type { Challenge, Outcome } from '@/domain/types'
+import { dayName } from './words'
+
+const outcomeText = (c: Challenge, o: Outcome) =>
+  o === 'pending' ? 'день ещё идёт' : c.kind === 'quit' ? (o === 'hit' ? 'без срыва' : 'срыв') : o === 'hit' ? 'выполнен' : 'пропущен'
+
+/** Один день целиком: утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
+export function DaySheet({
+  day,
+  isToday,
+  challenges,
+  outcomeOf,
+  onClose,
+}: {
+  day: TimelineDay | null
+  isToday: boolean
+  challenges: Challenge[]
+  outcomeOf: (c: Challenge, day: string) => Outcome
+  onClose: () => void
+}) {
+  const m = day?.morning ?? null
+  const e = day?.evening ?? null
+  const v = (x: number | undefined) => (x === undefined ? '—' : String(x))
+  const rows: [string, string, string][] = [
+    ['сон', m ? v(m.sleep) : '—', ''],
+    ['самочувствие', m ? v(m.wellbeing) : '—', e ? v(e.wellbeing) : '—'],
+    ['настроение', m ? v(m.mood) : '—', e ? v(e.mood) : '—'],
+    ['продуктивность', '', e ? v(e.productivity) : '—'],
+  ]
+  const marks = day ? challenges.map((c) => [c, outcomeOf(c, day.day)] as const).filter(([, o]) => o !== 'outside') : []
+
+  return (
+    <Dialog open={day !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="gap-4 sm:max-w-sm">
+        {day && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold tracking-tight">{dayName(day.day)}</DialogTitle>
+              <DialogDescription>Утро, вечер и отметки этого дня.</DialogDescription>
+            </DialogHeader>
+            <table className="w-full text-[14px]">
+              <thead>
+                <tr className="text-[11px] text-muted-foreground">
+                  <th className="text-left font-normal" />
+                  <th className="text-right font-normal">утро</th>
+                  <th className="text-right font-normal">вечер</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(([label, a, b]) => (
+                  <tr key={label}>
+                    <td className="py-0.5">{label}</td>
+                    <td className="text-right font-mono">{a}</td>
+                    <td className="text-right font-mono">{b}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(!m || !e) && (
+              <p className="text-[13px] text-muted-foreground">
+                {!m && (isToday && !day.started ? 'День ещё не начат. ' : 'Утро пропущено. ')}
+                {!e && (isToday ? 'Вечер ещё не закрыт' : 'Вечер не закрыт')}
+              </p>
+            )}
+            {e && (
+              <div className="flex flex-wrap gap-1.5">
+                {day.tags.length ? (
+                  day.tags.map((t) => (
+                    <span key={t} className="rounded-full bg-secondary px-2.5 py-0.5 text-[12.5px] text-secondary-foreground">
+                      {t}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[13px] text-muted-foreground">Тегов не было</span>
+                )}
+              </div>
+            )}
+            {marks.length > 0 && (
+              <ul className="flex flex-col gap-1 text-[13.5px]">
+                {marks.map(([c, o]) => (
+                  <li key={c.id} className="flex justify-between gap-3">
+                    <span>{c.name}</span>
+                    <span className={o === 'hit' ? 'text-better' : o === 'miss' ? 'text-worse' : 'text-muted-foreground'}>{outcomeText(c, o)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}

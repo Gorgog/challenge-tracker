@@ -48,6 +48,8 @@
 
     /* собственные роли проекта */
     --color-good: var(--good);
+    --color-better: var(--better);
+    --color-worse: var(--worse);
     --color-warn: var(--warn);
     --color-grid: var(--grid);
     --color-axis: var(--axis);
@@ -93,6 +95,8 @@
     --chart-6: #eda100;
 
     --good: #006300;
+    --better: #1f6fd0;
+    --worse: #d4601f;
     --warn: #fab219;
     --grid: #e4e8ed;
     --axis: #c3c9d1;
@@ -136,6 +140,8 @@
     --chart-6: #c98500;
 
     --good: #0ca30c;
+    --better: #4a93ea;
+    --worse: #e8813f;
     --warn: #fab219;
     --grid: #232931;
     --axis: #39424b;

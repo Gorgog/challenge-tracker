@@ -1,27 +1,11 @@
 import { DOW, formatHuman, isoDow, parseDay } from '@/domain/date'
-import {
-  BAD_SLEEP,
-  GOOD_SLEEP,
-  HARMFUL_TAGS,
-  type Change,
-  type DayReport,
-  type Fact,
-  type PeriodReport,
-} from '@/domain/timeline'
-import type { Challenge } from '@/domain/types'
+import type { Goal, Verdict } from '@/domain/overview'
 import { plural } from '@/lib/plural'
 
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 /** Число с одним знаком и русской запятой: «5,5». */
 export const num1 = (v: number) => v.toLocaleString('ru', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-
-/** Сдвиг со знаком и настоящим минусом: «+1,5», «−0,8», «0,0». */
-export function signed1(v: number): string {
-  const text = num1(Math.abs(v))
-  if (text === '0,0') return text
-  return `${v > 0 ? '+' : '−'}${text}`
-}
 
 /** «вс, 6 сентября». */
 export const dayName = (key: string) => {
@@ -35,114 +19,47 @@ export const shortDate = (key: string) => {
   return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`
 }
 
-/** «вс 6» — для строк недели. */
-export const dowDate = (key: string) => {
-  const d = parseDay(key)
-  return `${DOW[isoDow(d)]} ${d.getDate()}`
+/* ---------- обзор: цели и фраза сверху ---------- */
+
+export const GOAL_CHIP: Record<Goal, string> = {
+  all: 'Всё',
+  sleep: 'Сон',
+  wellbeing: 'Самочувствие',
+  mood: 'Настроение',
+  productivity: 'Продуктивность',
 }
 
-/** Стрелка строки: к лучшему, к худшему или просто было. */
-export type Tone = 'good' | 'bad' | 'neutral'
-export type Line = { text: string; tone: Tone }
-
-const tagTone = (tag: string): Tone => (HARMFUL_TAGS.includes(tag) ? 'bad' : 'neutral')
-
-export const DAY_VERDICT: Record<DayReport['verdict'], string> = {
-  worse: 'День хуже обычного',
-  better: 'День лучше обычного',
-  usual: 'Обычный день',
-  empty: 'Оценок за этот день нет',
+/** Подпись графика: что за линия. */
+export const GOAL_CHART: Record<Goal, string> = {
+  all: 'Состояние дня · среднее самочувствия и настроения утром и вечером',
+  sleep: 'Сон · оценка утром',
+  wellbeing: 'Самочувствие · среднее утра и вечера',
+  mood: 'Настроение · среднее утра и вечера',
+  productivity: 'Продуктивность · оценка вечером',
 }
 
-/** Где сдвинулся день — ночью или днём. */
-export function shiftText(shift: DayReport['shift']): string | null {
-  if (!shift) return null
-  switch (shift.kind) {
-    case 'noMorning':
-      return 'Утро пропущено — не видно, что сделала ночь, а что сам день.'
-    case 'nightDown':
-      return `Просела ночь: утро ниже вчерашнего вечера на ${num1(shift.by)}.`
-    case 'dayDown':
-      return `Просел сам день: к вечеру ниже утра на ${num1(shift.by)}.`
-    case 'dayUp':
-      return `День вытянул: к вечеру выше утра на ${num1(shift.by)}.`
-    case 'nightUp':
-      return `Ночь помогла: утро выше вчерашнего вечера на ${num1(shift.by)}.`
-  }
-}
+const TONE: Record<'worse' | 'better' | 'usual', string> = { worse: 'хуже обычного', better: 'лучше обычного', usual: 'как обычно' }
+const HALF: Record<'worse' | 'better' | 'usual', string> = { worse: 'хуже', better: 'лучше', usual: 'примерно как' }
+const days = (n: number) => `${n} ${plural(n, 'день', 'дня', 'дней')}`
 
-/** Факт дня — одной фразой со стрелкой. */
-export function factLine(f: Fact, c: Challenge): Line {
-  switch (f.kind) {
-    case 'tagBefore':
-      return { text: `Накануне вечером «${f.tag}»`, tone: tagTone(f.tag) }
-    case 'sleep':
-      if (f.value <= BAD_SLEEP) return { text: `Плохо спал: сон ${f.value}`, tone: 'bad' }
-      if (f.value >= GOOD_SLEEP) return { text: `Хорошо спал: сон ${f.value}`, tone: 'good' }
-      return { text: `Сон обычный: ${f.value}`, tone: 'neutral' }
-    case 'outcome': {
-      if (f.outcome === 'pending') return { text: `${c.code}: день ещё идёт`, tone: 'neutral' }
-      const hit = f.outcome === 'hit'
-      if (c.kind === 'quit') return { text: `${c.code}: ${hit ? 'без срыва' : 'срыв'}`, tone: hit ? 'good' : 'bad' }
-      return { text: `${c.code} ${hit ? 'выполнен' : 'пропущен'}`, tone: hit ? 'good' : 'bad' }
-    }
-    case 'tag':
-      return { text: `В этот день «${f.tag}»`, tone: tagTone(f.tag) }
-    case 'eveningMissing':
-      return { text: 'Вечер не закрыт', tone: 'neutral' }
+/** Фраза сверху и строка под ней — числа те же, что проверило правило `verdict`. */
+export function headline(v: Verdict, goal: Goal, len: number): { title: string; sub: string } {
+  const period = len === 14 ? '2 недели' : `${len} дней`
+  if (v.kind === 'none') {
+    return { title: v.need > 0 ? `Ещё ${days(v.need)} с записями — и покажем твоё обычное` : 'Пока мало записей', sub: '' }
   }
-}
-
-/** Что поменялось в делах против прошлого периода. */
-export function changeLine(ch: Change, c: Challenge, len: number): Line {
-  const { event } = ch
-  const fewer = ch.by < 0
-  const tone: Tone = ch.good === true ? 'good' : ch.good === false ? 'bad' : 'neutral'
-  const per = len >= 30 ? 'за 30 дней' : 'за неделю'
-  switch (event.kind) {
-    case 'tag':
-      return { text: `${fewer ? 'Реже' : 'Чаще'} «${event.tag}»: ${event.now} ${plural(event.now, 'вечер', 'вечера', 'вечеров')} ${per}`, tone }
-    case 'badSleep':
-      return { text: `${fewer ? 'Лучше спал' : 'Хуже спал'}: плохих ночей ${event.now}`, tone }
-    case 'misses':
-      return { text: `${c.code}: ${c.kind === 'do' ? 'пропусков' : 'срывов'} ${fewer ? 'меньше' : 'больше'} — ${event.now}`, tone }
-    case 'skippedMornings':
-      return { text: `Пропущено утр: ${event.now}`, tone }
+  if (v.kind === 'halves') {
+    const [second, first] = len === 14 ? ['вторая неделя', 'первой'] : [`вторые ${len / 2} дней`, 'первых']
+    const lead = goal === 'all' ? second[0]!.toUpperCase() + second.slice(1) : `${GOAL_CHIP[goal]}: ${second}`
+    const firstName = len === 14 ? 'первая неделя' : `первые ${len / 2} дней`
+    return { title: `${lead} ${HALF[v.tone]} ${first}`, sub: `в среднем ${num1(v.second)}, ${firstName} — ${num1(v.first)}` }
   }
-}
-
-/** Итог недели или 30 дней одной строкой. */
-export function periodVerdict(r: PeriodReport): string {
-  const week = r.len < 30
-  if (r.verdict === 'noPrev') {
-    return week
-      ? 'Прошлая неделя почти не записана — сравнивать не с чем'
-      : 'Предыдущие 30 дней почти не записаны — сравнивать не с чем'
-  }
-  const what = week ? 'Неделя' : '30 дней'
-  const than = week ? 'прошлой' : 'предыдущих 30'
-  switch (r.verdict) {
-    case 'worse':
-      return `${what} хуже ${than}`
-    case 'better':
-      return `${what} лучше ${than}`
-    case 'mixed':
-      return week ? 'Неделя неоднозначная' : '30 дней — неоднозначно'
-    case 'same':
-      return week ? 'Неделя примерно как прошлая' : '30 дней примерно как предыдущие'
-  }
-}
-
-/** Названия событий в таблице «все цифры». */
-export function eventLabel(e: PeriodReport['events'][number], c: Challenge): string {
-  switch (e.kind) {
-    case 'tag':
-      return `«${e.tag}»`
-    case 'badSleep':
-      return 'плохой сон (0–4)'
-    case 'misses':
-      return c.kind === 'do' ? `${c.code}: пропуски` : `${c.code}: срывы`
-    case 'skippedMornings':
-      return 'утро пропущено'
-  }
+  const title = `${goal === 'all' ? `Последние ${period}` : `${GOAL_CHIP[goal]} за последние ${period}`} — ${TONE[v.tone]}`
+  const sub =
+    v.tone === 'worse'
+      ? `${days(v.below)} из ${v.recorded} с записями — ниже твоего обычного`
+      : v.tone === 'better'
+        ? `${days(v.above)} из ${v.recorded} с записями — выше твоего обычного`
+        : `ниже обычного — ${v.below}, выше — ${v.above} из ${days(v.recorded)} с записями`
+  return { title, sub }
 }
