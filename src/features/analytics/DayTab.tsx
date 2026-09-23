@@ -26,13 +26,13 @@ export function DayTab({
   canNext: boolean
   onStep: (by: number) => void
 }) {
-  const { norm } = report
-  const chip = (label: string, v: number | null) => {
+  const { norms, vsNorm } = report
+  /* утро — к обычному утру, вечер — к обычному вечеру: утро обычно ниже, общая норма его бы занижала */
+  const chip = (label: string, v: number | null, d: number | null, than: string) => {
     if (v === null) return <Chip key={label} text={`${label} —`} tone="flat" />
-    if (norm === null) return <Chip key={label} text={`${label} ${num1(v)}`} tone="flat" />
-    const d = Number((v - norm).toFixed(1))
+    if (d === null) return <Chip key={label} text={`${label} ${num1(v)}`} tone="flat" />
     return (
-      <Chip key={label} text={`${label} ${num1(v)} · ${signed1(d)} к норме`} tone={d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat'} />
+      <Chip key={label} text={`${label} ${num1(v)} · ${signed1(d)} ${than}`} tone={d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat'} />
     )
   }
   const shift = shiftText(report.shift)
@@ -56,8 +56,8 @@ export function DayTab({
       <div className="flex flex-col gap-2">
         <p className="text-[17px] font-semibold text-balance">{DAY_VERDICT[report.verdict]}</p>
         <div className="flex flex-wrap gap-1.5">
-          {chip('утро', report.morning)}
-          {chip('вечер', report.evening)}
+          {chip('утро', report.morning, vsNorm.morning, 'к обычному утру')}
+          {chip('вечер', report.evening, vsNorm.evening, 'к обычному вечеру')}
         </div>
         {shift && <p className="text-[14px]">{shift}</p>}
       </div>
@@ -96,8 +96,9 @@ export function DayTab({
           </table>
         </div>
         <p className="mt-1.5 text-[11.5px] text-muted-foreground">
-          Ночь — от вечера накануне к утру, день — от утра к вечеру. Норма — середина твоих оценок за 30 дней
-          {norm === null ? '' : ` (${num1(norm)})`}.
+          Ночь — от вечера накануне к утру, день — от утра к вечеру. Обычное утро и обычный вечер — середина
+          твоих утренних и вечерних оценок за 30 дней
+          {norms.morning === null || norms.evening === null ? '' : ` (${num1(norms.morning)} и ${num1(norms.evening)})`}.
         </p>
       </details>
     </div>

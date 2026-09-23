@@ -106,8 +106,8 @@ export function PeriodTab({
                     {shortDate(w.from)}–{shortDate(w.to)}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <Dot value={w.state} norm={norm} />
-                    <span className="font-mono text-[11.5px]">{w.state === null ? '' : num1(w.state)}</span>
+                    <Dot value={w.vsNorm} norm={0} />
+                    <span className="font-mono text-[11.5px]">{w.vsNorm === null ? '' : signed1(w.vsNorm)}</span>
                   </span>
                   <span className="flex flex-wrap gap-1">
                     {Object.entries(w.harmful).map(([t, n]) => (
@@ -125,29 +125,44 @@ export function PeriodTab({
         <p className="text-[11.5px] text-muted-foreground">
           {week
             ? 'Точки — утро и вечер: зелёная выше твоей нормы, красная ниже. Нажми на день — откроется его разбор.'
-            : 'Точка и число — среднее утр и вечеров недели против твоей нормы. Нажми на неделю — откроется её разбор.'}
+            : 'Точка и число — насколько утра и вечера недели выше или ниже твоих обычных: утро к обычному утру, вечер к обычному вечеру. Нажми на неделю — откроется её разбор.'}
         </p>
       </Section>
 
       <details className="text-[13px]">
         <summary className="cursor-pointer text-[12.5px] text-muted-foreground">Все цифры</summary>
         <div className="mt-2.5 grid gap-4 md:grid-cols-2">
-          <Table
-            head={[week ? 'эта' : 'эти 30', week ? 'прошлая' : 'прошлые 30', 'сдвиг']}
-            rows={SCALES.map((s) => {
-              const { now, was } = report.scales[s]
-              const series = SERIES.find((x) => x.id === s)!
-              return [
-                <>
-                  <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: series.color }} />
-                  {series.label}
-                </>,
-                now === null ? '—' : num1(now),
-                was === null ? '—' : num1(was),
-                now !== null && was !== null ? signed1(now - was) : '',
-              ]
-            })}
-          />
+          <div>
+            <Table
+              head={[week ? 'эта' : 'эти 30', week ? 'прошлая' : 'прошлые 30', 'сдвиг']}
+              rows={SCALES.flatMap((s) => {
+                const { morning, evening, by } = report.scales[s]
+                const series = SERIES.find((x) => x.id === s)!
+                const name = (
+                  <>
+                    <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: series.color }} />
+                    {series.label}
+                  </>
+                )
+                const row = (label: ReactNode, p: { now: number | null; was: number | null }) => [
+                  label,
+                  p.now === null ? '—' : num1(p.now),
+                  p.was === null ? '—' : num1(p.was),
+                  p.now !== null && p.was !== null ? signed1(p.now - p.was) : '',
+                ]
+                if (!evening) return [row(<>{name} <span className="text-muted-foreground">утром</span></>, morning)]
+                return [
+                  row(<>{name} <span className="text-muted-foreground">утром</span></>, morning),
+                  row(<span className="pl-3.5 text-muted-foreground">вечером</span>, evening),
+                  [<span className="pl-3.5 text-muted-foreground">в итог</span>, '', '', by === null ? '' : <b className="font-semibold">{signed1(by)}</b>],
+                ]
+              })}
+            />
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              Утро сравнивается с утром, вечер с вечером; в итог — среднее двух сдвигов. Так пропущенные утра не
+              выглядят как «стало лучше».
+            </p>
+          </div>
           <Table
             head={week ? ['эта', 'прошлая', 'обычно'] : ['эти 30', 'прошлые 30']}
             rows={report.events.map((e) => [

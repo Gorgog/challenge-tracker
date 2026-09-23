@@ -72,8 +72,29 @@ function median(values: number[]): number | null {
 const statesOf = (days: TimelineDay[]) =>
   days.flatMap((d) => [stateOf(d.morning), stateOf(d.evening)].filter((v): v is number => v !== null))
 
-/** Норма — медиана состояний утр и вечеров: середина твоих оценок за окно. */
+/** Норма — медиана состояний утр и вечеров: середина твоих оценок за окно. Для линии графика. */
 export const norm = (days: TimelineDay[]) => median(statesOf(days))
+
+export type Norms = { morning: number | null; evening: number | null }
+
+/**
+ * Обычное утро и обычный вечер — отдельно. Утро обычно ниже вечера, поэтому день и период меряются
+ * «утро к утру, вечер к вечеру»: иначе пропущенные утра выглядели бы как «стало лучше».
+ */
+export const norms = (days: TimelineDay[]): Norms => ({
+  morning: median(days.flatMap((d) => (d.morning ? [stateOf(d.morning)!] : []))),
+  evening: median(days.flatMap((d) => (d.evening ? [stateOf(d.evening)!] : []))),
+})
+
+/** До десятых, как на экране: порог проверяет то же число, что видно. Без «−0». */
+export const round1 = (v: number) => Math.sign(v) * Math.round(Math.abs(v) * 10 + 1e-9) / 10 + 0
+
+/** Среднее сдвигов по парам, где известны оба конца; нет ни одной — null. Округлено. */
+function shiftOf(pairs: ({ now: number | null; was: number | null } | null)[]): number | null {
+  const diffs = pairs.flatMap((p) => (p && p.now !== null && p.was !== null ? [p.now - p.was] : []))
+  const mean = avg(diffs)
+  return mean === null ? null : round1(mean)
+}
 
 export type Comparison = {
   subject: { kind: 'tag'; tag: string } | { kind: 'badSleep' }
@@ -145,7 +166,12 @@ export type DayReport = {
   prevEvening: number | null
   morning: number | null
   evening: number | null
+  /** Общая норма — как у линии графика. */
   norm: number | null
+  /** Обычное утро и обычный вечер; итог дня и чипы меряются ими. */
+  norms: Norms
+  /** Утро к обычному утру, вечер к обычному вечеру, до десятых. */
+  vsNorm: { morning: number | null; evening: number | null }
   verdict: 'worse' | 'better' | 'usual' | 'empty'
   shift: Shift
   facts: Fact[]
@@ -172,9 +198,14 @@ export function dayReport(
   const evening = stateOf(d.evening)
   const prevEvening = stateOf(prev?.evening ?? null)
 
-  const mean = avg([morning, evening].filter((v): v is number => v !== null))
-  const verdict =
-    mean === null || n === null ? 'empty' : mean - n <= -DAY_VS_NORM ? 'worse' : mean - n >= DAY_VS_NORM ? 'better' : 'usual'
+  const ns = norms(window)
+  const vs = (v: number | null, base: number | null) => (v === null || base === null ? null : round1(v - base))
+  const vsNorm = { morning: vs(morning, ns.morning), evening: vs(evening, ns.evening) }
+  const delta = shiftOf([
+    { now: vsNorm.morning, was: 0 },
+    { now: vsNorm.evening, was: 0 },
+  ])
+  const verdict = delta === null ? 'empty' : delta <= -DAY_VS_NORM ? 'worse' : delta >= DAY_VS_NORM ? 'better' : 'usual'
 
   let shift: Shift = null
   if (morning === null) shift = { kind: 'noMorning' }
@@ -196,7 +227,7 @@ export function dayReport(
   let compare = tag ? morningsAfter(window, tag) : null
   if (!compare && d.morning && d.morning.sleep <= BAD_SLEEP) compare = afterBadSleep(window)
 
-  return { day: d.day, prevEvening, morning, evening, norm: n, verdict, shift, facts, compare }
+  return { day: d.day, prevEvening, morning, evening, norm: n, norms: ns, vsNorm, verdict, shift, facts, compare }
 }
 
 /* ---------- неделя и 30 дней ---------- */
@@ -218,7 +249,8 @@ export type WeekRow = {
   to: string
   /** Индекс последнего дня недели в `days`. */
   index: number
-  state: number | null
+  /** Утра недели к обычному утру и вечера к обычному вечеру — среднее двух сдвигов, до десятых. */
+  vsNorm: number | null
   badSleep: number
   harmful: Record<string, number>
   hits: number
@@ -232,7 +264,8 @@ export type PeriodReport = {
   prevFrom: string | null
   prevTo: string | null
   hasPrev: boolean
-  scales: Record<Scale, { now: number | null; was: number | null }>
+  /** Утро к утру и вечер к вечеру (у сна вечера нет); `by` — среднее двух сдвигов, до десятых. */
+  scales: Record<Scale, { morning: Pair; evening: Pair | null; by: number | null }>
   moves: { scale: Scale; by: number }[]
   verdict: 'worse' | 'better' | 'mixed' | 'same' | 'noPrev'
   events: PeriodEvent[]
@@ -243,10 +276,11 @@ export type PeriodReport = {
   weeks: WeekRow[]
 }
 
-function scaleAvg(days: TimelineDay[], scale: Scale): number | null {
-  if (scale === 'sleep') return avg(days.flatMap((d) => (d.morning ? [d.morning.sleep] : [])))
-  return avg(days.flatMap((d) => [d.morning?.[scale], d.evening?.[scale]].filter((v): v is number => v !== undefined)))
-}
+type Pair = { now: number | null; was: number | null }
+
+const mornings = (days: TimelineDay[], scale: Scale) => avg(days.flatMap((d) => (d.morning ? [d.morning[scale]] : [])))
+const evenings = (days: TimelineDay[], scale: Exclude<Scale, 'sleep'>) =>
+  avg(days.flatMap((d) => (d.evening ? [d.evening[scale]] : [])))
 
 /** Дней с утром или вечером. */
 const recorded = (days: TimelineDay[]) => days.filter((d) => d.morning || d.evening).length
@@ -274,11 +308,15 @@ export function periodReport(
   const hasPrev = prev.length === len && recorded(prev) * 2 >= len
 
   const scales = Object.fromEntries(
-    SCALES.map((s) => [s, { now: scaleAvg(cur, s), was: hasPrev ? scaleAvg(prev, s) : null }]),
+    SCALES.map((s) => {
+      const morning = { now: mornings(cur, s), was: hasPrev ? mornings(prev, s) : null }
+      const evening = s === 'sleep' ? null : { now: evenings(cur, s), was: hasPrev ? evenings(prev, s) : null }
+      return [s, { morning, evening, by: shiftOf([morning, evening]) }]
+    }),
   ) as PeriodReport['scales']
   const moves = SCALES.flatMap((scale) => {
-    const { now, was } = scales[scale]
-    return now !== null && was !== null && Math.abs(now - was) >= MOVE ? [{ scale, by: now - was }] : []
+    const { by } = scales[scale]
+    return by !== null && Math.abs(by) >= MOVE ? [{ scale, by }] : []
   })
   const downs = moves.some((m) => m.by < 0)
   const ups = moves.some((m) => m.by > 0)
@@ -324,6 +362,7 @@ export function periodReport(
 
   const weeks: WeekRow[] = []
   if (len >= 30) {
+    const ns = norms(window)
     const firstIndex = index - cur.length + 1
     for (let end = cur.length; end > 0; end -= 7) {
       const chunk = cur.slice(Math.max(0, end - 7), end)
@@ -336,7 +375,10 @@ export function periodReport(
         from: chunk[0]!.day,
         to: chunk[chunk.length - 1]!.day,
         index: firstIndex + end - 1,
-        state: avg(statesOf(chunk)),
+        vsNorm: shiftOf([
+          { now: avg(chunk.flatMap((d) => (d.morning ? [stateOf(d.morning)!] : []))), was: ns.morning },
+          { now: avg(chunk.flatMap((d) => (d.evening ? [stateOf(d.evening)!] : []))), was: ns.evening },
+        ]),
         badSleep: badSleep(chunk),
         harmful,
         hits: hitsOf(chunk),
