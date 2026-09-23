@@ -75,6 +75,8 @@ export function DayChart({
   const clip = useId()
   /* день под пальцем во время протягивания; null — не тянем */
   const drag = useRef<number | null>(null)
+  /** День до касания — на случай, если браузер заберёт касание под прокрутку. */
+  const origin = useRef<number | null>(null)
   const n = days.length
   const tags = topTags(days)
 
@@ -102,6 +104,7 @@ export function DayChart({
     Math.floor((clientX - el.getBoundingClientRect().left - PAD.left) / step)
 
   const onPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    origin.current = cursor
     drag.current = cursor
     e.currentTarget.setPointerCapture?.(e.pointerId)
     e.currentTarget.focus({ preventScroll: true })
@@ -113,6 +116,13 @@ export function DayChart({
   const stop = (e: PointerEvent<SVGSVGElement>) => {
     drag.current = null
     e.currentTarget.releasePointerCapture?.(e.pointerId)
+  }
+  /* палец повёл вверх или вниз — браузер забрал касание под прокрутку страницы: день — на прежний */
+  const cancel = (e: PointerEvent<SVGSVGElement>) => {
+    const back = origin.current
+    const moved = drag.current !== null && back !== null && drag.current !== back
+    stop(e)
+    if (moved) onCursor(back)
   }
   const onKeyDown = (e: KeyboardEvent<SVGSVGElement>) => {
     const by: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }
@@ -176,11 +186,11 @@ export function DayChart({
         aria-valuemax={n}
         aria-valuenow={cursor + 1}
         aria-valuetext={cur ? dayName(cur.day) : undefined}
-        className="block cursor-ew-resize touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+        className="block cursor-ew-resize touch-pan-y select-none outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={stop}
-        onPointerCancel={stop}
+        onPointerCancel={cancel}
         onKeyDown={onKeyDown}
       >
         {period && (

@@ -4,7 +4,7 @@ import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
 import { dayOutcome } from '@/domain/streaks'
 import { dayReport, norm as normOf, periodReport, timeline } from '@/domain/timeline'
-import type { DayStart, EntryMap } from '@/domain/types'
+import type { EntryMap } from '@/domain/types'
 import { DayChart, type ChartMode } from './DayChart'
 import { SERIES, type Series } from './series'
 import { DayTab } from './DayTab'
@@ -15,8 +15,7 @@ import { shortDate } from './words'
 const WINDOW = 30
 /** История для сравнений: 30 дней по выбранный против предыдущих 30 — даже у первого дня окна. */
 const HISTORY = WINDOW + 2 * WINDOW
-/** Утра не загрузились — считаем без утра, а не гасим аналитику. */
-const NO_STARTS: DayStart[] = []
+/** Челлендж без отметок — не сбой загрузки: сбой показывается отдельно. */
 const NO_ENTRIES: EntryMap = {}
 
 type Tab = 'day' | 'week' | 'month'
@@ -42,7 +41,7 @@ export function AnalyticsPage() {
   const starts = useDayStarts()
   const todayK = todayKey()
 
-  const startsData = starts.data ?? (starts.isError ? NO_STARTS : undefined)
+  const startsData = starts.data
   const live = useMemo(
     () => (challenges.data ?? []).filter(isLive).sort((a, b) => a.sortOrder - b.sortOrder),
     [challenges.data],
@@ -64,8 +63,11 @@ export function AnalyticsPage() {
     for (let i = window.length - 1; i >= 0; i--) if (window[i]!.morning || window[i]!.evening) return i
     return window.length - 1
   }, [window])
-  const [pickedDay, setDay] = useState<number | null>(null)
-  const cursor = Math.min(window.length - 1, pickedDay ?? lastWithData)
+  /* выбранный день — датой, а не местом в окне: после полуночи окно сдвигается, а день остаётся */
+  const [pickedDay, setPickedDay] = useState<string | null>(null)
+  const pickedAt = pickedDay === null ? -1 : window.findIndex((d) => d.day === pickedDay)
+  const cursor = pickedAt >= 0 ? pickedAt : lastWithData
+  const setDay = (i: number) => setPickedDay(window[i]?.day ?? null)
 
   const [tab, setTab] = useState<Tab>('day')
   const [mode, setMode] = useState<ChartMode>('norm')
@@ -83,7 +85,9 @@ export function AnalyticsPage() {
     return { kind: 'period' as const, value: periodReport(history, index, len, window, challenge, challengeEntries, today) }
   }, [history, challenge, cursor, tab, index, window, challengeEntries, todayK])
 
-  const loading = challenges.isPending || entries.isPending || logs.isPending || (starts.isPending && !starts.isError)
+  /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
+  const failed = challenges.isError || entries.isError || logs.isError || starts.isError
+  const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending
 
   const toggle = (s: Series) =>
     setShown((cur) => {
@@ -101,7 +105,13 @@ export function AnalyticsPage() {
         </p>
       </div>
 
-      {loading ? (
+      {failed ? (
+        <div role="alert" className="rounded-xl border border-destructive/40 p-8 text-center">
+          <p className="text-sm">
+            Не удалось загрузить данные — разбор не строю, чтобы не показать неправду. Обнови страницу.
+          </p>
+        </div>
+      ) : loading ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Загружаю…</p>
       ) : !challenge ? (
         <div className="rounded-xl border border-dashed border-border p-8 text-center">
@@ -109,7 +119,7 @@ export function AnalyticsPage() {
             Челленджей пока нет. Заведи челлендж — здесь появится его график: утро, вечер и что было вокруг.
           </p>
         </div>
-      ) : (
+      ) : !window.length ? null : (
         <>
           <div role="group" aria-label="Челлендж" className="flex flex-wrap gap-1.5">
             {live.map((c) => (

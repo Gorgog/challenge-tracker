@@ -154,7 +154,14 @@ export function PeriodTab({
                 return [
                   row(<>{name} <span className="text-muted-foreground">утром</span></>, morning),
                   row(<span className="pl-3.5 text-muted-foreground">вечером</span>, evening),
-                  [<span className="pl-3.5 text-muted-foreground">в итог</span>, '', '', by === null ? '' : <b className="font-semibold">{signed1(by)}</b>],
+                  [
+                    <span key="label" className="pl-3.5 text-muted-foreground">
+                      в итог
+                    </span>,
+                    '',
+                    '',
+                    by === null ? '' : <b key="by" className="font-semibold">{signed1(by)}</b>,
+                  ],
                 ]
               })}
             />
