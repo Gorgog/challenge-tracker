@@ -455,6 +455,30 @@ describe('утро к утру, вечер к вечеру — пропуски 
   })
 })
 
+describe('сегодня и молодой челлендж (ревью 23.09)', () => {
+  it('сегодня день ещё не начат — не «утро пропущено»', () => {
+    const w = world(range(29, 1).map((b) => flat(b)))
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -29), TODAY)
+    expect(dayReport(days, days.length - 1, days, challenge(), {}, TODAY).shift).toBeNull()
+    /* вчерашний день без утра — пропущено */
+    const w2 = world([...range(29, 2).map((b) => flat(b)), { log: log(1, 6, 6), start: start(1, null) }])
+    const days2 = timeline(w2.logs, w2.starts, addDays(TODAY, -29), TODAY)
+    expect(dayReport(days2, days2.length - 2, days2, challenge(), {}, TODAY).shift).toEqual({ kind: 'noMorning' })
+  })
+
+  it('«обычно» для пропусков — на дни, когда челлендж шёл, а не на все 30', () => {
+    const w = world(range(89, 1).map((b) => flat(b)))
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -89), TODAY)
+    /* начат 10 дней назад: выполнено 10, 8, 6, 4, 2 — пропуски 9, 7, 5, 3, 1; 5 из 10 → ~3,5 за неделю */
+    const young = challenge({ startDate: key(10) })
+    const entries: EntryMap = Object.fromEntries([10, 8, 6, 4, 2].map((b) => [key(b), 20]))
+    const r = periodReport(days, days.length - 2, 7, days.slice(-30), young, entries, TODAY)
+    const misses = r.events.find((e) => e.kind === 'misses')!
+    expect(misses.now).toBe(4)
+    expect(misses.usual).toBeCloseTo(3.5)
+  })
+})
+
 it('TimelineDay — только данные, без дат-объектов (удобно для мемо и тестов)', () => {
   const [d] = timeline([], [], TODAY, TODAY) as TimelineDay[]
   expect(Object.keys(d!).sort()).toEqual(['day', 'evening', 'morning', 'tags'])
