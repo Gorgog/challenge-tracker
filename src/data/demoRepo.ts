@@ -20,7 +20,8 @@ import { seedFull } from './seeds/full'
 export type DemoScenario = 'full' | 'burnout'
 
 export type DemoOptions = {
-  scenario?: DemoScenario
+  /** `empty` — пустое хранилище для договора хранилища (`repoContract`), в кнопке сброса его нет. */
+  scenario?: DemoScenario | 'empty'
   /** «Сегодня» для сида. По умолчанию — реальная текущая дата. */
   today?: Date
   seed?: number
@@ -102,11 +103,11 @@ export function demoScenario(storage: Storage | null = defaultStorage()): DemoSc
 }
 
 /** Насыпает снимок выбранного сценария. */
-function seedSnapshot(today: Date, seed: number, scenario: DemoScenario): Snapshot {
+function seedSnapshot(today: Date, seed: number, scenario: DemoScenario | 'empty'): Snapshot {
   const seedOf = scenario === 'burnout' ? seedBurnout : seedFull
   return {
     version: STORAGE_VERSION,
-    ...seedOf(today, seed),
+    ...(scenario === 'empty' ? { challenges: [], entries: {}, logs: [], starts: [], tags: [] } : seedOf(today, seed)),
     dayGroups: [...DEFAULT_DAY_GROUPS],
     settings: { ...DEFAULT_SETTINGS },
   }
