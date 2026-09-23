@@ -179,9 +179,10 @@ create policy "user_settings: только свои" on public.user_settings
 
 -- ---------- доступ ----------
 
--- Гостю (anon) — ничего: политики выше только для вошедших.
+-- Supabase по умолчанию выдаёт anon и authenticated все права на новые таблицы — снимаем и выдаём
+-- только нужные. Гостю (anon) — ничего; изменить утро (update у day_starts) нельзя и правами.
 revoke all on public.challenges, public.entries, public.tags, public.day_logs, public.day_starts, public.user_settings
-  from anon;
+  from anon, authenticated;
 grant select, insert, update, delete on public.challenges, public.entries, public.tags, public.day_logs, public.user_settings
   to authenticated;
 grant select, insert, delete on public.day_starts to authenticated;
