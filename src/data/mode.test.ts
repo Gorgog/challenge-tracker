@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { MODE_KEY, isDemo, setDemo } from './mode'
+import { vi } from 'vitest'
+import { MODE_KEY, isDemo, setDemo, watchMode } from './mode'
 
 function fakeStorage(): Storage {
   const map = new Map<string, string>()
@@ -29,6 +30,18 @@ describe('режим: база или демо', () => {
     setDemo(false, s)
     expect(s.getItem(MODE_KEY)).toBeNull()
     expect(isDemo(s)).toBe(false)
+  })
+
+  it('режим сменили в другой вкладке — эта перезагружается, чтобы плашка и хранилище не разошлись', () => {
+    const reload = vi.fn()
+    const stop = watchMode(reload)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'tabel-demo' }))
+    expect(reload).not.toHaveBeenCalled()
+    window.dispatchEvent(new StorageEvent('storage', { key: MODE_KEY }))
+    expect(reload).toHaveBeenCalledTimes(1)
+    stop()
+    window.dispatchEvent(new StorageEvent('storage', { key: MODE_KEY }))
+    expect(reload).toHaveBeenCalledTimes(1)
   })
 
   it('хранилище бросает (приватное окно) — база, без падения', () => {

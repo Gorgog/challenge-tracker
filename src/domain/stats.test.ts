@@ -113,4 +113,10 @@ describe('unratedDays — долг по оценкам', () => {
   it('сегодняшний день в долг не входит — он ещё идёт', () => {
     expect(unratedDays([], TODAY, 1)).toEqual(['2026-09-20'])
   })
+
+  it('дни до начала пользования — не долг: новый пользователь ничего не должен', () => {
+    expect(unratedDays([], TODAY, 14, dayKey(TODAY))).toEqual([])
+    expect(unratedDays([], TODAY, 14, '2026-09-19')).toEqual(['2026-09-19', '2026-09-20'])
+    expect(unratedDays([], TODAY, 14, null)).toHaveLength(14)
+  })
 })

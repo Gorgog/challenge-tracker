@@ -12,19 +12,29 @@ const mocked = vi.hoisted(() => ({
   logs: [] as DayLog[],
   starts: [] as DayStart[],
   startsPending: false,
+  /** Какой запрос экрана ещё идёт или не загрузился. */
+  pending: null as null | 'entries' | 'logs',
+  failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts' | 'settings',
   settings: { morningUntil: 15 } as Settings,
   startDay: vi.fn(),
   setEntry: vi.fn(),
 }))
 
+const answer = (name: string, data: unknown) =>
+  mocked.failed === name
+    ? { data: undefined, isPending: false, isError: true }
+    : mocked.pending === name
+      ? { data: undefined, isPending: true, isError: false }
+      : { data, isPending: false, isError: false }
+
 vi.mock('@/data/queries', () => ({
-  useChallenges: () => ({ data: mocked.challenges, isPending: false }),
-  useEntries: () => ({ data: {}, isPending: false }),
-  useDayLogs: () => ({ data: mocked.logs, isPending: false }),
+  useChallenges: () => answer('challenges', mocked.challenges),
+  useEntries: () => answer('entries', {}),
+  useDayLogs: () => answer('logs', mocked.logs),
   useDayGroups: () => ({ data: ['tasks', 'holds'], isPending: false }),
   useDayStarts: () =>
-    mocked.startsPending ? { data: undefined, isPending: true } : { data: mocked.starts, isPending: false },
-  useSettings: () => ({ data: mocked.settings, isPending: false }),
+    mocked.startsPending ? { data: undefined, isPending: true } : answer('starts', mocked.starts),
+  useSettings: () => answer('settings', mocked.settings),
   useSetEntry: () => ({ mutate: mocked.setEntry }),
   useSaveDayLog: () => ({ mutate: vi.fn() }),
   useStartDay: () => ({ mutate: mocked.startDay, isPending: false }),
@@ -96,6 +106,8 @@ beforeEach(() => {
     logs: [],
     starts: [],
     startsPending: false,
+    pending: null,
+    failed: null,
     settings: { morningUntil: 15 },
   })
   mocked.startDay.mockReset()
@@ -106,6 +118,32 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('экран дня — данные с сервера', () => {
+  it.each(['entries', 'logs'] as const)('пока идёт %s — «Загружаю…», а не пустой день и не долг по оценкам', (name) => {
+    mocked.pending = name
+    render(<DayPage />)
+    expect(screen.getByText('Загружаю…')).toBeInTheDocument()
+    expect(screen.queryByText(/без оценки/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /отметить/i })).toBeNull()
+  })
+
+  it.each(['challenges', 'entries', 'logs', 'starts', 'settings'] as const)(
+    'не загрузилось (%s) — сообщение, а не пустые данные, по которым можно записать поверх',
+    (name) => {
+      mocked.failed = name
+      render(<DayPage />)
+      expect(screen.getByRole('alert')).toHaveTextContent('Не удалось загрузить')
+      expect(screen.queryByRole('button', { name: /отметить|оценить|начать день/i })).toBeNull()
+    },
+  )
+
+  it('новый пользователь: челлендж заведён сегодня, записей нет — долга по оценкам нет', () => {
+    mocked.challenges = [{ ...read, startDate: TODAY }]
+    render(<DayPage />)
+    expect(screen.queryByText(/без оценки/)).toBeNull()
+  })
 })
 
 describe('экран дня — пока день не начат', () => {

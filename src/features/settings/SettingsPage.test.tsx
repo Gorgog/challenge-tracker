@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '@/domain/types'
 import { SettingsPage } from './SettingsPage'
 
-const mocked = vi.hoisted(() => ({ settings: { morningUntil: 15 } as Settings, saveSettings: vi.fn(), reload: vi.fn() }))
+const mocked = vi.hoisted(() => ({ settings: { morningUntil: 15 } as Settings, saveSettings: vi.fn(), reload: vi.fn(), demo: false }))
 vi.mock('@/lib/reload', () => ({ reloadPage: mocked.reload }))
 
 vi.mock('@/data/queries', () => ({
   useSettings: () => ({ data: mocked.settings, isPending: false }),
   useSaveSettings: () => ({ mutate: mocked.saveSettings }),
+  usingDemo: () => mocked.demo,
 }))
 
 const hourPicker = () => screen.getByRole('combobox', { name: 'Утренние вопросы — до' })
@@ -18,6 +19,7 @@ beforeEach(() => {
   mocked.settings = { morningUntil: 15 }
   mocked.saveSettings.mockReset()
   mocked.reload.mockReset()
+  mocked.demo = false
   localStorage.removeItem('tabel-mode')
 })
 
@@ -64,6 +66,7 @@ describe('настройки — демо', () => {
     expect(mocked.reload).toHaveBeenCalledTimes(1)
     unmount()
 
+    mocked.demo = true
     render(<SettingsPage />)
     expect(toggle()).toBeChecked()
     await user.click(toggle())

@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -67,6 +67,25 @@ describe('вход и кэш данных: чужие данные не оста
 
     act(() => auth.listener!('SIGNED_IN', { user: { id: 'B' } }))
     expect(client.getQueryData(['challenges'])).toBeUndefined()
+  })
+
+  it('другой пользователь — экран показывает его данные, а не оставшиеся от прежнего', async () => {
+    const client = new QueryClient()
+    function Logs() {
+      const { data } = useQuery({ queryKey: ['dayLogs'], queryFn: async () => `оценки ${auth.session?.user.id}` })
+      return <span data-testid="logs">{data ?? '…'}</span>
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <Logs />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('logs')).toHaveTextContent('оценки A'))
+    auth.session = { user: { id: 'B' } }
+    act(() => auth.listener!('SIGNED_IN', { user: { id: 'B' } }))
+    await waitFor(() => expect(screen.getByTestId('logs')).toHaveTextContent('оценки B'))
   })
 
   it('выход очищает кэш', async () => {

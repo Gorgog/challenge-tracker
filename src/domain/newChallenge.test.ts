@@ -34,6 +34,17 @@ const draft = (over: Partial<ChallengeDraft> = {}): ChallengeDraft => ({
   ...over,
 })
 
+describe('код челленджа не бывает пустым — база такой не примет', () => {
+  it.each([
+    ['100', '100'],
+    ['10 000', '100'],
+    ['5×5', '5×5'],
+    ['Я', 'Я'],
+  ])('«%s» без своего кода → «%s»', (name, code) => {
+    expect(buildChallenge(draft({ name, code: '' }), [], '2026-09-23').code).toBe(code)
+  })
+})
+
 describe('suggestCode', () => {
   it('из нескольких слов берёт первые буквы', () => {
     expect(suggestCode('Без сигарет навсегда')).toBe('БСН')
