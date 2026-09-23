@@ -5,6 +5,7 @@ import {
   dayReport,
   morningsAfter,
   norm,
+  norms,
   periodReport,
   stateOf,
   timeline,
@@ -289,9 +290,8 @@ describe('periodReport — неделя и 30 дней', () => {
     const r = periodReport(days, days.length - 2, 7, window, challenge(), {}, TODAY)
     expect([r.from, r.to, r.prevFrom, r.prevTo]).toEqual([key(7), key(1), key(14), key(8)])
     expect(r.hasPrev).toBe(true)
-    expect(r.scales.wellbeing.now).toBe(3)
-    expect(r.scales.wellbeing.was).toBe(6)
-    expect(r.scales.sleep).toEqual({ now: 2, was: 7 })
+    expect(r.scales.wellbeing).toEqual({ morning: { now: 3, was: 6 }, evening: { now: 3, was: 6 }, by: -3 })
+    expect(r.scales.sleep).toEqual({ morning: { now: 2, was: 7 }, evening: null, by: -5 })
     expect(r.verdict).toBe('worse')
     expect(r.moves.map((m) => m.scale)).toEqual(['wellbeing', 'mood', 'sleep'])
 
@@ -367,6 +367,91 @@ describe('periodReport — неделя и 30 дней', () => {
     const entries: EntryMap = Object.fromEntries(range(7, 1).filter((b) => b % 2).map((b) => [key(b), 20]))
     const r = periodReport(days, days.length - 2, 7, days.slice(-30), challenge(), entries, TODAY)
     expect(r.challenge).toEqual({ hits: 4, known: 7, wasHits: 0, wasKnown: 7 })
+  })
+})
+
+describe('утро к утру, вечер к вечеру — пропуски не выдаются за сдвиг (ревью 23.09)', () => {
+  /* 90 дней: утро 4, вечер 8 (сон 7) — утро всегда ниже вечера */
+  const split = (back: number, morning = true, wellbeing: [number, number] = [4, 8]) => ({
+    log: log(back, wellbeing[1], 8),
+    start: start(back, morning ? [7, wellbeing[0], 4] : null),
+  })
+  function build(special: (back: number) => { log?: DayLog; start?: DayStart } | null) {
+    const w = world(range(89, 1).map((b) => special(b) ?? split(b)))
+    return timeline(w.logs, w.starts, addDays(TODAY, -89), TODAY)
+  }
+  const week = (days: TimelineDay[]) => periodReport(days, days.length - 2, 7, days.slice(-30), challenge(), {}, TODAY)
+
+  it('norms — медианы утр и вечеров отдельно', () => {
+    const days = build(() => null)
+    expect(norms(days.slice(-30))).toEqual({ morning: 4, evening: 8 })
+    expect(norms(timeline([], [], TODAY, TODAY))).toEqual({ morning: null, evening: null })
+  })
+
+  it('прошлая неделя без утр, эта целиком — всё как было, а не «хуже»', () => {
+    const r = week(build((b) => (b >= 8 && b <= 14 ? split(b, false) : null)))
+    expect(r.hasPrev).toBe(true)
+    expect(r.scales.wellbeing).toEqual({ morning: { now: 4, was: null }, evening: { now: 8, was: 8 }, by: 0 })
+    expect(r.moves).toEqual([])
+    expect(r.verdict).toBe('same')
+  })
+
+  it('утро упало на 2, вечер ровный — сдвиг −1, неделя хуже', () => {
+    const r = week(build((b) => (b <= 7 ? split(b, true, [2, 8]) : null)))
+    expect(r.scales.wellbeing.by).toBe(-1)
+    expect(r.verdict).toBe('worse')
+  })
+
+  it('утр нет ни в одной неделе — сдвиг только по вечерам', () => {
+    const r = week(build((b) => (b <= 14 ? { log: log(b, b <= 7 ? 6 : 8, 8), start: start(b, null) } : null)))
+    expect(r.scales.wellbeing).toEqual({ morning: { now: null, was: null }, evening: { now: 6, was: 8 }, by: -2 })
+  })
+
+  it('сдвиг сравнивается с порогом округлённым — как на экране', () => {
+    /* утра этой недели: 5 дней по 5 и день 4 при одном пропуске (5/6 выше), вечера: один 9 (1/7 выше) —
+       (0,833 + 0,143) / 2 = 0,488 → на экране «+0,5», и порог 0,5 его засчитывает */
+    const r = week(
+      build((b) => {
+        if (b > 7) return null
+        if (b === 7) return { log: log(b, 8, 8), start: start(b, null) }
+        return { log: log(b, b === 1 ? 9 : 8, 8), start: start(b, [7, b === 6 ? 4 : 5, 4]) }
+      }),
+    )
+    expect(r.scales.wellbeing.by).toBe(0.5)
+    expect(r.moves).toContainEqual({ scale: 'wellbeing', by: 0.5 })
+    /* 0,405 → «+0,4» — не сдвиг */
+    const small = week(
+      build((b) => {
+        if (b > 7) return null
+        if (b === 7) return { log: log(b, 8, 8), start: start(b, null) }
+        return { log: log(b, b === 1 ? 9 : 8, 8), start: start(b, [7, b <= 4 ? 5 : 4, 4]) }
+      }),
+    )
+    expect(small.scales.wellbeing.by).toBe(0.4)
+    expect(small.moves).toEqual([])
+  })
+
+  it('день без утра с обычным вечером — обычный, а не «лучше обычного»', () => {
+    const w = world([...range(29, 2).map((b) => split(b)), { log: log(1, 8, 8), start: start(1, null) }, { start: start(0, [7, 4, 4]) }])
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -29), TODAY)
+    const r = dayReport(days, days.length - 2, days, challenge(), {}, TODAY)
+    expect(r.norms).toEqual({ morning: 4, evening: 8 })
+    expect(r.vsNorm).toEqual({ morning: null, evening: 0 })
+    expect(r.verdict).toBe('usual')
+  })
+
+  it('день: утро и вечер — каждый к своей норме, итог — среднее', () => {
+    const w = world([...range(29, 2).map((b) => split(b)), { log: log(1, 7, 7), start: start(1, [7, 3, 3]) }])
+    const days = timeline(w.logs, w.starts, addDays(TODAY, -29), TODAY)
+    const r = dayReport(days, days.length - 2, days, challenge(), {}, TODAY)
+    expect(r.vsNorm).toEqual({ morning: -1, evening: -1 })
+    expect(r.verdict).toBe('worse')
+  })
+
+  it('30 дней: неделя без утр с обычными вечерами — на уровне нормы', () => {
+    const days = build((b) => (b >= 8 && b <= 14 ? split(b, false) : null))
+    const r = periodReport(days, days.length - 2, 30, days.slice(-30), challenge(), {}, TODAY)
+    expect(r.weeks.map((w) => w.vsNorm)).toEqual([0, 0, 0, 0, 0])
   })
 })
 
