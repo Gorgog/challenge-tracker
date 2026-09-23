@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 import { useQueryClient } from '@tanstack/react-query'
 import { Fragment, createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { resetCache } from '@/data/queryClient'
 import { supabase, supabaseConfigured } from '@/data/supabaseClient'
 
 type AuthState = {
@@ -20,7 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const follow = useCallback(
     (next: Session | null) => {
       const id = next?.user.id ?? null
-      if (owner.current !== undefined && owner.current !== id) queryClient.clear()
+      if (owner.current !== undefined && owner.current !== id) resetCache(queryClient)
       owner.current = id
     },
     [queryClient],

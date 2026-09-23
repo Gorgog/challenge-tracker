@@ -3,6 +3,7 @@ import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domai
 import { parseDay } from '@/domain/date'
 import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
+import { generation } from './queryClient'
 import { isDemo } from './mode'
 import type { Repo } from './repo'
 import { supabase } from './supabaseClient'
@@ -32,7 +33,8 @@ const owed = new WeakMap<QueryClient, boolean>()
 function settleQueue(client: QueryClient, refetch: boolean) {
   const last = client.isMutating({ predicate: (m) => m.options.scope?.id === CHALLENGES.id }) <= 1
   if (!last) {
-    owed.set(client, true)
+    /* долг — только если этой записи самой нужно перечитывание: две удачные перестановки его не создают */
+    if (refetch) owed.set(client, true)
     return
   }
   if (refetch || owed.get(client)) {
@@ -93,11 +95,11 @@ export function useStartDay() {
         return [...rest, start].sort((a, b) => a.day.localeCompare(b.day))
       })
       void client.cancelQueries({ queryKey: queryKeys.dayStarts })
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _start, context) {
-      if (context?.previous) client.setQueryData(queryKeys.dayStarts, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.dayStarts, context.previous)
     },
 
     onSettled() {
@@ -116,11 +118,11 @@ export function useSaveSettings() {
       await client.cancelQueries({ queryKey: queryKeys.settings })
       const previous = client.getQueryData<Settings>(queryKeys.settings)
       client.setQueryData<Settings>(queryKeys.settings, settings)
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _settings, context) {
-      if (context?.previous) client.setQueryData(queryKeys.settings, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.settings, context.previous)
     },
 
     onSettled() {
@@ -139,6 +141,8 @@ export function useReorderChallenges() {
     scope: CHALLENGES,
 
     async onMutate(orderedIds) {
+      /* отменяем идущее перечитывание (оно затёрло бы порядок) — но его данные нужны: это долг очереди */
+      if (client.isFetching({ queryKey: queryKeys.challenges })) owed.set(client, true)
       await client.cancelQueries({ queryKey: queryKeys.challenges })
       const previous = client.getQueryData<Challenge[]>(queryKeys.challenges)
 
@@ -150,11 +154,11 @@ export function useReorderChallenges() {
         return [...ordered, ...rest].map((c, i) => ({ ...c, sortOrder: i }))
       })
 
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _ids, context) {
-      if (context?.previous) client.setQueryData(queryKeys.challenges, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.challenges, context.previous)
     },
 
     /*
@@ -178,11 +182,11 @@ export function useSaveDayGroups() {
       await client.cancelQueries({ queryKey: queryKeys.dayGroups })
       const previous = client.getQueryData<DayGroup[]>(queryKeys.dayGroups)
       client.setQueryData<DayGroup[]>(queryKeys.dayGroups, groups)
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _groups, context) {
-      if (context?.previous) client.setQueryData(queryKeys.dayGroups, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.dayGroups, context.previous)
     },
 
     /* Инвалидации нет по той же причине, что и у порядка челленджей. */
@@ -233,11 +237,11 @@ export function useSetEntry() {
         return next
       })
 
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _args, context) {
-      if (context?.previous) client.setQueryData(queryKeys.entries, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.entries, context.previous)
     },
 
     onSettled() {
@@ -261,11 +265,11 @@ export function useSaveDayLog() {
         return [...rest, log].sort((a, b) => a.day.localeCompare(b.day))
       })
 
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _log, context) {
-      if (context?.previous) client.setQueryData(queryKeys.dayLogs, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.dayLogs, context.previous)
     },
 
     onSettled() {
@@ -295,11 +299,11 @@ function useChallengeMutation<Args>(
         old ? optimistic(old, args) : old,
       )
       void client.cancelQueries({ queryKey: queryKeys.challenges })
-      return { previous }
+      return { previous, gen: generation(client) }
     },
 
     onError(_error, _args, context) {
-      if (context?.previous) client.setQueryData(queryKeys.challenges, context.previous)
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.challenges, context.previous)
     },
 
     onSettled() {

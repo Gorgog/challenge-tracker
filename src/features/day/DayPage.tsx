@@ -498,7 +498,9 @@ export function DayPage() {
           day={dialog.day}
           existing={dialog.existing}
           pendingCount={dialog.day === todayK ? pendingCount : 0}
-          saving={saveDayLog.isPending}
+          /* без сети запись на паузе (не ошибка и не ответ) — не запирать окно, а сказать и отпустить */
+          saving={saveDayLog.isPending && !saveDayLog.isPaused}
+          offline={saveDayLog.isPaused}
           onSave={(log) => {
             /* окно закрывается, когда база приняла итог: при отказе оценки, заметка и теги остаются в окне */
             saveDayLog.mutate(log, {
@@ -509,7 +511,7 @@ export function DayPage() {
               onError: () => setDialog((d) => d && { ...d, failed: true }),
             })
           }}
-          onCancel={dialog.existing || dialog.failed ? () => setDialog(null) : undefined}
+          onCancel={dialog.existing || dialog.failed || saveDayLog.isPaused ? () => setDialog(null) : undefined}
         />
       )}
     </div>

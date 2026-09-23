@@ -35,6 +35,8 @@ export type DayCloseDialogProps = {
   onCancel?: () => void
   /** База ещё отвечает: кнопка выключена, выйти нельзя — иначе оценки потеряются на полпути. */
   saving?: boolean
+  /** Нет сети: запись ждёт связь и уйдёт сама — сказать об этом и отпустить. */
+  offline?: boolean
 }
 
 type Draft = Record<ScoreField, number | null>
@@ -52,6 +54,7 @@ export function DayCloseDialog({
   onSave,
   onCancel,
   saving = false,
+  offline = false,
 }: DayCloseDialogProps) {
   /* Черновик начинается заново для каждого дня: вызывающий передаёт key={day}. */
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
@@ -170,6 +173,11 @@ export function DayCloseDialog({
             )}
           </span>
 
+          {offline && (
+            <p role="status" className="basis-full text-[12.5px] text-muted-foreground">
+              Нет связи: итог сохранён на этом устройстве и уйдёт в базу, когда появится сеть. Окно можно закрыть.
+            </p>
+          )}
           <span className="flex gap-2">
             {canCancel && (
               <Button variant="outline" onClick={() => onCancel?.()}>

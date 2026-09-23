@@ -1,6 +1,19 @@
 import { MutationCache, QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+/*
+ * Поколение кэша: растёт при каждой очистке (выход, смена пользователя). Откат упавшей записи сверяет
+ * поколение с тем, что было при её начале, — иначе снимок прошлого пользователя вернулся бы в кэш нового.
+ */
+const generations = new WeakMap<QueryClient, number>()
+export const generation = (client: QueryClient) => generations.get(client) ?? 0
+
+/** Очистить кэш и начать новое поколение — при выходе и смене пользователя. */
+export function resetCache(client: QueryClient) {
+  generations.set(client, generation(client) + 1)
+  client.clear()
+}
+
 /** Текст ошибки: postgrest-js отдаёт её простым объектом `{ code, message }`, а не `Error`. */
 export function errorText(error: unknown): string {
   if (error instanceof Error) return error.message
