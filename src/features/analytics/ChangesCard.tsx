@@ -8,7 +8,7 @@ function line(l: ChangeLine): { text: string; was: string; up: boolean } {
   return {
     text: `${l.challenge.name}: ${l.hits} из ${l.known}`,
     was: `было ${l.wasHits} из ${l.wasKnown}`,
-    up: l.hits / Math.max(1, l.known) > l.wasHits / Math.max(1, l.wasKnown),
+    up: l.good,
   }
 }
 

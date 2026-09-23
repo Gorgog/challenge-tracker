@@ -81,7 +81,7 @@ export function OverviewChart({
             return <circle key={i} data-point="usual" cx={x(i)} cy={y(v)} r={2.4} fill="var(--muted-foreground)" />
           })}
           {dates.map((i) => (
-            <text key={i} x={x(i)} y={PLOT.top + PLOT.height + 14} textAnchor="middle" {...LABEL}>
+            <text key={i} x={x(i)} y={PLOT.top + PLOT.height + 14} textAnchor={i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle'} {...LABEL}>
               {shortDate(days[i]!.day)}
             </text>
           ))}
@@ -146,7 +146,7 @@ export function OverviewChart({
       {rows.more.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button type="button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)} className="text-[12.5px] text-primary">
-            {expanded ? 'Скрыть ряды ▴' : `ещё ряды: ${rows.more.map((r) => r.label).join(', ')} ▾`}
+            {expanded ? 'Скрыть ряды ▴' : `ещё ряды — ${rows.more.length} ▾`}
           </button>
           <span className="text-[12px] text-muted-foreground">нажми на день</span>
         </div>

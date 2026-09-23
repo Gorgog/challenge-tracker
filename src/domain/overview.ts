@@ -153,6 +153,10 @@ export type ChangeLine =
 
 export type Changes = { hasPrev: false } | { hasPrev: true; lines: ChangeLine[] }
 
+/** Сдвиг доли выполнения челленджа в днях периода: «+3» — как три лишних выполненных дня из `len`. */
+const challengeShift = (l: Extract<ChangeLine, { kind: 'challenge' }>, len: number) =>
+  (l.hits / Math.max(1, l.known) - l.wasHits / Math.max(1, l.wasKnown)) * len
+
 /** Строк в «Что изменилось» — не больше. */
 export const CHANGES_SHOWN = 5
 
@@ -195,14 +199,15 @@ export function changes(
   const window = history.slice(Math.max(0, index - 29), index + 1)
   const challengeLines: ChangeLine[] = challenges.flatMap((c) => {
     const r = periodReport(history, index, len, window, c, entries[c.id] ?? {}, today, morningOpen).challenge
-    const misses = r.known - r.hits
-    const wasMisses = r.wasKnown - r.wasHits
-    if (!r.comparable || Math.abs(misses - wasMisses) < minDiff) return []
-    return [{ kind: 'challenge' as const, challenge: c, hits: r.hits, known: r.known, wasHits: r.wasHits, wasKnown: r.wasKnown, good: misses < wasMisses }]
+    if (!r.comparable) return []
+    /* долей, а не числом пропусков: в периодах разное число известных дней, и «6 из 13 против 3 из 7»
+       выходило «пропусков больше» при той же доле (демо 24.09) */
+    const shift = challengeShift({ kind: 'challenge', challenge: c, ...r, good: false }, len)
+    if (Math.abs(shift) < minDiff) return []
+    return [{ kind: 'challenge' as const, challenge: c, hits: r.hits, known: r.known, wasHits: r.wasHits, wasKnown: r.wasKnown, good: shift > 0 }]
   })
 
-  const size = (l: ChangeLine) =>
-    l.kind === 'challenge' ? Math.abs(l.known - l.hits - (l.wasKnown - l.wasHits)) : Math.abs(l.now - l.was)
+  const size = (l: ChangeLine) => (l.kind === 'challenge' ? Math.abs(challengeShift(l, len)) : Math.abs(l.now - l.was))
   const lines = [...tagLines, ...sleepLines, ...challengeLines]
     .map((l, i) => ({ l, i }))
     .sort((a, b) => size(b.l) - size(a.l) || a.i - b.i)
