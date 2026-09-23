@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '@/domain/types'
 import { SettingsPage } from './SettingsPage'
 
-const mocked = vi.hoisted(() => ({ settings: { morningUntil: 15 } as Settings, saveSettings: vi.fn() }))
+const mocked = vi.hoisted(() => ({ settings: { morningUntil: 15 } as Settings, saveSettings: vi.fn(), reload: vi.fn() }))
+vi.mock('@/lib/reload', () => ({ reloadPage: mocked.reload }))
 
 vi.mock('@/data/queries', () => ({
   useSettings: () => ({ data: mocked.settings, isPending: false }),
@@ -16,6 +17,8 @@ const hourPicker = () => screen.getByRole('combobox', { name: 'Утренние 
 beforeEach(() => {
   mocked.settings = { morningUntil: 15 }
   mocked.saveSettings.mockReset()
+  mocked.reload.mockReset()
+  localStorage.removeItem('tabel-mode')
 })
 
 describe('настройки — утро', () => {
@@ -41,5 +44,30 @@ describe('настройки — утро', () => {
   it('объясняет, зачем граница', () => {
     render(<SettingsPage />)
     expect(screen.getByText(/днём оценка уже включает сделанное с утра/i)).toBeInTheDocument()
+  })
+})
+
+describe('настройки — демо', () => {
+  const toggle = () => screen.getByRole('checkbox', { name: 'Демо: выдуманные истории вместо твоих данных' })
+
+  it('по умолчанию выключено — сайт работает с базой', () => {
+    render(<SettingsPage />)
+    expect(toggle()).not.toBeChecked()
+    expect(screen.getByText(/твои данные в базе не трогаются/i)).toBeInTheDocument()
+  })
+
+  it('включение запоминает режим и перезагружает страницу; выключение — обратно в базу', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<SettingsPage />)
+    await user.click(toggle())
+    expect(localStorage.getItem('tabel-mode')).toBe('demo')
+    expect(mocked.reload).toHaveBeenCalledTimes(1)
+    unmount()
+
+    render(<SettingsPage />)
+    expect(toggle()).toBeChecked()
+    await user.click(toggle())
+    expect(localStorage.getItem('tabel-mode')).toBeNull()
+    expect(mocked.reload).toHaveBeenCalledTimes(2)
   })
 })

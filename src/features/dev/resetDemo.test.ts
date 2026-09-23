@@ -46,6 +46,12 @@ describe('сброс демо-данных', () => {
     expect(resetDemoData(storage).sort()).toEqual(['tabel-demo', 'theme'])
   })
 
+  it('режим «Демо» переживает сброс — иначе сброс выкидывал бы в базу', () => {
+    const storage = fakeStorage({ 'tabel-demo': '{}', 'tabel-mode': 'demo' })
+    resetDemoData(storage)
+    expect(storage.getItem('tabel-mode')).toBe('demo')
+  })
+
   it('на пустом хранилище не падает', () => {
     expect(resetDemoData(fakeStorage({}))).toEqual([])
   })
