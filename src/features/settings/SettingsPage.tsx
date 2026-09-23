@@ -1,5 +1,7 @@
+import { isDemo, setDemo } from '@/data/mode'
 import { useSaveSettings, useSettings } from '@/data/queries'
 import { DEFAULT_SETTINGS } from '@/domain/types'
+import { reloadPage } from '@/lib/reload'
 
 /** Из каких часов выбирается граница утра. */
 const HOURS = Array.from({ length: 12 }, (_, i) => 9 + i)
@@ -44,6 +46,28 @@ export function SettingsPage() {
           Утро — база дня: сон, самочувствие и настроение до сегодняшних дел. После этого часа
           «Начать день» не спрашивает утро: днём оценка уже включает сделанное с утра и спутала бы
           аналитику.
+        </p>
+      </section>
+
+      <section aria-labelledby="demo-title" className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+        <h2 id="demo-title" className="text-[15px] font-semibold">
+          Демо
+        </h2>
+        <label className="flex items-center justify-between gap-3 text-[13.5px]">
+          Демо: выдуманные истории вместо твоих данных
+          <input
+            type="checkbox"
+            checked={isDemo()}
+            onChange={(e) => {
+              setDemo(e.target.checked)
+              reloadPage()
+            }}
+            className="size-4 accent-foreground"
+          />
+        </label>
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          Чтобы посмотреть экраны на длинной истории, пока своих дней мало. Демо живёт в этом браузере,
+          твои данные в базе не трогаются; выключишь — вернёшься к ним.
         </p>
       </section>
     </div>

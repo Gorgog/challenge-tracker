@@ -3,13 +3,16 @@ import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domai
 import { parseDay } from '@/domain/date'
 import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
 import { createDemoRepo } from './demoRepo'
+import { isDemo } from './mode'
 import type { Repo } from './repo'
+import { supabase } from './supabaseClient'
+import { createSupabaseRepo } from './supabaseRepo'
 
 /**
- * Единственное место, где выбирается хранилище. Когда появится схема в Supabase,
- * здесь меняется одна строка — экраны не трогаются.
+ * Единственное место, где выбирается хранилище: база (Supabase) или демо в браузере — режим из
+ * настроек (`mode.ts`), смена режима перезагружает страницу. Экраны о хранилище не знают.
  */
-const repo: Repo = createDemoRepo()
+const repo: Repo = isDemo() ? createDemoRepo() : createSupabaseRepo(supabase)
 
 export const queryKeys = {
   challenges: ['challenges'] as const,
