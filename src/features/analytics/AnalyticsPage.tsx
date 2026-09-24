@@ -74,7 +74,8 @@ export function AnalyticsPage() {
     const rows = eventRows(window, goal, live, entriesById, today, late)
     /* под графиком у челленджа — короткий код: имя целиком не помещается в колонку подписей */
     const code = new Map(live.map((c) => [c.id, c.code]))
-    const linkData = linksOf(history, goal)
+    /* связь «поздний отбой» — с того же порога, что ряд и «Что изменилось» */
+    const linkData = linksOf(history, goal, late)
     const short = (r: Row): Row => (r.kind === 'challenge' ? { ...r, label: code.get(r.key.slice('challenge:'.length)) ?? r.label } : r)
     return {
       window,
@@ -188,6 +189,7 @@ export function AnalyticsPage() {
             goal={goal}
             chain={view.chain}
             onOpenChain={() => setChainOpen(true)}
+            onShow={showDays}
             onOpen={(l) => {
               setOpenLink(l)
               setLinkOpen(true)

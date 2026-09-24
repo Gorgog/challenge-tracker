@@ -74,8 +74,25 @@ function Early({ data }: { data: Links }) {
   )
 }
 
-/** Одна найденная связь: ведро (или «Сон» у плохой ночи — это не совет), точки уверенности, числа, «Подробнее». */
-function Item({ l, label, tone, goal, onOpen }: { l: Link; label: string; tone: string; goal: Goal; onOpen: (l: Link) => void }) {
+/**
+ * Одна найденная связь: ведро (или «Сон» у плохой ночи — это не совет), точки уверенности, числа, «Подробнее».
+ * `onShow` — дни прямо на графике, без карточки связи (у плохой ночи: совета нет, есть доказательство).
+ */
+function Item({
+  l,
+  label,
+  tone,
+  goal,
+  onOpen,
+  onShow,
+}: {
+  l: Link
+  label: string
+  tone: string
+  goal: Goal
+  onOpen: (l: Link) => void
+  onShow?: (days: string[]) => void
+}) {
   const [explained, setExplained] = useState(false)
   const level = LEVEL[l.level as keyof typeof LEVEL]
   return (
@@ -98,6 +115,15 @@ function Item({ l, label, tone, goal, onOpen }: { l: Link; label: string; tone: 
       <button type="button" aria-label={`Подробнее: ${linkTitle(l)}`} onClick={() => onOpen(l)} className="self-start text-[13.5px] text-primary">
         Подробнее ›
       </button>
+      {onShow && (
+        <button
+          type="button"
+          onClick={() => onShow(l.withDays)}
+          className="self-start rounded-lg border border-input bg-card px-2.5 py-1.5 text-[13px] focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          Показать эти дни на графике
+        </button>
+      )}
     </li>
   )
 }
@@ -112,6 +138,7 @@ export function LinksCard({
   chain,
   onOpen,
   onOpenChain,
+  onShow,
 }: {
   data: Links
   goal: Goal
@@ -119,6 +146,7 @@ export function LinksCard({
   chain: Chain | null
   onOpen: (l: Link) => void
   onOpenChain: () => void
+  onShow: (days: string[]) => void
 }) {
   if (!data.cards.length && !data.night) return <Early data={data} />
   return (
@@ -128,7 +156,7 @@ export function LinksCard({
         {data.cards.map((l) => (
           <Item key={factorName(l)} l={l} label={BUCKET[l.bucket!]} tone={l.bucket === 'less' ? 'text-worse' : 'text-better'} goal={goal} onOpen={onOpen} />
         ))}
-        {data.night && <Item l={data.night} label="Сон" tone="text-muted-foreground" goal={goal} onOpen={onOpen} />}
+        {data.night && <Item l={data.night} label="Сон" tone="text-muted-foreground" goal={goal} onOpen={onOpen} onShow={onShow} />}
       </ul>
       {chain && (
         <button type="button" onClick={onOpenChain} className="flex flex-col items-start gap-0.5 border-t border-border pt-2.5 text-left">

@@ -8,7 +8,7 @@ import type { Challenge, EntryMap, Night } from './types'
 /*
  * Связи v1 (срез 2 новой аналитики, 24.09; свод `research/2026-09-24-analytics-clean/`, §3.4–3.5, §6.1).
  * Пары заданы заранее, а не перебором: тег вечером → утро (сон, самочувствие, настроение) или
- * продуктивность следующего дня; плохая ночь → вечер того же дня. Отказы в связях не участвуют, пока
+ * продуктивность следующего дня; плохая ночь → вечер того же дня; поздний отбой → утро (срез 4). Отказы в связях не участвуют, пока
  * у них нет явного «Да, без»: день без отметки у них — «выдержал», а это может быть и «не записал».
  * Сжатая разница решает, показывать ли связь; на экране — сырые средние «с / без» и счёт случаев.
  * Последний день окна — сегодня: пока он не записан, он ещё идёт, а не пропущен.
@@ -38,7 +38,8 @@ export const CONTEXT_TAGS: readonly string[] = ['болел', 'дорога', '�
 /** Совет «Больше» по ним звучал бы как «бери дедлайны»: только «Меньше» (решение Georgy 24.09). */
 export const NOT_MORE: readonly string[] = ['дедлайн', 'встречи']
 
-export type Factor = { kind: 'tag'; tag: string } | { kind: 'badSleep' }
+/** `lateBed.from` — с какого отбоя поздно, минуты от полуночи утра: тот же порог, что у ряда «лёг 00:30+». */
+export type Factor = { kind: 'tag'; tag: string } | { kind: 'badSleep' } | { kind: 'lateBed'; from: number }
 /** early — «пока рано»; none — проверено, связи не видно; maybe — ●○○; notable — ●●○. */
 export type Level = 'early' | 'none' | 'maybe' | 'notable'
 export type Otherwise =
@@ -144,6 +145,27 @@ function badSleepPoints(window: TimelineDay[], goal: Goal) {
   return { withTag, without }
 }
 
+/**
+ * Поздний отбой → утро по цели (у продуктивности — вечер того же дня). Ночь записана в утре D+1 и идёт после
+ * вечера D — как клетка ряда «лёг 00:30+». Вечер D может быть не закрыт: ночь известна и без него, только
+ * «до» тогда пустое. Ночь не записана (или утра ещё нет) — ни «с», ни «без».
+ */
+function lateBedPoints(window: TimelineDay[], goal: Goal, from: number) {
+  const withTag: Point[] = []
+  const without: Point[] = []
+  for (let i = 1; i < window.length; i++) {
+    const prev = window[i - 1]!
+    const d = window[i]!
+    const bed = d.morning?.night?.bed
+    if (bed === undefined) continue
+    const value = nextValue(d, goal)
+    if (value === null) continue
+    const p = { value, day: d.day, weekend: isWeekend(d.day), before: prev.evening ? prev.tags : [] }
+    ;(bed >= from ? withTag : without).push(p)
+  }
+  return { withTag, without }
+}
+
 const values = (p: Point[]) => p.map((x) => x.value)
 
 /**
@@ -223,8 +245,9 @@ function linkOf(factor: Factor, withTag: Point[], without: Point[], gateOk: bool
     if (halves.every(Boolean)) level = 'notable'
   }
 
-  const inPower = factor.kind === 'tag' && !CONTEXT_TAGS.includes(factor.tag)
-  const onlyLess = factor.kind === 'tag' && (HARMFUL_TAGS.includes(factor.tag) || NOT_MORE.includes(factor.tag))
+  /* поздний отбой — в силах, но «ложись позже» не советуем: только «Меньше» */
+  const inPower = (factor.kind === 'tag' && !CONTEXT_TAGS.includes(factor.tag)) || factor.kind === 'lateBed'
+  const onlyLess = factor.kind === 'lateBed' || (factor.kind === 'tag' && (HARMFUL_TAGS.includes(factor.tag) || NOT_MORE.includes(factor.tag)))
   const bucket = level === 'none' || !inPower ? null : direction === 'worse' ? 'less' : onlyLess ? null : 'more'
   return {
     ...base,
@@ -441,8 +464,11 @@ export function chain(history: TimelineDay[], link: Link, challenges: Challenge[
   }
 }
 
-/** Связи по последним `LINK_DAYS` дням истории для цели. */
-export function links(history: TimelineDay[], goal: Goal): Links {
+/**
+ * Связи по последним `LINK_DAYS` дням истории для цели. `lateFrom` — порог позднего отбоя со страницы (тот же,
+ * что у ряда «лёг 00:30+»); нет своего обычного отбоя — пары «поздний отбой» нет.
+ */
+export function links(history: TimelineDay[], goal: Goal, lateFrom: number | null = null): Links {
   const window = history.slice(-LINK_DAYS)
   const gate = gateOf(window)
   const half = window.length ? window[Math.floor(window.length / 2)]!.day : null
@@ -453,6 +479,10 @@ export function links(history: TimelineDay[], goal: Goal): Links {
   if (goal !== 'sleep') {
     const { withTag, without } = badSleepPoints(window, goal)
     pairs.push(linkOf({ kind: 'badSleep' }, withTag, without, gate.ok, half))
+  }
+  if (lateFrom !== null) {
+    const { withTag, without } = lateBedPoints(window, goal, lateFrom)
+    pairs.push(linkOf({ kind: 'lateBed', from: lateFrom }, withTag, without, gate.ok, half))
   }
   const shown = pairs.filter(found)
   const cards = (['less', 'more'] as const)

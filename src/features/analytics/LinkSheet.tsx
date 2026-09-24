@@ -2,7 +2,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { Link } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
-import { factorName, LEVEL, linkBasis, otherwiseText, sheetTitle } from './linkWords'
+import { factorName, lateText, LEVEL, linkBasis, otherwiseText, sheetTitle } from './linkWords'
 import { num1 } from './words'
 
 /** Полоска на шкале 0–10 с подписью и числом. */
@@ -39,8 +39,13 @@ export function LinkSheet({
 }) {
   const level = link && link.level !== 'early' && link.level !== 'none' ? LEVEL[link.level] : null
   const other = link ? otherwiseText(link) : null
-  const [without, withF] =
-    link?.factor.kind === 'badSleep' ? ['после обычной ночи', 'после плохой ночи'] : link ? [`без ${factorName(link)}`, `после ${factorName(link)}`] : ['', '']
+  const [without, withF] = !link
+    ? ['', '']
+    : link.factor.kind === 'badSleep'
+      ? ['после обычной ночи', 'после плохой ночи']
+      : link.factor.kind === 'lateBed'
+        ? [`после отбоя раньше ${lateText(link)}`, `после отбоя с ${lateText(link)}`]
+        : [`без ${factorName(link)}`, `после ${factorName(link)}`]
   return (
     <Dialog open={open && link !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="gap-4 sm:max-w-md">

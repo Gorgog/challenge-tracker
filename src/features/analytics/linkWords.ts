@@ -1,4 +1,5 @@
 import { LINK_MIN, type Case, type Link, type Level } from '@/domain/links'
+import { clockText } from '@/domain/night'
 import type { Goal } from '@/domain/overview'
 import { HARMFUL_TAGS } from '@/domain/timeline'
 import { plural } from '@/lib/plural'
@@ -43,25 +44,40 @@ const times = (n: number) => `${n} ${plural(n, 'раз', 'раза', 'раз')}`
 /** «из 1 раза», «из 8 раз». */
 const ofTimes = (n: number) => `${n} ${plural(n, 'раза', 'раз', 'раз')}`
 
-/** Как фактор называется в строке: «алкоголь» — в кавычках, как тег; плохая ночь — словами. */
-export const factorName = (l: Link) => (l.factor.kind === 'tag' ? `«${l.factor.tag}»` : 'плохая ночь')
-const afterFactor = (l: Link) => (l.factor.kind === 'tag' ? `после ${factorName(l)}` : 'после плохой ночи')
-const harmful = (l: Link) => l.factor.kind === 'badSleep' || HARMFUL_TAGS.includes(l.factor.tag)
+/** Что измерено после позднего отбоя — утро (у продуктивности — вечер того же дня), в заголовке карточки. */
+const AFTER_BED: Record<Goal, string> = {
+  all: 'самочувствие и настроение утром',
+  sleep: 'сон',
+  wellbeing: 'самочувствие утром',
+  mood: 'настроение утром',
+  productivity: 'продуктивность на следующий день',
+}
+
+/** Как фактор называется в строке: «алкоголь» — в кавычках, как тег; плохая ночь и поздний отбой — словами. */
+export const factorName = (l: Link) => (l.factor.kind === 'tag' ? `«${l.factor.tag}»` : l.factor.kind === 'lateBed' ? 'поздний отбой' : 'плохая ночь')
+const afterFactor = (l: Link) =>
+  l.factor.kind === 'tag' ? `после ${factorName(l)}` : l.factor.kind === 'lateBed' ? 'после позднего отбоя' : 'после плохой ночи'
+const harmful = (l: Link) => l.factor.kind !== 'tag' || HARMFUL_TAGS.includes(l.factor.tag)
+/** «00:30» — как в ряду «лёг 00:30+» и в «Что изменилось». */
+export const lateText = (l: Link) => (l.factor.kind === 'lateBed' ? clockText(l.factor.from) : '')
 
 /** Строка карточки «Что попробовать». */
 export function linkLine(l: Link, goal: Goal): string {
-  const what = l.factor.kind === 'tag' ? AFTER_TAG[goal] : AFTER_NIGHT[goal]
+  /* поздний отбой, как тег вечером, меряется утром (у продуктивности — вечером того же дня) */
+  const what = l.factor.kind === 'badSleep' ? AFTER_NIGHT[goal] : AFTER_TAG[goal]
   const side = l.direction === 'better' ? 'Лучше' : 'Хуже'
   return `${what} ${afterFactor(l)} — ${num1(l.withMean!)}, без — ${num1(l.withoutMean!)}. ${side} в ${l.sameSide} из ${ofTimes(l.withN)}.`
 }
 
 /** Заголовок строки в списке. */
-export const linkTitle = (l: Link) => (l.factor.kind === 'tag' ? `${factorName(l)} вечером` : 'Плохая ночь')
+export const linkTitle = (l: Link) =>
+  l.factor.kind === 'tag' ? `${factorName(l)} вечером` : l.factor.kind === 'lateBed' ? `Поздний отбой (с ${lateText(l)})` : 'Плохая ночь'
 
 /** Заголовок карточки связи — со временем, без «из-за». */
 export function sheetTitle(l: Link, goal: Goal): string {
   const side = l.direction === 'better' ? 'лучше' : 'хуже'
   if (l.factor.kind === 'badSleep') return `После плохой ночи ${NOUN[goal][0]} вечером обычно ${side}`
+  if (l.factor.kind === 'lateBed') return `После отбоя с ${lateText(l)} и позже ${AFTER_BED[goal]} обычно ${side}`
   const [noun, when] = NOUN[goal]
   return `После вечера с ${factorName(l)} ${noun} ${when} обычно ${side}`
 }
@@ -81,7 +97,8 @@ export function otherwiseText(l: Link): string | null {
     return `${lead} это была суббота или воскресенье — выходные и так бывают другими. С поправкой на выходные разница ${num1(Math.abs(o.diff))}.`
   }
   const other = `«${o.tag}»`
-  const was = l.factor.kind === 'tag' ? `это был ещё и вечер с ${other}` : `накануне был вечер с ${other}`
+  /* у позднего отбоя «до» — вечер перед этой же ночью, как у тега */
+  const was = l.factor.kind === 'badSleep' ? `накануне был вечер с ${other}` : `это был ещё и вечер с ${other}`
   if (o.diff === null) return `${lead} ${was} — разделить их пока нельзя.`
   /* причину не называем: только что осталось без совпавших вечеров, и число не спорит со словами */
   if (Math.abs(o.diff) < 0.5) return `${lead} ${was}. Без таких вечеров разницы почти нет.`
@@ -122,7 +139,10 @@ export function caseLine(c: Case, goal: Goal): string {
 
 /** Под прогрессом «пока рано»: вредное не зовём, остальному — сколько не хватает. */
 export function earlyNote(l: Link): string {
-  if (harmful(l)) return `${l.factor.kind === 'tag' ? factorName(l) : 'Плохие ночи'} звать не будем — это просто счётчик.`
+  if (harmful(l)) {
+    const who = l.factor.kind === 'tag' ? factorName(l) : l.factor.kind === 'lateBed' ? 'Поздний отбой' : 'Плохие ночи'
+    return `${who} звать не будем — это просто счётчик.`
+  }
   const [need, side] = l.withN < LINK_MIN ? [LINK_MIN - l.withN, 'с'] : [LINK_MIN - l.withoutN, 'без']
   return `До связи с ${factorName(l)} не хватает ${need} ${plural(need, 'дня', 'дней', 'дней')} «${side}».`
 }
