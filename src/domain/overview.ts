@@ -204,7 +204,7 @@ export function eventRows(
   const nightAfter = window.map((_, i) => bedOf(window[i + 1]))
   const lateRow: Row[] =
     late !== null && nightAfter.some((b) => b !== null)
-      ? [{ kind: 'late', key: 'late', label: `отбой с ${clockText(late)}`, cells: nightAfter.map((b) => (b === null ? null : b >= late ? 'late' : 'no')) }]
+      ? [{ kind: 'late', key: 'late', label: `лёг ${clockText(late)}+`, cells: nightAfter.map((b) => (b === null ? null : b >= late ? 'late' : 'no')) }]
       : []
   const more: Row[] = [
     ...tags.slice(2).map(tagRow),
