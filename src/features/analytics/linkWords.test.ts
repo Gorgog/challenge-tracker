@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Link } from '@/domain/links'
-import { earlyNote, linkBasis, linkLine, linkTitle, otherwiseText, sheetTitle } from './linkWords'
+import { caseLine, earlyNote, linkBasis, linkLine, linkTitle, otherwiseText, sheetTitle } from './linkWords'
 
 const drink: Link = {
   factor: { kind: 'tag', tag: 'алкоголь' },
@@ -69,5 +69,18 @@ describe('linkWords — связь словами', () => {
     expect(earlyNote(rest)).toBe('До связи с «отдых» не хватает 1 дня «с».')
     expect(earlyNote({ ...rest, withN: 2 })).toBe('До связи с «отдых» не хватает 3 дней «с».')
     expect(earlyNote({ ...rest, withN: 30, withoutN: 3 })).toBe('До связи с «отдых» не хватает 2 дней «без».')
+  })
+})
+
+describe('caseLine — случаи без обобщения', () => {
+  it('один, два и несколько случаев; целые — без запятой', () => {
+    expect(caseLine({ tag: 'ссора', values: [3], days: [], usual: 7 }, 'sleep')).toBe('Единственное утро после «ссора» сон — 3. Твоё обычное — около 7.')
+    expect(caseLine({ tag: 'ссора', values: [3, 4], days: [], usual: 6 }, 'all')).toBe(
+      'Оба утра после «ссора» самочувствие и настроение — 3 и 4. Твоё обычное — около 6.',
+    )
+    expect(caseLine({ tag: 'ссора', values: [3, 4, 2.5], days: [], usual: 6.5 }, 'productivity')).toBe(
+      'Все 3 дня после «ссора» продуктивность — 3, 4 и 2,5. Твоё обычное — около 6,5.',
+    )
+    expect(caseLine({ tag: 'ссора', values: [1], days: [], usual: 6 }, 'productivity')).toBe('Единственный день после «ссора» продуктивность — 1. Твоё обычное — около 6.')
   })
 })
