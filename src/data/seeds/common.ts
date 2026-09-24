@@ -1,4 +1,6 @@
-import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
+import { addDays, dayKey, isoDow, parseDay } from '@/domain/date'
+import { usualNight } from '@/domain/night'
+import type { Challenge, DayLog, DayStart, EntryMap, Night, NightHow, Tag } from '@/domain/types'
 
 /** Что насыпает сценарий демо: челленджи, отметки, итоги и начала дней, теги. */
 export type Seed = {
@@ -55,6 +57,70 @@ export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.mi
  * приёмка методики остаются прежними (см. seeds/evening.test.ts).
  */
 export const morningStream = (seed: number) => mulberry32(seed ^ 0x5bd1e995)
+
+/**
+ * Ночь (лёг, встал) тянет числа из третьей последовательности: утро и вечер не сдвигаются (отпечатки —
+ * в seeds/evening.test.ts).
+ */
+export const nightStream = (seed: number) => mulberry32(seed ^ 0x27d4eb2d)
+
+const step5 = (v: number) => Math.round(v / 5) * 5
+
+/**
+ * Ночь перед каждым записанным утром. Отбой около 23:20: позже после вечера с алкоголем (+1,5 ч) и дедлайном
+ * (+1 ч), в ночь на субботу и воскресенье (+45 мин), перед плохим сном (+40 мин) и на `lateness(day)` минут —
+ * сдвиг сценария. Подъём — через 7,5 ч, раньше перед плохим сном, не позже начала дня. Ответ «как обычно» —
+ * когда время в 10 минутах от обычного за 14 дней (`usualNight`), как если бы нажали кнопку.
+ */
+export function withNights(starts: DayStart[], logs: DayLog[], seed: number, lateness: (day: string) => number = () => 0): DayStart[] {
+  const rnd = nightStream(seed)
+  const tagsOf = new Map(logs.map((l) => [l.day, l.tags]))
+  const out: DayStart[] = []
+  for (const s of [...starts].sort((a, b) => a.day.localeCompare(b.day))) {
+    /* по два числа на каждый день, даже без утра: пропуск утра не сдвигает соседние ночи */
+    const a = rnd()
+    const b = rnd()
+    if (!s.morning) {
+      out.push(s)
+      continue
+    }
+    const prevDay = addDays(parseDay(s.day), -1)
+    const prev = tagsOf.get(dayKey(prevDay)) ?? []
+    const bad = s.morning.sleep <= 4
+    const started = new Date(s.startedAt)
+    const startMin = started.getHours() * 60 + started.getMinutes()
+    let wake = step5(
+      Math.min(
+        startMin - 5,
+        -40 + (a - 0.5) * 70 + 450 + (b - 0.5) * 80 - (bad ? 45 : 0) + (prev.includes('алкоголь') ? 40 : 0),
+      ),
+    )
+    let bed = step5(
+      -40 +
+        (a - 0.5) * 70 +
+        (prev.includes('алкоголь') ? 90 : 0) +
+        (prev.includes('дедлайн') ? 60 : 0) +
+        (isoDow(prevDay) >= 4 && isoDow(prevDay) <= 5 ? 45 : 0) +
+        (bad ? 40 : 0) +
+        lateness(s.day),
+    )
+    bed = Math.max(-720, Math.min(bed, wake - 180))
+    const usual = usualNight(out, s.day)
+    let bedHow: NightHow = 'exact'
+    let wakeHow: NightHow = 'exact'
+    if (usual.bed !== null && Math.abs(bed - usual.bed) <= 10 && usual.bed <= wake - 180) {
+      bed = usual.bed
+      bedHow = 'usual'
+    }
+    if (usual.wake !== null && Math.abs(wake - usual.wake) <= 10 && usual.wake <= startMin - 5 && usual.wake - bed >= 180) {
+      wake = usual.wake
+      wakeHow = 'usual'
+    }
+    const night: Night = { bed, wake, bedHow, wakeHow }
+    out.push({ ...s, morning: { ...s.morning, night } })
+  }
+  return out
+}
 
 /** Доля утр, которые пропускают. */
 export const SKIP_MORNING = 0.12

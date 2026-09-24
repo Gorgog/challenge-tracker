@@ -1,4 +1,4 @@
-import { addDays, dayKey, isoDow } from '@/domain/date'
+import { addDays, dayKey, daysBetween, isoDow, parseDay } from '@/domain/date'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
 import {
@@ -11,6 +11,7 @@ import {
   sleepScore,
   startedAt,
   type Seed,
+  withNights,
 } from './common'
 
 /*
@@ -189,5 +190,7 @@ export function seedBurnout(today: Date, seed: number): Seed {
      Числа на них всё равно вытянуты: основная последовательность не сдвигается. */
   for (const map of Object.values(entries)) delete map[dayKey(today)]
 
-  return { challenges, entries, logs, starts, tags }
+  /* выбираясь, начал иногда нормально спать: месяц назад ложился на полтора часа позже */
+  const late = (day: string) => 90 * (daysBetween(parseDay(day), today) / (DAYS - 1))
+  return { challenges, entries, logs, starts: withNights(starts, logs, seed, late), tags }
 }
