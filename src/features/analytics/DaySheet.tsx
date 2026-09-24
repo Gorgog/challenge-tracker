@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import type { TimelineDay } from '@/domain/timeline'
+import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
-import { dayName } from './words'
+import { dayName, shiftText } from './words'
 
 const outcomeText = (c: Challenge, o: Outcome) =>
   o === 'pending' ? 'день ещё идёт' : c.kind === 'quit' ? (o === 'hit' ? 'без срыва' : 'срыв') : o === 'hit' ? 'выполнен' : 'пропущен'
@@ -10,12 +10,15 @@ const outcomeText = (c: Challenge, o: Outcome) =>
 export function DaySheet({
   day,
   isToday,
+  shift,
   challenges,
   outcomeOf,
   onClose,
 }: {
   day: TimelineDay | null
   isToday: boolean
+  /** Ночь и день словами (`dayShift`). */
+  shift: Shift
   challenges: Challenge[]
   outcomeOf: (c: Challenge, day: string) => Outcome
   onClose: () => void
@@ -58,12 +61,9 @@ export function DaySheet({
                 ))}
               </tbody>
             </table>
-            {(!m || !e) && (
-              <p className="text-[13px] text-muted-foreground">
-                {!m && (isToday && !day.started ? 'День ещё не начат. ' : 'Утро пропущено. ')}
-                {!e && (isToday ? 'Вечер ещё не закрыт' : 'Вечер не закрыт')}
-              </p>
-            )}
+            {shiftText(shift) && <p className="text-[14px]">{shiftText(shift)}</p>}
+            {!m && !shift && <p className="text-[13px] text-muted-foreground">День ещё не начат</p>}
+            {!e && <p className="text-[13px] text-muted-foreground">{isToday ? 'Вечер ещё не закрыт' : 'Вечер не закрыт'}</p>}
             {e && (
               <div className="flex flex-wrap gap-1.5">
                 {day.tags.length ? (

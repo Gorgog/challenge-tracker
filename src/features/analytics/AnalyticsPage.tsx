@@ -4,7 +4,7 @@ import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
 import { morningOpen } from '@/domain/dayStart'
-import { changes as changesOf, eventRows, GOALS, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
+import { changes as changesOf, dayShift, eventRows, GOALS, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
 import { timeline } from '@/domain/timeline'
 import { DEFAULT_SETTINGS, type Challenge } from '@/domain/types'
@@ -76,7 +76,9 @@ export function AnalyticsPage() {
   const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending
 
   const outcomeOf = (c: Challenge, day: string) => dayOutcome(c, entriesById[c.id] ?? {}, parseDay(day), parseDay(todayK))
-  const sheetDay = openDay ? (history?.find((d) => d.day === openDay) ?? null) : null
+  const sheetIndex = openDay && history ? history.findIndex((d) => d.day === openDay) : -1
+  const sheetDay = sheetIndex >= 0 ? history![sheetIndex]! : null
+  const sheetShift = sheetIndex >= 0 ? dayShift(history!, sheetIndex, parseDay(todayK), open) : null
   const head = view ? headline(view.verdict, goal, len) : null
   const band = view?.band
 
@@ -119,11 +121,7 @@ export function AnalyticsPage() {
             <p className="text-[13px] font-semibold">{GOAL_CHART[goal]}</p>
             {band?.kind === 'band' && (
               <p className="text-[12.5px] text-muted-foreground">
-                Полоса — твоё обычное: {num1(band.low)}–{num1(band.high)} (
-                {band.short
-                  ? `пока по ${band.days} ${plural(band.days, 'дню', 'дням', 'дням')}, уточнится`
-                  : `по 28 дням до ${len === 14 ? 'этих двух недель' : 'этих 30 дней'}`}
-                )
+                {`Полоса — твоё обычное: ${num1(band.low)}–${num1(band.high)} (${band.short ? 'пока ' : ''}по ${band.days} ${plural(band.days, 'полному дню', 'полным дням', 'полным дням')}${band.short ? ', уточнится' : ' за 4 недели до этих'})`}
               </p>
             )}
             <OverviewChart days={view.window} goal={goal} band={view.band} rows={view.rows} onOpenDay={(i) => setOpenDay(view.window[i]!.day)} />
@@ -135,7 +133,7 @@ export function AnalyticsPage() {
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
 
-          <DaySheet day={sheetDay} isToday={openDay === todayK} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
+          <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
         </>
       )}
     </div>

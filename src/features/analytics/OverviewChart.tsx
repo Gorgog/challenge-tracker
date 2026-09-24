@@ -1,17 +1,19 @@
-import { useState, type KeyboardEvent } from 'react'
-import { goalValue, type Band, type Goal, type Row } from '@/domain/overview'
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { goalValue, isComplete, pointClass, type Band, type Goal, type Row } from '@/domain/overview'
 import { BAD_SLEEP, HARMFUL_TAGS, type TimelineDay } from '@/domain/timeline'
 import { dayName, num1, shortDate } from './words'
 import { useWidth } from './useWidth'
 
-const PLOT = { top: 14, height: 150, left: 66, right: 6 }
+const PLOT = { top: 24, height: 150, left: 66, right: 6 }
 const ROW_H = 16
 const LABEL = { fontSize: 10, fontFamily: 'var(--font-mono)', fill: 'var(--muted-foreground)' } as const
 
 /**
- * График цели: одна точка на день против полосы «обычно» (решение Georgy по макету 24.09). Выше полосы —
- * синий кружок, ниже — оранжевый пустой, в полосе — серая точка: цвет и форма вместе. Под графиком —
- * ряды событий; «ещё ряды» — остальные теги и челленджи. Нажатие или Enter на дне открывает его.
+ * График цели: одна точка на полный день против полосы «обычно» (решение Georgy по макету 24.09). Выше
+ * полосы — синий кружок, ниже — оранжевый пустой, в полосе — серая точка: цвет и форма вместе. День,
+ * записанный наполовину (сегодня до вечера), — серый пунктирный кружок с подписью, не сравнивается.
+ * Под графиком — ряды событий; «ещё ряды» — остальные теги и челленджи. День выбирается пальцем (ведёшь —
+ * подсвечен, отпустил — открылся), нажатием, с клавиатуры — ← → и Enter.
  */
 export function OverviewChart({
   days,
@@ -28,25 +30,75 @@ export function OverviewChart({
 }) {
   const [ref, width] = useWidth(640)
   const [expanded, setExpanded] = useState(false)
+  const [scrub, setScrub] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dayRefs = useRef<(SVGRectElement | null)[]>([])
+  /* нажатие пальцем уже открыло день — следующий за ним click не открывает второй раз */
+  const openedByPointer = useRef(false)
   const shown = expanded ? [...rows.main, ...rows.more] : rows.main
 
-  const cw = (width - PLOT.left - PLOT.right) / days.length
+  const n = days.length
+  const cw = (width - PLOT.left - PLOT.right) / n
   const x = (i: number) => PLOT.left + (i + 0.5) * cw
   const y = (v: number) => PLOT.top + PLOT.height * (1 - v / 10)
   const rowsTop = PLOT.top + PLOT.height + 26
   const height = rowsTop + shown.length * ROW_H + 4
   const values = days.map((d) => goalValue(d, goal))
+  const full = days.map((d) => isComplete(d, goal))
 
-  /* линия связывает соседние дни с записью; пропуск — разрыв, значение не подставляется */
+  /* линия связывает соседние полные дни; пропуск и неполный день — разрыв, значение не подставляется */
   let path = ''
   values.forEach((v, i) => {
-    if (v === null) return
-    path += `${i > 0 && values[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`
+    if (v === null || !full[i]) return
+    path += `${i > 0 && full[i - 1] && values[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`
   })
-  const dates = [...new Set([0, Math.floor((days.length - 1) / 2), days.length - 1])]
+  const dates = [...new Set([0, Math.floor((n - 1) / 2), n - 1])]
+  const label = (i: number) => `${dayName(days[i]!.day)}${values[i] === null ? ': нет записи' : `: ${num1(values[i]!)}`}`
 
-  const open = (i: number) => (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+  const indexFrom = (e: PointerEvent<SVGSVGElement>) => {
+    const own = (e.target as Element).getAttribute?.('data-index')
+    if (own !== null && own !== undefined) return Number(own)
+    const box = svgRef.current?.getBoundingClientRect()
+    if (!box) return null
+    const i = Math.floor((e.clientX - box.left - PLOT.left) / cw)
+    return Math.max(0, Math.min(n - 1, i))
+  }
+  const onPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    const i = indexFrom(e)
+    if (i === null) return
+    setScrub(i)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* без захвата палец всё равно ведёт по дням под собой */
+    }
+  }
+  const onPointerMove = (e: PointerEvent<SVGSVGElement>) => {
+    if (scrub === null) return
+    const i = indexFrom(e)
+    if (i !== null && i !== scrub) setScrub(i)
+  }
+  const onPointerUp = (e: PointerEvent<SVGSVGElement>) => {
+    if (scrub === null) return
+    const i = indexFrom(e) ?? scrub
+    setScrub(null)
+    openedByPointer.current = true
+    onOpenDay(i)
+  }
+  const onClickDay = (i: number) => (e: MouseEvent) => {
+    e.preventDefault()
+    if (openedByPointer.current) {
+      openedByPointer.current = false
+      return
+    }
+    onOpenDay(i)
+  }
+  const onKeyDay = (i: number) => (e: KeyboardEvent) => {
+    const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : null
+    if (to !== null) {
+      e.preventDefault()
+      dayRefs.current[Math.max(0, Math.min(n - 1, to))]?.focus()
+    } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onOpenDay(i)
     }
@@ -55,7 +107,16 @@ export function OverviewChart({
   return (
     <div className="flex flex-col gap-2">
       <div ref={ref}>
-        <svg width={width} height={height} className="block select-none" aria-hidden={false}>
+        <svg
+          ref={svgRef}
+          width={width}
+          height={height}
+          className="block touch-pan-y select-none"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => setScrub(null)}
+        >
           {band.kind === 'band' && (
             <>
               <rect x={PLOT.left} y={y(band.high)} width={width - PLOT.left - PLOT.right} height={Math.max(1, y(band.low) - y(band.high))} fill="var(--better)" opacity={0.12} />
@@ -72,16 +133,28 @@ export function OverviewChart({
               </text>
             </g>
           ))}
+          {scrub !== null && <rect x={PLOT.left + scrub * cw} y={PLOT.top - 6} width={cw} height={height - PLOT.top + 6} fill="var(--primary)" opacity={0.14} rx={3} />}
           <path d={path} fill="none" stroke="var(--axis)" strokeWidth={1.2} />
           {values.map((v, i) => {
             if (v === null) return null
-            if (band.kind === 'band' && v > band.high) return <circle key={i} data-point="above" cx={x(i)} cy={y(v)} r={4.6} fill="var(--better)" />
-            if (band.kind === 'band' && v < band.low)
-              return <circle key={i} data-point="below" cx={x(i)} cy={y(v)} r={4.2} fill="var(--card)" stroke="var(--worse)" strokeWidth={2.2} />
+            if (!full[i]) {
+              const d = days[i]!
+              return (
+                <g key={i}>
+                  <circle data-point="partial" cx={x(i)} cy={y(v)} r={3.4} fill="var(--card)" stroke="var(--muted-foreground)" strokeDasharray="2 1.5" />
+                  <text x={x(i)} y={y(v) - 8} textAnchor="middle" {...LABEL} fontSize={9}>
+                    {d.morning ? 'утро' : 'вечер'}
+                  </text>
+                </g>
+              )
+            }
+            const cls = pointClass(v, band)
+            if (cls === 'above') return <circle key={i} data-point="above" cx={x(i)} cy={y(v)} r={4.6} fill="var(--better)" />
+            if (cls === 'below') return <circle key={i} data-point="below" cx={x(i)} cy={y(v)} r={4.2} fill="var(--card)" stroke="var(--worse)" strokeWidth={2.2} />
             return <circle key={i} data-point="usual" cx={x(i)} cy={y(v)} r={2.4} fill="var(--muted-foreground)" />
           })}
           {dates.map((i) => (
-            <text key={i} x={x(i)} y={PLOT.top + PLOT.height + 14} textAnchor={i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle'} {...LABEL}>
+            <text key={i} x={x(i)} y={PLOT.top + PLOT.height + 14} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} {...LABEL}>
               {shortDate(days[i]!.day)}
             </text>
           ))}
@@ -97,8 +170,8 @@ export function OverviewChart({
                   const cx = x(i)
                   if (cell === null) return null
                   if (row.kind === 'sleep') {
-                    const h = (10 * (cell as number)) / 10
-                    return <rect key={i} x={cx - 4} y={top + 10 - h} width={8} height={Math.max(1, h)} rx={1.5} fill={(cell as number) <= BAD_SLEEP ? 'var(--worse)' : 'var(--axis)'} />
+                    const h = cell as number
+                    return <rect key={i} x={cx - 4} y={top + 10 - h} width={8} height={Math.max(1, h)} rx={1.5} fill={h <= BAD_SLEEP ? 'var(--worse)' : 'var(--axis)'} />
                   }
                   if (row.kind === 'tag') {
                     if (cell === 'no') return <circle key={i} cx={cx} cy={mid} r={1.2} fill="var(--axis)" />
@@ -112,19 +185,35 @@ export function OverviewChart({
               </g>
             )
           })}
+          {scrub !== null && (
+            <text
+              x={Math.max(PLOT.left, Math.min(width - PLOT.right, x(scrub)))}
+              y={11}
+              textAnchor={x(scrub) < width * 0.3 ? 'start' : x(scrub) > width * 0.7 ? 'end' : 'middle'}
+              fontSize={11}
+              fontFamily="var(--font-mono)"
+              fill="var(--foreground)"
+            >
+              {`${dayName(days[scrub]!.day)} · ${values[scrub] === null ? 'нет записи' : num1(values[scrub]!)}`}
+            </text>
+          )}
           {days.map((d, i) => (
             <rect
               key={d.day}
+              ref={(el) => {
+                dayRefs.current[i] = el
+              }}
+              data-index={i}
               role="button"
               tabIndex={0}
-              aria-label={`${dayName(d.day)}: ${values[i] === null ? 'нет записи' : num1(values[i]!)}`}
+              aria-label={label(i)}
               x={PLOT.left + i * cw}
               y={0}
               width={cw}
               height={height}
               className="cursor-pointer fill-transparent outline-none hover:fill-foreground/5 focus-visible:fill-primary/15"
-              onClick={() => onOpenDay(i)}
-              onKeyDown={open(i)}
+              onClick={onClickDay(i)}
+              onKeyDown={onKeyDay(i)}
             />
           ))}
         </svg>
@@ -142,15 +231,21 @@ export function OverviewChart({
           <span className="size-2.5 rounded-full border-2 border-worse" />
           хуже
         </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2.5 rounded-full border border-dashed border-muted-foreground" />
+          записан наполовину
+        </span>
       </div>
-      {rows.more.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {rows.more.length > 0 ? (
           <button type="button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)} className="text-[12.5px] text-primary">
             {expanded ? 'Скрыть ряды ▴' : `ещё ряды — ${rows.more.length} ▾`}
           </button>
-          <span className="text-[12px] text-muted-foreground">нажми на день</span>
-        </div>
-      )}
+        ) : (
+          <span />
+        )}
+        <span className="text-[12px] text-muted-foreground">веди пальцем по графику или нажми на день</span>
+      </div>
     </div>
   )
 }

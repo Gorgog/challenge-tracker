@@ -2,26 +2,34 @@ import type { ChangeLine, Changes } from '@/domain/overview'
 import { BAD_SLEEP } from '@/domain/timeline'
 import { plural } from '@/lib/plural'
 
+/** Строка словами и «было»; `up` — доля выросла. Числа — те же, что сравнивало правило. */
 function line(l: ChangeLine): { text: string; was: string; up: boolean } {
-  if (l.kind === 'tag') return { text: `«${l.tag}»: ${l.now} ${plural(l.now, 'вечер', 'вечера', 'вечеров')}`, was: `было ${l.was}`, up: l.now > l.was }
-  if (l.kind === 'badSleep') return { text: `Плохих ночей (сон 0–${BAD_SLEEP}): ${l.now}`, was: `было ${l.was}`, up: l.now > l.was }
-  return {
-    text: `${l.challenge.name}: ${l.hits} из ${l.known}`,
-    was: `было ${l.wasHits} из ${l.wasKnown}`,
-    up: l.good,
+  if (l.kind === 'challenge') {
+    return {
+      text: `${l.challenge.name}: ${l.hits} из ${l.known}`,
+      was: `было ${l.wasHits} из ${l.wasKnown}`,
+      up: l.hits / Math.max(1, l.known) > l.wasHits / Math.max(1, l.wasKnown),
+    }
   }
+  const text =
+    l.kind === 'tag'
+      ? `«${l.tag}»: ${l.now} из ${l.of} ${plural(l.of, 'вечера', 'вечеров', 'вечеров')}`
+      : l.kind === 'badSleep'
+        ? `Плохих ночей (сон 0–${BAD_SLEEP}): ${l.now} из ${l.of}`
+        : `Пропущено утр: ${l.now} из ${l.of}`
+  return { text, was: `было ${l.was} из ${l.wasOf}`, up: l.now / Math.max(1, l.of) > l.was / Math.max(1, l.wasOf) }
 }
 
 /** «Что изменилось» — факты против прошлого периода, без выводов о причинах. */
 export function ChangesCard({ changes, len }: { changes: Changes; len: number }) {
-  const prev = len === 14 ? 'прошлые 2 недели' : `прошлые ${len} дней`
+  const [prev, cur, prevOf] = len === 14 ? ['Прошлые 2 недели', 'Эти 2 недели', 'прошлых 2 недель'] : [`Прошлые ${len} дней`, `Эти ${len} дней`, `прошлых ${len} дней`]
   return (
     <section aria-label="Что изменилось" className="flex flex-col gap-2 rounded-2xl border border-border bg-card px-4 py-3.5">
       <h2 className="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">Что изменилось</h2>
-      {!changes.hasPrev ? (
-        <p className="text-[14px] text-muted-foreground">{prev[0]!.toUpperCase() + prev.slice(1)} почти не записаны — сравнивать не с чем.</p>
+      {changes.status !== 'ok' ? (
+        <p className="text-[14px] text-muted-foreground">{changes.status === 'prevEmpty' ? prev : cur} почти не записаны — сравнивать не с чем.</p>
       ) : !changes.lines.length ? (
-        <p className="text-[14px] text-muted-foreground">По записям почти как {prev}.</p>
+        <p className="text-[14px] text-muted-foreground">По записям почти как {prevOf.replace('прошлых', 'прошлые').replace('недель', 'недели')}.</p>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {changes.lines.map((l, i) => {
@@ -39,7 +47,7 @@ export function ChangesCard({ changes, len }: { changes: Changes; len: number })
           })}
         </ul>
       )}
-      <p className="text-[12px] text-muted-foreground">Против {prev.replace('прошлые', 'прошлых').replace('недели', 'недель')}. Это факты из записей — без выводов о причинах.</p>
+      <p className="text-[12px] text-muted-foreground">Против {prevOf}, долей записанных дней. Это факты из записей — без выводов о причинах.</p>
     </section>
   )
 }

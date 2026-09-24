@@ -1,5 +1,6 @@
 import { DOW, formatHuman, isoDow, parseDay } from '@/domain/date'
-import type { Goal, Verdict } from '@/domain/overview'
+import type { Goal, Tone, Verdict } from '@/domain/overview'
+import type { Shift } from '@/domain/timeline'
 import { plural } from '@/lib/plural'
 
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -38,28 +39,58 @@ export const GOAL_CHART: Record<Goal, string> = {
   productivity: 'Продуктивность · оценка вечером',
 }
 
-const TONE: Record<'worse' | 'better' | 'usual', string> = { worse: 'хуже обычного', better: 'лучше обычного', usual: 'как обычно' }
-const HALF: Record<'worse' | 'better' | 'usual', string> = { worse: 'хуже', better: 'лучше', usual: 'примерно как' }
+const TONE: Record<Tone, string> = {
+  worse: 'хуже обычного',
+  better: 'лучше обычного',
+  usual: 'как обычно',
+  mixed: 'то лучше, то хуже обычного',
+}
 const days = (n: number) => `${n} ${plural(n, 'день', 'дня', 'дней')}`
+const fullDays = (n: number) => `${n} ${plural(n, 'полного дня', 'полных дней', 'полных дней')}`
 
 /** Фраза сверху и строка под ней — числа те же, что проверило правило `verdict`. */
 export function headline(v: Verdict, goal: Goal, len: number): { title: string; sub: string } {
   const period = len === 14 ? '2 недели' : `${len} дней`
   if (v.kind === 'none') {
-    return { title: v.need > 0 ? `Ещё ${days(v.need)} с записями — и покажем твоё обычное` : 'Пока мало записей', sub: '' }
+    return { title: `Ещё ${v.need} ${plural(v.need, 'полный день', 'полных дня', 'полных дней')} — и покажем твоё обычное`, sub: '' }
+  }
+  if (v.kind === 'few') {
+    return { title: `Полных дней за ${period}: ${v.recorded} — для вывода нужно хотя бы ${v.need}`, sub: '' }
   }
   if (v.kind === 'halves') {
-    const [second, first] = len === 14 ? ['вторая неделя', 'первой'] : [`вторые ${len / 2} дней`, 'первых']
+    const week = len === 14
+    const second = week ? 'вторая неделя' : `вторые ${len / 2} дней`
+    const firstName = week ? 'первая неделя' : `первые ${len / 2} дней`
     const lead = goal === 'all' ? second[0]!.toUpperCase() + second.slice(1) : `${GOAL_CHIP[goal]}: ${second}`
-    const firstName = len === 14 ? 'первая неделя' : `первые ${len / 2} дней`
-    return { title: `${lead} ${HALF[v.tone]} ${first}`, sub: `в среднем ${num1(v.second)}, ${firstName} — ${num1(v.first)}` }
+    const cmp =
+      v.tone === 'usual'
+        ? `— примерно как ${week ? 'первая' : 'первые'}`
+        : `${v.tone === 'worse' ? 'хуже' : 'лучше'} ${week ? 'первой' : 'первых'}`
+    return { title: `${lead} ${cmp}`, sub: `в среднем ${num1(v.second)}, ${firstName} — ${num1(v.first)}` }
   }
   const title = `${goal === 'all' ? `Последние ${period}` : `${GOAL_CHIP[goal]} за последние ${period}`} — ${TONE[v.tone]}`
   const sub =
     v.tone === 'worse'
-      ? `${days(v.below)} из ${v.recorded} с записями — ниже твоего обычного`
+      ? `${days(v.below)} из ${v.recorded} полных — ниже твоего обычного`
       : v.tone === 'better'
-        ? `${days(v.above)} из ${v.recorded} с записями — выше твоего обычного`
-        : `ниже обычного — ${v.below}, выше — ${v.above} из ${days(v.recorded)} с записями`
+        ? `${days(v.above)} из ${v.recorded} полных — выше твоего обычного`
+        : `ниже обычного — ${v.below}, выше — ${v.above} из ${fullDays(v.recorded)}`
   return { title, sub }
+}
+
+/** Ночь и день словами — строка над цифрами дня. */
+export function shiftText(s: Shift): string | null {
+  if (!s) return null
+  if (s.kind === 'noMorning') return 'Утро пропущено — не видно, что сделала ночь, а что сам день.'
+  const by = num1(s.by)
+  switch (s.kind) {
+    case 'nightDown':
+      return `Просела ночь: утро ниже вчерашнего вечера на ${by}.`
+    case 'dayDown':
+      return `Просел сам день: к вечеру ниже утра на ${by}.`
+    case 'dayUp':
+      return `День вытянул: к вечеру выше утра на ${by}.`
+    case 'nightUp':
+      return `Ночь помогла: утро выше вчерашнего вечера на ${by}.`
+  }
 }
