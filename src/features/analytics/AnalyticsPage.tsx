@@ -192,7 +192,7 @@ export function AnalyticsPage() {
             }}
           />
 
-          <Link to="/challenges" className="self-start text-[14px] text-primary">
+          <Link to={live.length ? '/analytics/challenges' : '/challenges'} className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
 

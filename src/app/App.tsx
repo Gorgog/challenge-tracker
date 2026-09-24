@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router'
 import { supabaseConfigured } from '@/data/supabaseClient'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
+import { ChallengesInsight } from '@/features/analytics/ChallengesInsight'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { ChallengesPage } from '@/features/challenges/ChallengesPage'
@@ -31,6 +32,7 @@ export function App() {
         <Route index element={<DayPage />} />
         <Route path="challenges" element={<ChallengesPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="analytics/challenges" element={<ChallengesInsight />} />
         <Route path="journal" element={<JournalPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<DayPage />} />
