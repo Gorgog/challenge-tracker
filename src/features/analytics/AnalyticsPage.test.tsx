@@ -80,12 +80,24 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
+const quit: Challenge = { ...push, id: 'quit', code: 'БСГ', name: 'Без сигарет', kind: 'quit', measure: 'binary', goal: 1, sortOrder: 1 }
+const gone: Challenge = { ...push, id: 'gone', code: 'УДЛ', name: 'Удалённый', deletedAt: `${key(40)}T10:00:00.000Z`, sortOrder: 2 }
+const chart = () => screen.getByRole('region', { name: 'График' })
+const dayButton = (name: RegExp) => within(chart()).getByRole('button', { name })
+
 describe('AnalyticsPage — обзор: цель, фраза, график, «Что изменилось»', () => {
-  it('сверху — фраза против своего обычного: 7 дней из 14 ниже полосы', () => {
+  it('сверху — фраза против своего обычного по полным дням; сегодняшнее утро без вечера — не в счёт', () => {
     show()
     expect(headline()).toHaveTextContent('Последние 2 недели — хуже обычного')
-    expect(screen.getByText('7 дней из 14 с записями — ниже твоего обычного')).toBeInTheDocument()
-    expect(screen.getByText(/Полоса — твоё обычное: 6,5–7,0/)).toBeInTheDocument()
+    expect(screen.getByText('7 дней из 13 полных — ниже твоего обычного')).toBeInTheDocument()
+    expect(screen.getByText('Полоса — твоё обычное: 6,5–7,0 (по 28 полным дням за 4 недели до этих)')).toBeInTheDocument()
+  })
+
+  it('на графике — точка на полный день: 7 ниже полосы, сегодня — серая «только утро»', () => {
+    show()
+    expect(chart().querySelectorAll('[data-point="below"]')).toHaveLength(7)
+    expect(chart().querySelectorAll('[data-point="partial"]')).toHaveLength(1)
+    expect(within(chart()).getByText('утро')).toBeInTheDocument()
   })
 
   it('цель «Сон» перестраивает фразу; 30 дней — другое окно', async () => {
@@ -98,52 +110,99 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(headline()).toHaveTextContent('Сон за последние 30 дней — как обычно')
   })
 
-  it('на графике — точка на день; нажатие на день открывает его: утро, вечер, теги', async () => {
+  it('нажатие на день открывает его: утро, вечер, теги и ночь словами', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     show()
-    const chart = screen.getByRole('region', { name: 'График' })
-    expect(within(chart).getAllByRole('button', { name: /сентября/ })).toHaveLength(14)
-    await user.click(within(chart).getByRole('button', { name: /^пн, 21 сентября: 3,5/ }))
-    const dialog = screen.getByRole('dialog', { name: 'пн, 21 сентября' })
+    expect(within(chart()).getAllByRole('button', { name: /сентября/ })).toHaveLength(14)
+    await user.click(dayButton(/^ср, 16 сентября: 3,5/))
+    const dialog = screen.getByRole('dialog', { name: 'ср, 16 сентября' })
+    expect(within(dialog).getByText('Просела ночь: утро ниже вчерашнего вечера на 5,0.')).toBeInTheDocument()
     expect(within(dialog).getByText('алкоголь')).toBeInTheDocument()
     expect(within(dialog).getByRole('row', { name: /сон 2/ })).toBeInTheDocument()
     expect(within(dialog).getByRole('row', { name: /продуктивность 6/ })).toBeInTheDocument()
   })
 
-  it('день открывается и с клавиатуры; сегодняшний вечер — «ещё не закрыт»', () => {
+  it('палец ведёт по графику — день подсвечен с датой, отпустил — открылась шторка этого дня', () => {
     show()
-    const today = screen.getByRole('button', { name: /^ср, 23 сентября/ })
-    today.focus()
-    fireEvent.keyDown(today, { key: 'Enter' })
-    expect(within(screen.getByRole('dialog')).getByText('Вечер ещё не закрыт')).toBeInTheDocument()
+    fireEvent.pointerDown(dayButton(/^пт, 18 сентября/), { pointerId: 1 })
+    expect(within(chart()).getByText('пт, 18 сентября · 3,5')).toBeInTheDocument()
+    fireEvent.pointerMove(dayButton(/^вс, 20 сентября/), { pointerId: 1 })
+    expect(within(chart()).getByText('вс, 20 сентября · 3,5')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.pointerUp(dayButton(/^вс, 20 сентября/), { pointerId: 1 })
+    expect(screen.getByRole('dialog', { name: 'вс, 20 сентября' })).toBeInTheDocument()
   })
 
-  it('«ещё ряды» раскрывает челленджи под графиком', async () => {
+  it('палец ушёл в прокрутку страницы — шторка не открывается', () => {
+    show()
+    fireEvent.pointerDown(dayButton(/^пт, 18 сентября/), { pointerId: 1 })
+    fireEvent.pointerCancel(dayButton(/^пт, 18 сентября/), { pointerId: 1 })
+    fireEvent.pointerUp(dayButton(/^пт, 18 сентября/), { pointerId: 1 })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('с клавиатуры: ← → по дням, Enter и пробел открывают; сегодняшний вечер — «ещё не закрыт»', () => {
+    show()
+    const monday = dayButton(/^пн, 21 сентября/)
+    monday.focus()
+    fireEvent.keyDown(monday, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(dayButton(/^вт, 22 сентября/))
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    fireEvent.keyDown(document.activeElement!, { key: ' ' })
+    expect(within(screen.getByRole('dialog', { name: 'ср, 23 сентября' })).getByText('Вечер ещё не закрыт')).toBeInTheDocument()
+  })
+
+  it('шторка прошедшего дня: «Вечер не закрыт», отказ — «без срыва» и «срыв»', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    mocked.challenges = [push, quit]
+    mocked.entries = { quit: { [key(3)]: 1 } }
+    mocked.logs = mocked.logs.filter((l) => l.day !== key(3))
+    show()
+    await user.click(dayButton(/^вс, 20 сентября/))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Вечер не закрыт')).toBeInTheDocument()
+    expect(within(dialog).getByText('срыв')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(dayButton(/^сб, 19 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('без срыва')).toBeInTheDocument()
+  })
+
+  it('«ещё ряды» раскрывает живые челленджи под графиком, удалённого там нет', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    mocked.challenges = [push, gone]
     show()
     const more = screen.getByRole('button', { name: /ещё ряды/ })
     expect(more).toHaveAttribute('aria-expanded', 'false')
-    expect(within(screen.getByRole('region', { name: 'График' })).queryByText('ОТЖ')).not.toBeInTheDocument()
+    expect(within(chart()).queryByText('ОТЖ')).not.toBeInTheDocument()
     await user.click(more)
     expect(more).toHaveAttribute('aria-expanded', 'true')
-    expect(within(screen.getByRole('region', { name: 'График' })).getByText('ОТЖ')).toBeInTheDocument()
+    expect(within(chart()).getByText('ОТЖ')).toBeInTheDocument()
+    expect(within(chart()).queryByText('УДЛ')).not.toBeInTheDocument()
   })
 
-  it('«Что изменилось» — факты против прошлых 2 недель', () => {
+  it('«Что изменилось» — доли против прошлых 2 недель', () => {
     show()
     const box = screen.getByRole('region', { name: 'Что изменилось' })
-    expect(within(box).getByText('«алкоголь»: 7 вечеров')).toBeInTheDocument()
-    expect(within(box).getByText('Плохих ночей (сон 0–4): 7')).toBeInTheDocument()
-    expect(within(box).getAllByText('было 0')).toHaveLength(2)
+    expect(within(box).getByText('«алкоголь»: 7 из 13 вечеров')).toBeInTheDocument()
+    expect(within(box).getByText('Плохих ночей (сон 0–4): 7 из 14')).toBeInTheDocument()
+    expect(within(box).getAllByText('было 0 из 14')).toHaveLength(2)
   })
 
   it('истории мало — сравнивать не с чем и полоса «пока»', () => {
     mocked.logs = mocked.logs.filter((l) => l.day >= key(15))
     mocked.starts = mocked.starts.filter((s) => s.day >= key(15))
     show()
-    expect(within(screen.getByRole('region', { name: 'Что изменилось' })).getByText(/почти не записаны/)).toBeInTheDocument()
-    expect(screen.getByText(/пока по 16 дням/)).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Что изменилось' })).getByText(/Прошлые 2 недели почти не записаны/)).toBeInTheDocument()
+    expect(screen.getByText(/пока по 15 полным дням/)).toBeInTheDocument()
     expect(headline()).toHaveTextContent('Вторая неделя хуже первой')
+  })
+
+  it('полных дней в окне мало — вывода нет, и «Что изменилось» не сравнивает пустое', () => {
+    mocked.logs = mocked.logs.filter((l) => l.day < key(13) || l.day > key(3))
+    mocked.starts = mocked.starts.filter((s) => s.day < key(13) || s.day > key(3))
+    show()
+    expect(headline()).toHaveTextContent('Полных дней за 2 недели: 2 — для вывода нужно хотя бы 5')
+    expect(within(screen.getByRole('region', { name: 'Что изменилось' })).getByText(/Эти 2 недели почти не записаны/)).toBeInTheDocument()
   })
 
   it('не загрузилось — сообщение вместо обзора', () => {
@@ -153,10 +212,11 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(screen.queryByTestId('headline')).not.toBeInTheDocument()
   })
 
-  it('челленджей нет — обзор всё равно есть, внизу — куда идти', () => {
+  it('челленджей нет — обзор всё равно есть, подсказка про день на месте, внизу — куда идти', () => {
     mocked.challenges = []
     show()
     expect(headline()).toHaveTextContent('хуже обычного')
+    expect(screen.getByText('веди пальцем по графику или нажми на день')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Челленджей пока нет/ })).toHaveAttribute('href', '/challenges')
   })
 })
