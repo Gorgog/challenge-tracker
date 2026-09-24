@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { changes, dayShift, eventRows, goalValue, isComplete, pointClass, usualBand, verdict } from './overview'
+import { changes, dayShift, eventRows, goalValue, isComplete, lateFrom, pointClass, usualBand, verdict } from './overview'
 import type { TimelineDay } from './timeline'
 import type { Challenge, EntryMap } from './types'
 
 const TODAY = parseDay('2026-09-23')
 const key = (i: number, len: number) => dayKey(addDays(TODAY, i - len + 1))
 
-type Spec = { m?: number | null; e?: number | null; sleep?: number; prod?: number; tags?: string[] }
+/** `bed` — отбой ночи перед этим утром (минуты от полуночи утра); без него ночь не записана. */
+type Spec = { m?: number | null; e?: number | null; sleep?: number; prod?: number; tags?: string[]; bed?: number }
 
 /** История из `len` дней по сегодня; по умолчанию утро и вечер 6, сон 7, продуктивность 6. */
 function days(len: number, spec: (i: number) => Spec = () => ({})): TimelineDay[] {
   return Array.from({ length: len }, (_, i) => {
-    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [] } = spec(i)
+    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [], bed } = spec(i)
+    const night = bed === undefined ? null : { bed, wake: 460, bedHow: 'exact' as const, wakeHow: 'exact' as const }
     return {
       day: key(i, len),
-      morning: m === null ? null : { sleep, wellbeing: m, mood: m },
+      morning: m === null ? null : { sleep, wellbeing: m, mood: m, night },
       started: m !== null,
       evening: e === null ? null : { mood: e, wellbeing: e, productivity: prod },
       tags: e === null ? [] : tags,
@@ -276,5 +278,65 @@ describe('dayShift — ночь и день словами в шторке', () 
     expect(dayShift(up, 1, TODAY, false)).toEqual({ kind: 'dayUp', by: 2.5 })
     expect(dayShift(h, 2, TODAY, false)).toEqual({ kind: 'noMorning' })
     expect(dayShift(h.map((d, i) => (i === 2 ? { ...d, started: false } : d)), 2, TODAY, true)).toBeNull()
+  })
+})
+
+describe('поздний отбой — на час позже своего обычного', () => {
+  it('обычный — медиана отбоя за 28 дней до окна, до 5 минут; поздний — от него плюс час', () => {
+    /* 42 дня: до окна (28) — 23:30 и 23:40 через день, в окне (14) — 02:00: окно в «обычный» не входит */
+    const h = days(42, (i) => ({ bed: i >= 28 ? 120 : i % 2 ? -30 : -20 }))
+    expect(lateFrom(h, 28)).toBe(35)
+  })
+
+  it('до окна меньше 10 ночей — по всем ночам; меньше 5 — позднего нет', () => {
+    const h = days(20, (i) => (i >= 12 ? { bed: -30 } : {}))
+    expect(lateFrom(h, 14)).toBe(30)
+    const few = days(20, (i) => (i >= 16 ? { bed: -30 } : {}))
+    expect(lateFrom(few, 14)).toBeNull()
+  })
+})
+
+describe('eventRows — ряд позднего отбоя', () => {
+  it('в «ещё», подпись — с какого времени; клетка дня — ночь после его вечера, последняя — ещё не известна', () => {
+    /* ночь перед утром i+1 — после вечера i */
+    const w = days(4, (i) => (i === 0 ? {} : { bed: i === 2 ? 40 : -30 }))
+    const rows = eventRows(w, 'all', [], {}, TODAY, 30)
+    const late = rows.more.find((r) => r.kind === 'late')!
+    expect(late.label).toBe('отбой с 00:30')
+    expect(late.cells).toEqual(['no', 'late', 'no', null])
+  })
+
+  it('ровно «с 00:30» — уже поздно: подпись и порог — одно число', () => {
+    const w = days(2, (i) => (i === 1 ? { bed: 30 } : {}))
+    expect(eventRows(w, 'all', [], {}, TODAY, 30).more.find((r) => r.kind === 'late')!.cells).toEqual(['late', null])
+  })
+
+  it('позднего нет (мало ночей) или ни одной ночи в окне — ряда нет', () => {
+    expect(eventRows(days(3, () => ({ bed: -30 })), 'all', [], {}, TODAY, null).more.some((r) => r.kind === 'late')).toBe(false)
+    expect(eventRows(days(3), 'all', [], {}, TODAY, 30).more.some((r) => r.kind === 'late')).toBe(false)
+  })
+})
+
+describe('changes — поздний отбой', () => {
+  it('доля записанных ночей с позднего и позже, как у плохих ночей', () => {
+    /* прошлые 14: поздно 1 раз; эти 14: 5 раз */
+    const h = days(28, (i) => ({ bed: [3, 15, 17, 20, 22, 26].includes(i) ? 60 : -30 }))
+    const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
+    expect(c.status === 'ok' && c.lines).toEqual([{ kind: 'lateBed', from: 30, now: 5, of: 14, was: 1, wasOf: 14, good: false }])
+  })
+
+  it('ночи записаны меньше чем наполовину в любом периоде — не мерка: неделя после появления вопроса', () => {
+    const h = days(28, (i) => (i >= 21 ? { bed: 90 } : {}))
+    const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
+    expect(c.status === 'ok' && c.lines).toEqual([])
+    const prevHalf = days(28, (i) => (i >= 7 ? { bed: i >= 14 ? 90 : -30 } : {}))
+    const d = changes(prevHalf, 27, 14, [], {}, TODAY, false, 30)
+    expect(d.status === 'ok' && d.lines).toEqual([{ kind: 'lateBed', from: 30, now: 14, of: 14, was: 0, wasOf: 7, good: false }])
+  })
+
+  it('позднего нет — строки нет', () => {
+    const h = days(28, (i) => ({ bed: i >= 14 ? 90 : -30 }))
+    const c = changes(h, 27, 14, [], {}, TODAY, false, null)
+    expect(c.status === 'ok' && c.lines).toEqual([])
   })
 })
