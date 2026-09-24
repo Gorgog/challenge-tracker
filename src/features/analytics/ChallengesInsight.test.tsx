@@ -159,6 +159,8 @@ describe('ChallengesInsight — прогресс, потом честность 
     const c = card('Без сладкого')
     expect(within(c).getByText('идёт 30 дней')).toBeInTheDocument()
     expect(within(c).getByText(/Сравнений у отказов пока нет/)).toBeInTheDocument()
+    /* срез 5а: день без ответа — «не записано», а не выдержанный */
+    expect(within(c).queryByText(/считается выдержанным/)).toBeNull()
   })
 
   it('начались почти вместе — предупреждение; удалённого нет', () => {

@@ -39,6 +39,13 @@ describe('форма нового челленджа', () => {
     expect(created(onCreate).code).toBe('БС')
   })
 
+  it('у отказа подсказка — ответ вечером, а не «засчитывается сам» (срез 5а)', async () => {
+    const { user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Отказ' }))
+    expect(screen.getByText(/вечером в итоге дня — «Да, без» или «сорвался»/i)).toBeInTheDocument()
+    expect(screen.queryByText(/засчитывается сам/i)).toBeNull()
+  })
+
   it('у галочки не спрашивает цель и единицу', async () => {
     const { user } = setup()
     await user.type(nameField(), 'Читать')

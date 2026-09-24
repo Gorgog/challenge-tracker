@@ -152,11 +152,11 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(within(screen.getByRole('dialog', { name: 'ср, 23 сентября' })).getByText('Вечер ещё не закрыт')).toBeInTheDocument()
   })
 
-  it('шторка прошедшего дня: «Вечер не закрыт», отказ — «без срыва» и «срыв»', async () => {
+  it('шторка прошедшего дня: «Вечер не закрыт», отказ — «без срыва», «срыв» и «не записано»', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     mocked.challenges = [push, quit]
-    /* у отказа срыв — отметка 0 (domain/streaks.ts) */
-    mocked.entries = { quit: { [key(3)]: 0 } }
+    /* у отказа срыв — отметка 0, «Да, без» — 1, без ответа — «не записано» (domain/streaks.ts, срез 5а) */
+    mocked.entries = { quit: { [key(3)]: 0, [key(4)]: 1 } }
     mocked.logs = mocked.logs.filter((l) => l.day !== key(3))
     show()
     await user.click(dayButton(/^вс, 20 сентября/))
@@ -166,6 +166,10 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     await user.keyboard('{Escape}')
     await user.click(dayButton(/^сб, 19 сентября/))
     expect(within(screen.getByRole('dialog')).getByText('без срыва')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(dayButton(/^пт, 18 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('не записано')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).queryByText('срыв')).toBeNull()
   })
 
   it('«ещё ряды» раскрывает живые челленджи под графиком, удалённого там нет', async () => {

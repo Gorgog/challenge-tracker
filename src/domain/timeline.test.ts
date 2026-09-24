@@ -226,7 +226,9 @@ describe('dayReport — разбор дня', () => {
     expect(report({}, 1, late).facts.some((f) => f.kind === 'outcome')).toBe(false)
     const quit = challenge({ kind: 'quit', measure: 'binary', goal: 1 })
     expect(report({}, 1, quit, { [key(1)]: 0 }).facts).toContainEqual({ kind: 'outcome', outcome: 'miss' })
-    expect(report({}, 1, quit).facts).toContainEqual({ kind: 'outcome', outcome: 'hit' })
+    expect(report({}, 1, quit, { [key(1)]: 1 }).facts).toContainEqual({ kind: 'outcome', outcome: 'hit' })
+    /* срез 5а: без ответа — «не записано», а не выдержан */
+    expect(report({}, 1, quit).facts).toContainEqual({ kind: 'outcome', outcome: 'unknown' })
   })
 
   it('незакрытый прошедший вечер — факт, сегодняшний — нет', () => {
