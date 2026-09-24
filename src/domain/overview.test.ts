@@ -302,7 +302,7 @@ describe('eventRows — ряд позднего отбоя', () => {
     const w = days(4, (i) => (i === 0 ? {} : { bed: i === 2 ? 40 : -30 }))
     const rows = eventRows(w, 'all', [], {}, TODAY, 30)
     const late = rows.more.find((r) => r.kind === 'late')!
-    expect(late.label).toBe('отбой с 00:30')
+    expect(late.label).toBe('лёг 00:30+')
     expect(late.cells).toEqual(['no', 'late', 'no', null])
   })
 

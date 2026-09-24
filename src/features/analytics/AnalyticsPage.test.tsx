@@ -519,13 +519,13 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(within(dialog).getByRole('row', { name: 'лёг —' })).toBeInTheDocument()
   })
 
-  it('«ещё ряды»: поздний отбой — с часа позже обычного; клетка — у вечера, после которого лёг', async () => {
+  it('«ещё ряды»: поздний отбой («лёг 00:30+» — не шире колонки подписей) — с часа позже обычного; клетка — у вечера, после которого лёг', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     nightWorld()
     show()
-    expect(within(chart()).queryByText('отбой с 00:30')).not.toBeInTheDocument()
+    expect(within(chart()).queryByText('лёг 00:30+')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
-    expect(within(chart()).getByText('отбой с 00:30')).toBeInTheDocument()
+    expect(within(chart()).getByText('лёг 00:30+')).toBeInTheDocument()
     expect(chart().querySelectorAll('[data-late="late"]')).toHaveLength(7)
     expect(chart().querySelectorAll('[data-late="no"]')).toHaveLength(6)
   })
@@ -543,7 +543,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     mocked.starts = mocked.starts.map((s) => (s.day < key(3) && s.morning ? { ...s, morning: { ...s.morning, night: null } } : s))
     show()
     await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
-    expect(within(chart()).queryByText(/отбой с/)).not.toBeInTheDocument()
+    expect(within(chart()).queryByText(/^лёг \d+:\d+\+$/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Отбой с/)).not.toBeInTheDocument()
   })
 
