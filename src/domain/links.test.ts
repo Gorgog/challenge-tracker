@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
-import { CONTEXT_TAGS, LINK_DAYS, LINK_MIN, links, shrink, type Link } from './links'
+import { cases, CONTEXT_TAGS, explains, LINK_DAYS, LINK_MIN, links, shrink, type Link } from './links'
 import type { TimelineDay } from './timeline'
 
 const TODAY = parseDay('2026-09-23') // среда
@@ -323,5 +323,68 @@ describe('links — записей мало', () => {
   it('дни до первой записи не портят долю: новый пользователь с 20 днями', () => {
     const h = hist(LINK_DAYS, (i) => (i < 36 ? { m: null, e: null } : {}))
     expect(links(h, 'all').gate).toMatchObject({ ok: true, recorded: 20 })
+  })
+})
+
+describe('cases — редкие сильные случаи', () => {
+  it('тег 1–4 раза, все утра после ниже обычного на балл и больше — перечисляются', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: i === 20 || i === 40 ? ['ссора'] : [], m: i === 21 ? 3 : i === 41 ? 4 : 6 }))
+    expect(cases(h, 'all')).toEqual([{ tag: 'ссора', values: [3, 4], days: [h[21]!.day, h[41]!.day], usual: 6 }])
+  })
+
+  it('хоть одно утро не ниже обычного на балл — не случай', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: i === 20 || i === 40 ? ['ссора'] : [], m: i === 21 ? 3 : i === 41 ? 5.1 : 6 }))
+    expect(cases(h, 'all')).toEqual([])
+  })
+
+  it('5 раз и больше — это уже связь, не случай; «не в моих силах» — не случай', () => {
+    const five = hist(LINK_DAYS, (i) => ({ tags: i % 10 === 2 ? ['ссора'] : [], m: (i - 1) % 10 === 2 ? 3 : 6 }))
+    expect(cases(five, 'all')).toEqual([])
+    const ill = hist(LINK_DAYS, (i) => ({ tags: i === 20 ? ['болел'] : [], m: i === 21 ? 2 : 6 }))
+    expect(cases(ill, 'all')).toEqual([])
+  })
+
+  it('по цели: сон утром; сильнейшие первыми, не больше двух', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i === 10 ? ['ссора'] : i === 20 ? ['дедлайн'] : i === 30 ? ['встречи'] : [],
+      sleep: i === 11 ? 5 : i === 21 ? 2 : i === 31 ? 4 : 7,
+    }))
+    expect(cases(h, 'sleep').map((c) => [c.tag, c.values])).toEqual([
+      ['дедлайн', [2]],
+      ['встречи', [4]],
+    ])
+  })
+})
+
+describe('explains — что объясняет плохие дни', () => {
+  // окно графика — последние 14 дней; полоса «обычно» — 6–7
+  const band = { kind: 'band', low: 6, high: 7, days: 28, short: false } as const
+  const start = LINK_DAYS - 14
+
+  it('тег «не в моих силах» в плохой день или накануне — «2 дня из 4 плохих»', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      m: [44, 46, 50, 52].includes(i) ? 3 : 6.5,
+      e: [44, 46, 50, 52].includes(i) ? 3 : 6.5,
+      tags: i === 44 ? ['болел'] : i === 45 ? ['болел'] : [],
+    }))
+    expect(explains(h, start, band, 'all')).toEqual([{ tag: 'болел', count: 2, bad: 4, days: [h[44]!.day, h[46]!.day] }])
+  })
+
+  it('один плохой день — ещё не объяснение; тег так же част в обычные дни — тоже', () => {
+    const one = hist(LINK_DAYS, (i) => ({ m: i === 50 ? 3 : 6.5, e: i === 50 ? 3 : 6.5, tags: i === 50 ? ['дорога'] : [] }))
+    expect(explains(one, start, band, 'all')).toEqual([])
+    const often = hist(LINK_DAYS, (i) => ({
+      m: [44, 46].includes(i) ? 3 : 6.5,
+      e: [44, 46].includes(i) ? 3 : 6.5,
+      tags: i % 2 === 0 ? ['выходной'] : [],
+    }))
+    // в плохих днях — 2 из 2, в остальных — все 12 (тег через день: в день или накануне)
+    expect(explains(often, start, band, 'all')).toEqual([])
+  })
+
+  it('теги в моих силах сюда не идут; полосы нет — пусто', () => {
+    const h = hist(LINK_DAYS, (i) => ({ m: [44, 46].includes(i) ? 3 : 6.5, e: [44, 46].includes(i) ? 3 : 6.5, tags: [44, 46].includes(i) ? ['алкоголь'] : [] }))
+    expect(explains(h, start, band, 'all')).toEqual([])
+    expect(explains(h, start, { kind: 'none', need: 3 }, 'all')).toEqual([])
   })
 })

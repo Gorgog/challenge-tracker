@@ -312,3 +312,39 @@ describe('AnalyticsPage — связи', () => {
     expect(within(box).getByText('Смотрели 1 связь — заметных пока нет.')).toBeInTheDocument()
   })
 })
+
+describe('AnalyticsPage — случаи и «Объясняет плохие дни»', () => {
+  it('«Случаи»: редкий тег, после которого оба утра заметно хуже, — без обобщения; дни — на графике', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = drinkWorld()
+    mocked.logs = w.logs.map((l) => (l.day === key(10) || l.day === key(25) ? { ...l, tags: ['ссора'] } : l))
+    mocked.starts = w.starts.map((s) => (s.day === key(9) || s.day === key(24) ? { ...s, morning: { sleep: 7, wellbeing: 2, mood: 2 } } : s))
+    show()
+    const box = screen.getByRole('region', { name: 'Случаи' })
+    expect(within(box).getByText('Случаи · обобщать пока рано')).toBeInTheDocument()
+    expect(within(box).getByText('Оба утра после «ссора» самочувствие и настроение — 2 и 2. Твоё обычное — около 6.')).toBeInTheDocument()
+    await user.click(within(box).getByRole('button', { name: 'Показать эти дни на графике' }))
+    expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(2)
+    expect(screen.getByText('Подсвечено 2 дня')).toBeInTheDocument()
+  })
+
+  it('случаев нет — блока нет', () => {
+    Object.assign(mocked, drinkWorld())
+    show()
+    expect(screen.queryByRole('region', { name: 'Случаи' })).not.toBeInTheDocument()
+  })
+
+  it('«Объясняет плохие дни»: болел — в плохой день или накануне; это не совет', () => {
+    mocked.logs = mocked.logs.map((l) => (l.day === key(7) || l.day === key(5) ? { ...l, tags: [...l.tags, 'болел'] } : l))
+    show()
+    const box = screen.getByRole('region', { name: 'Объясняет плохие дни' })
+    expect(within(box).getByText('Объясняет плохие дни · это не совет')).toBeInTheDocument()
+    expect(within(box).getByText('«болел» — 4 дня из 7 плохих')).toBeInTheDocument()
+  })
+
+  it('плохих дней с такими тегами нет — блока нет', () => {
+    show()
+    expect(screen.queryByRole('region', { name: 'Объясняет плохие дни' })).not.toBeInTheDocument()
+  })
+})
