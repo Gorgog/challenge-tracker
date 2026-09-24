@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
-import { CONTEXT_TAGS, LINK_DAYS, links, shrink, type Link } from './links'
+import { CONTEXT_TAGS, LINK_DAYS, LINK_MIN, links, shrink, type Link } from './links'
 import type { TimelineDay } from './timeline'
 
 const TODAY = parseDay('2026-09-23') // среда
@@ -147,6 +147,55 @@ describe('links — ступени', () => {
     expect(l.level).toBe('none')
     expect(r.cards).toEqual([])
   })
+
+  it('с поправкой на выходные разница меньше балла — связи нет', () => {
+    // утро выходного после тега 3,5, без тега 4 — внутри выходных разница полбалла
+    const h = hist(LINK_DAYS, (i, dow) => ({
+      tags: Math.floor(i / 7) % 2 === 0 && (dow === 4 || dow === 5) ? ['алкоголь'] : [],
+      m: dow >= 5 ? (Math.floor((i - 1) / 7) % 2 === 0 || (dow === 5 && Math.floor(i / 7) % 2 === 0) ? 3.5 : 4) : 7,
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withMean!).toBeLessThan(l.withoutMean! - 1)
+    expect(l.level).toBe('none')
+  })
+
+  it('с поправкой на выходные разница в другую сторону — связи нет', () => {
+    // утро выходного после тега 5,5, без тега 4: внутри выходных тег «лучше», в сумме — «хуже»
+    const tagged = (i: number, dow: number) => Math.floor(i / 7) % 2 === 0 && (dow === 4 || dow === 5)
+    const h = hist(LINK_DAYS, (i, dow) => ({
+      tags: tagged(i, dow) ? ['алкоголь'] : [],
+      m: tagged(i - 1, (dow + 6) % 7) ? 5.5 : dow >= 5 ? 4 : 7.5,
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withMean!).toBeLessThan(l.withoutMean! - 1)
+    expect(l.level).toBe('none')
+  })
+
+  it('тег почти во все выходные — отделить от выходных нельзя: связи нет', () => {
+    // все вечера пт и сб с тегом, кроме одной пятницы; утра выходных 3 (одно без тега — 6), будни 7
+    const tagged = (i: number, dow: number) => (dow === 4 || dow === 5) && i !== 8
+    const h = hist(LINK_DAYS, (i, dow) => ({
+      tags: tagged(i, dow) ? ['алкоголь'] : [],
+      m: dow >= 5 ? (i === 9 ? 6 : 3) : 7,
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBeGreaterThanOrEqual(LINK_MIN)
+    expect(l.level).toBe('none')
+  })
+
+  it('разброс «с» велик — сжатая разница меньше балла, связи нет', () => {
+    // утра после: 5,8 четыре раза и 0 один раз — сырая разница 1,36, сжатая около 0,85
+    let n = 0
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 11 === 2 ? ['алкоголь'] : [],
+      m: (i - 1) % 11 === 2 ? (n++ === 4 ? 0 : 5.8) : 6,
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(5)
+    expect(l.withoutMean! - l.withMean!).toBeGreaterThan(1.3)
+    expect(Math.abs(l.shrunk!)).toBeLessThan(1)
+    expect(l.level).toBe('none')
+  })
 })
 
 describe('links — вёдра', () => {
@@ -185,8 +234,8 @@ describe('links — вёдра', () => {
 })
 
 describe('links — плохая ночь → вечер того же дня', () => {
-  it('сон 0–4 утром против остальных; на цели «Сон» пары нет; в карточки не идёт', () => {
-    const h = hist(LINK_DAYS, (i) => ({ sleep: i % 8 === 1 ? 3 : 8, e: i % 8 === 1 ? 3 : 7 }))
+  it('сон 0–4 утром (4 — ещё плохая) против остальных; на цели «Сон» пары нет; в карточки не идёт', () => {
+    const h = hist(LINK_DAYS, (i) => ({ sleep: i % 8 === 1 ? 4 : 8, e: i % 8 === 1 ? 3 : 7 }))
     const l = badSleepLink(links(h, 'all').pairs)!
     expect(l).toMatchObject({ withN: 7, withMean: 3, withoutMean: 7, level: 'maybe', bucket: null })
     expect(badSleepLink(links(h, 'sleep').pairs)).toBeUndefined()
@@ -194,7 +243,7 @@ describe('links — плохая ночь → вечер того же дня', 
   })
 
   it('утро без вечера не считается', () => {
-    const h = hist(LINK_DAYS, (i) => ({ sleep: i % 8 === 1 ? 3 : 8, e: i === 1 ? null : i % 8 === 1 ? 3 : 7 }))
+    const h = hist(LINK_DAYS, (i) => ({ sleep: i % 8 === 1 ? 4 : 8, e: i === 1 ? null : i % 8 === 1 ? 3 : 7 }))
     expect(badSleepLink(links(h, 'all').pairs)!.withN).toBe(6)
   })
 })
@@ -240,6 +289,15 @@ describe('links — «а может быть иначе»', () => {
     const l = tagLink(links(h, 'all').pairs, 'алкоголь')
     // выходные: 3 против 5 (8 утр), будни: 3 против 7 (1 утро) → (−16 − 4) / 9
     expect(l.otherwise).toEqual({ kind: 'weekend', together: 8, of: 9, diff: -2.2 })
+  })
+
+  it('другой тег в половине вечеров — ещё не «иначе»', () => {
+    let n = 0
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? (n++ < 3 ? ['алкоголь', 'дедлайн'] : ['алкоголь']) : [],
+      m: (i - 1) % 9 === 2 ? 3 : 6,
+    }))
+    expect(tagLink(links(h, 'all').pairs, 'алкоголь').otherwise).toBeNull()
   })
 
   it('совпадений нет — null', () => {
