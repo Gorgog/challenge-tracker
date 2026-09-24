@@ -221,3 +221,94 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(screen.getByRole('link', { name: /Челленджей пока нет/ })).toHaveAttribute('href', '/challenges')
   })
 })
+
+/**
+ * 60 дней ровных: утро 6, вечер 7, сон 7. Алкоголь — вечерами 4, 13, 22, 31, 40, 49 и 58 дней назад;
+ * утро после — 3. В окне связей (56 дней) — шесть утр «с»: 3, 12, 21, 30, 39, 48 дней назад.
+ */
+function drinkWorld(days = 60) {
+  const logs: DayLog[] = []
+  const starts: DayStart[] = []
+  for (let back = days - 1; back >= 1; back--) {
+    const tags = back % 9 === 4 ? ['алкоголь'] : []
+    logs.push({ day: key(back), mood: 7, wellbeing: 7, productivity: 6, tags, note: '', closedAt: `${key(back)}T21:00:00.000Z` })
+  }
+  for (let back = days - 1; back >= 0; back--) {
+    const after = (back + 1) % 9 === 4
+    starts.push({ day: key(back), morning: { sleep: 7, wellbeing: after ? 3 : 6, mood: after ? 3 : 6 }, startedAt: `${key(back)}T08:00:00.000Z` })
+  }
+  return { logs, starts }
+}
+
+const links = () => screen.getByRole('region', { name: /Что попробовать|Связи: пока рано/ })
+
+describe('AnalyticsPage — связи', () => {
+  beforeEach(() => Object.assign(mocked, drinkWorld()))
+
+  it('«Что попробовать»: ведро, тег, точки уверенности и строка с числами; сколько смотрели', () => {
+    show()
+    const box = screen.getByRole('region', { name: 'Что попробовать' })
+    expect(within(box).getByText('Меньше')).toBeInTheDocument()
+    expect(within(box).getByText('«алкоголь» вечером')).toBeInTheDocument()
+    expect(within(box).getByText('Самочувствие и настроение утром после «алкоголь» — 3,0, без — 6,0. Хуже в 6 из 6 раз.')).toBeInTheDocument()
+    expect(within(box).getByText('Смотрели 1 связь, заметных 1.')).toBeInTheDocument()
+  })
+
+  it('нажатие на точки объясняет ступень', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    show()
+    const dots = within(links()).getByRole('button', { name: 'Уверенность: похоже' })
+    expect(dots).toHaveTextContent('●○○')
+    expect(dots).toHaveAttribute('aria-expanded', 'false')
+    await user.click(dots)
+    expect(within(links()).getByText(/Видели 5\+ раз «с» и 5\+ «без», разница больше балла\. Может быть и случайно\./)).toBeInTheDocument()
+  })
+
+  it('«Подробнее» — карточка связи: заголовок со временем, два числа, случаи, на чём держится', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog', { name: 'После вечера с «алкоголь» самочувствие и настроение на следующее утро обычно хуже' })
+    expect(within(dialog).getByText('без «алкоголь» (49)')).toBeInTheDocument()
+    expect(within(dialog).getByText('после «алкоголь» (6)')).toBeInTheDocument()
+    expect(within(dialog).getByText('Хуже обычного в 6 из 6 раз')).toBeInTheDocument()
+    expect(within(dialog).getByText('6 раз «с» и 49 «без». Может быть и случайно.')).toBeInTheDocument()
+  })
+
+  it('«Показать эти дни на графике» — окно 30 дней, дни подсвечены, сказано, сколько не влезло', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Показать эти дни на графике' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(3)
+    expect(screen.getByText('Подсвечено 3 дня из 6 — остальные раньше')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Убрать подсветку' }))
+    expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(0)
+  })
+
+  it('дней «с» мало — «Связи: пока рано» с прогрессом; вредное — только счётчик', () => {
+    mocked.logs = mocked.logs.map((l) => (l.day < key(20) ? { ...l, tags: [] } : l))
+    show()
+    const box = screen.getByRole('region', { name: 'Связи: пока рано' })
+    expect(within(box).getByText('Нужно 5 дней «с» и 5 «без» — тогда покажем, что с чем идёт.')).toBeInTheDocument()
+    expect(within(box).getByRole('img', { name: '«алкоголь»: с — 2 из 5, без — есть' })).toBeInTheDocument()
+    expect(within(box).getByText('«алкоголь» звать не будем — это просто счётчик.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Что попробовать' })).not.toBeInTheDocument()
+  })
+
+  it('новый пользователь: записей меньше 14 дней — сказано, сколько ещё', () => {
+    Object.assign(mocked, drinkWorld(10))
+    show()
+    const box = screen.getByRole('region', { name: 'Связи: пока рано' })
+    expect(within(box).getByText('Записано 10 дней — чтобы искать связи, нужно хотя бы 14.')).toBeInTheDocument()
+  })
+
+  it('смотрели, но заметного нет — так и сказано', () => {
+    mocked.starts = mocked.starts.map((s) => ({ ...s, morning: { sleep: 7, wellbeing: 6, mood: 6 } }))
+    show()
+    const box = screen.getByRole('region', { name: 'Связи: пока рано' })
+    expect(within(box).getByText('Смотрели 1 связь — заметных пока нет.')).toBeInTheDocument()
+  })
+})
