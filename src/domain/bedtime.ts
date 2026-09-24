@@ -17,3 +17,6 @@ export function bedtimeEntries(starts: DayStart[]): EntryMap {
   for (const s of starts) map[dayKey(addDays(parseDay(s.day), -1))] = s.morning?.night ? s.morning.night.bed : NaN
   return map
 }
+
+/** Цель «лечь не позже» — те же границы, что у отбоя в базе: целые минуты от −720 (полдень) до 719. */
+export const validBedtimeGoal = (goal: number) => Number.isInteger(goal) && goal >= -720 && goal < 720

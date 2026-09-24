@@ -1,5 +1,6 @@
 import { parseDay, todayKey } from '@/domain/date'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
+import { validBedtimeGoal } from '@/domain/bedtime'
 import { validNight } from '@/domain/night'
 import {
   DEFAULT_DAY_GROUPS,
@@ -187,6 +188,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
         .sort((a, b) => a.day.localeCompare(b.day))
     },
     async createChallenge(draft) {
+      /* то же правило, что держит база: цель «Время» — целые минуты в границах ночи */
+      if (draft.measure === 'bedtime' && !validBedtimeGoal(draft.goal)) throw new Error('Время отбоя записано неверно')
       const created: Challenge = { ...draft, tagIds: [...draft.tagIds], id: `ch-${++lastId}` }
       challenges.push(created)
       entries[created.id] = {}
@@ -196,7 +199,9 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     async updateChallenge(id, patch) {
       const index = challenges.findIndex((c) => c.id === id)
       if (index < 0) return
-      challenges[index] = applyPatch(challenges[index]!, patch)
+      const next = applyPatch(challenges[index]!, patch)
+      if (next.measure === 'bedtime' && !validBedtimeGoal(next.goal)) throw new Error('Время отбоя записано неверно')
+      challenges[index] = next
       persist()
     },
     async setPaused(id, paused, today) {
@@ -247,6 +252,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       persist()
     },
     async setEntry(challengeId, day, value) {
+      /* как в базе: у «Времени» отметок нет, выполнение считается из утра */
+      if (find(challengeId)?.measure === 'bedtime') throw new Error('Отбой отмечается утром, а не отметкой')
       const map = (entries[challengeId] ??= {})
       if (value === undefined) delete map[day]
       else map[day] = value

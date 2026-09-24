@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { bedtimeEntries } from '@/domain/bedtime'
 import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
 import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
@@ -57,8 +59,28 @@ export function useChallenges() {
   return useQuery({ queryKey: queryKeys.challenges, queryFn: () => repo.listChallenges() })
 }
 
+/**
+ * Отметки челленджей. У «Ложусь раньше» (`bedtime`) их нет в хранилище — они считаются из утр
+ * (`bedtimeEntries`), поэтому данные есть, только когда пришли и отметки, и челленджи, и начала дней; сбой
+ * любого — сбой: без утр «Ложусь раньше» выглядел бы пропущенным. Экраны разницы не видят.
+ */
 export function useEntries() {
-  return useQuery({ queryKey: queryKeys.entries, queryFn: () => repo.listEntries() })
+  const stored = useQuery({ queryKey: queryKeys.entries, queryFn: () => repo.listEntries() })
+  const challenges = useChallenges()
+  const starts = useDayStarts()
+  const data = useMemo(() => {
+    if (!stored.data || !challenges.data || !starts.data) return undefined
+    const bedtime = challenges.data.filter((c) => c.measure === 'bedtime')
+    if (!bedtime.length) return stored.data
+    const derived = bedtimeEntries(starts.data)
+    return { ...stored.data, ...Object.fromEntries(bedtime.map((c) => [c.id, derived])) }
+  }, [stored.data, challenges.data, starts.data])
+  const all = [stored, challenges, starts]
+  return {
+    data,
+    isPending: data === undefined && all.some((q) => q.isPending),
+    isError: all.some((q) => q.isError),
+  }
 }
 
 export function useDayLogs() {
