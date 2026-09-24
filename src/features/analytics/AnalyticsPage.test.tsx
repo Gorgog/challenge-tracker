@@ -185,7 +185,7 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     show()
     const box = screen.getByRole('region', { name: 'Что изменилось' })
     expect(within(box).getByText('«алкоголь»: 7 из 13 вечеров')).toBeInTheDocument()
-    expect(within(box).getByText('Плохих ночей (сон 0–4): 7 из 14')).toBeInTheDocument()
+    expect(within(box).getByText('Плохих ночей: 7 из 14')).toBeInTheDocument()
     expect(within(box).getAllByText('было 0 из 14')).toHaveLength(2)
   })
 

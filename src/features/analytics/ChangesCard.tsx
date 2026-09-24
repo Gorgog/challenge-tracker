@@ -15,7 +15,7 @@ function line(l: ChangeLine): { text: string; was: string; up: boolean } {
     l.kind === 'tag'
       ? `«${l.tag}»: ${l.now} из ${l.of} ${plural(l.of, 'вечера', 'вечеров', 'вечеров')}`
       : l.kind === 'badSleep'
-        ? `Плохих ночей (сон 0–${BAD_SLEEP}): ${l.now} из ${l.of}`
+        ? `Плохих ночей: ${l.now} из ${l.of}`
         : `Пропущено утр: ${l.now} из ${l.of}`
   return { text, was: `было ${l.was} из ${l.wasOf}`, up: l.now / Math.max(1, l.of) > l.was / Math.max(1, l.wasOf) }
 }
@@ -47,7 +47,9 @@ export function ChangesCard({ changes, len }: { changes: Changes; len: number })
           })}
         </ul>
       )}
-      <p className="text-[12px] text-muted-foreground">Против {prevOf}, долей записанных дней. Это факты из записей — без выводов о причинах.</p>
+      <p className="text-[12px] text-muted-foreground">
+        Против {prevOf}, долей записанных дней; плохая ночь — сон 0–{BAD_SLEEP}. Это факты из записей — без выводов о причинах.
+      </p>
     </section>
   )
 }

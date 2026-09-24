@@ -142,9 +142,12 @@ export function OverviewChart({
               return (
                 <g key={i}>
                   <circle data-point="partial" cx={x(i)} cy={y(v)} r={3.4} fill="var(--card)" stroke="var(--muted-foreground)" strokeDasharray="2 1.5" />
-                  <text x={x(i)} y={y(v) - 8} textAnchor="middle" {...LABEL} fontSize={9}>
-                    {d.morning ? 'утро' : 'вечер'}
-                  </text>
+                  {/* подпись — только где хватает места, и у последнего дня: иначе подписи налезают */}
+                  {(cw >= 18 || i === n - 1) && (
+                    <text x={x(i)} y={y(v) - 8} textAnchor={i === n - 1 ? 'end' : 'middle'} {...LABEL} fontSize={9}>
+                      {d.morning ? 'утро' : 'вечер'}
+                    </text>
+                  )}
                 </g>
               )
             }

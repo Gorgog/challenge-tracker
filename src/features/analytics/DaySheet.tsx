@@ -43,6 +43,7 @@ export function DaySheet({
               <DialogTitle className="text-lg font-bold tracking-tight">{dayName(day.day)}</DialogTitle>
               <DialogDescription>Утро, вечер и отметки этого дня.</DialogDescription>
             </DialogHeader>
+            {shiftText(shift) && <p className="text-[14px]">{shiftText(shift)}</p>}
             <table className="w-full text-[14px]">
               <thead>
                 <tr className="text-[11px] text-muted-foreground">
@@ -61,7 +62,6 @@ export function DaySheet({
                 ))}
               </tbody>
             </table>
-            {shiftText(shift) && <p className="text-[14px]">{shiftText(shift)}</p>}
             {!m && !shift && <p className="text-[13px] text-muted-foreground">День ещё не начат</p>}
             {!e && <p className="text-[13px] text-muted-foreground">{isToday ? 'Вечер ещё не закрыт' : 'Вечер не закрыт'}</p>}
             {e && (
