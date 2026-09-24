@@ -558,13 +558,14 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     })
   }
 
-  it('связь «поздний отбой → сон»: «Меньше», порог — тот же, что у ряда «лёг 00:30+»; карточка — с порогом', async () => {
+  it('связь «поздний отбой → сон»: своя строка «Ночь», порог — тот же, что у ряда «лёг 00:30+»; карточка — с порогом', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     lateWorld()
     show()
     await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
     const box = links()
-    expect(within(box).getByText('Меньше')).toBeInTheDocument()
+    expect(within(box).getByText('Ночь')).toBeInTheDocument()
+    expect(within(box).queryByText('Меньше')).not.toBeInTheDocument()
     expect(within(box).getByText('Поздний отбой (с 00:30)')).toBeInTheDocument()
     expect(within(box).getByText('Сон утром после позднего отбоя — 3,0, без — 7,0. Хуже в 7 из 7 раз.')).toBeInTheDocument()
     expect(within(box).getByText('Смотрели 1 связь, заметных 1.')).toBeInTheDocument()
@@ -574,6 +575,51 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     const dialog = screen.getByRole('dialog', { name: 'После отбоя с 00:30 и позже сон обычно хуже' })
     expect(within(dialog).getByText('после отбоя раньше 00:30 (48)')).toBeInTheDocument()
     expect(within(dialog).getByText('после отбоя с 00:30 (7)')).toBeInTheDocument()
+  })
+
+  it('порог один на экран: 30 дней не меняют «с 00:30» ни в ряду, ни в строке «Ночь»', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    // до 30-дневного окна (44…59 дней назад) ложился в 1:00 и спал на 3 — у окна в 30 дней «обычное» было бы 1:00, порог 2:00
+    mocked.starts = mocked.starts.map((s) => {
+      const back = [...Array(60).keys()].find((b) => key(b) === s.day)!
+      return back >= 44 ? { ...s, morning: { ...s.morning!, sleep: 3, night: night(60, 460) } } : s
+    })
+    show()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    await user.click(screen.getByRole('button', { name: '30 дней' }))
+    await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
+    expect(within(chart()).getByText('лёг 00:30+')).toBeInTheDocument()
+    expect(within(links()).getByText('Поздний отбой (с 00:30)')).toBeInTheDocument()
+  })
+
+  it('порядок: карточки ведер, «Ночь», «Сон»; «Показать эти дни» — только у «Сна»', () => {
+    const w = drinkWorld()
+    // цель «Всё»: алкоголь (утро после — 3) + поздние ночи перед утрами 5, 13 … (утро 3) + плохие ночи 1, 9 … (вечер 3)
+    const late = [5, 13, 21, 29, 37, 45, 53].map(key)
+    const bad = [1, 9, 17, 25, 33, 41, 49].map(key)
+    mocked.logs = w.logs.map((l) => (bad.includes(l.day) ? { ...l, mood: 3, wellbeing: 3 } : l))
+    mocked.starts = w.starts.map((s) => {
+      const m = s.morning!
+      const isLate = late.includes(s.day)
+      return {
+        ...s,
+        morning: {
+          ...m,
+          sleep: bad.includes(s.day) ? 2 : 7,
+          wellbeing: isLate ? 3 : m.wellbeing,
+          mood: isLate ? 3 : m.mood,
+          night: isLate ? night(60, 460) : night(-30, 460),
+        },
+      }
+    })
+    show()
+    const box = links()
+    const [less, n, s] = ['Меньше', 'Ночь', 'Сон'].map((t) => within(box).getByText(t))
+    expect(less.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(n.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(box).getAllByRole('button', { name: 'Показать эти дни на графике' })).toHaveLength(1)
+    expect(within(box).getByText('Смотрели 3 связи, заметных 3.')).toBeInTheDocument()
   })
 
   it('«Сон · Плохая ночь» — «Показать эти дни на графике» прямо в строке', async () => {

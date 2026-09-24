@@ -392,11 +392,52 @@ describe('links — поздний отбой → утро (срез 4)', () => 
     expect(lateLink(links(h, 'sleep', 30).pairs)!.otherwise).toMatchObject({ kind: 'tag', tag: 'алкоголь', together: 6, of: 8 })
   })
 
-  it('в «Что попробовать» — наравне с тегами: одно «Меньше», сильнейшее; заметных — видимые', () => {
-    const r = links(lateNights(), 'sleep', 30)
-    expect(r.cards.map((c) => c.factor.kind)).toEqual(['lateBed'])
-    expect(r.found).toBe(1)
-    expect(r.checked).toBe(1)
+  it('в карточки не идёт — своя строка «Ночь»: ведро «Меньше» остаётся тегам (решение Georgy по ревью); заметных — видимые', () => {
+    // алкоголь вечерами 6, 15 … 51, сон после — 2: у тега своя связь, и ведро «Меньше» его, а не отбоя
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 6 ? ['алкоголь'] : [],
+      ...(i % 7 === 3 ? { bed: 60, sleep: 3 } : { bed: -30, sleep: (i - 1) % 9 === 6 ? 2 : 8 }),
+    }))
+    const r = links(h, 'sleep', 30)
+    expect(r.cards.map((c) => c.factor.kind === 'tag' && c.factor.tag)).toEqual(['алкоголь'])
+    expect(r.late).toMatchObject({ factor: { kind: 'lateBed' }, bucket: 'less' })
+    expect(r.found).toBe(2)
+    const alone = links(lateNights(), 'sleep', 30)
+    expect(alone.cards).toEqual([])
+    expect(alone.late?.factor.kind).toBe('lateBed')
+    expect(alone).toMatchObject({ found: 1, checked: 1 })
+  })
+
+  it('связи нет — строки нет', () => {
+    const flat = hist(LINK_DAYS, (i) => ({ bed: i % 7 === 3 ? 60 : -30 }))
+    expect(links(flat, 'sleep', 30)).toMatchObject({ late: null, found: 0 })
+  })
+
+  it('как у тегов: 2/3 ночей по ту же сторону — ещё связь, 5 из 8 — уже нет', () => {
+    let n = 0
+    const h = hist(LINK_DAYS, (i) => (i % 9 === 3 ? { bed: 60, sleep: n++ < 4 ? 2 : 7.5 } : { bed: -30 }))
+    expect(lateLink(links(h, 'sleep', 30).pairs)).toMatchObject({ withN: 6, sameSide: 4, level: 'maybe' })
+    let k = 0
+    const h2 = hist(LINK_DAYS, (i) => (i % 7 === 3 ? { bed: 60, sleep: k++ < 5 ? 2 : 7.5 } : { bed: -30 }))
+    expect(lateLink(links(h2, 'sleep', 30).pairs)).toMatchObject({ withN: 8, sameSide: 5, level: 'none' })
+  })
+
+  it('как у тегов: ●●○ — только если в обеих половинах окна; все поздние ночи в первой — ●○○', () => {
+    const h = hist(LINK_DAYS, (i) => (i < 28 && i % 3 === 1 ? { bed: 60, sleep: 3 } : { bed: -30 }))
+    const l = lateLink(links(h, 'sleep', 30).pairs)!
+    expect(l.withN).toBeGreaterThanOrEqual(8)
+    expect(l.level).toBe('maybe')
+  })
+
+  it('как у тегов: сжатие — разница 1,3 при большом разбросе «с» не проходит', () => {
+    const at = [5, 16, 27, 38, 49]
+    const sleeps = [4, 4, 4, 6.5, 10]
+    const h = hist(LINK_DAYS, (i) => (at.includes(i) ? { bed: 60, sleep: sleeps[at.indexOf(i)] } : { bed: -30 }))
+    const l = lateLink(links(h, 'sleep', 30).pairs)!
+    // сырая разница больше порога (1) и 4 из 5 ночей ниже — держит только сжатие
+    expect(l.withMean! - l.withoutMean!).toBeCloseTo(-1.3, 5)
+    expect(l.sameSide).toBe(4)
+    expect(l.level).toBe('none')
   })
 })
 

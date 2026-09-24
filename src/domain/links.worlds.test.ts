@@ -111,7 +111,7 @@ function run(offset: number, s: Scenario) {
     const c = r.cards.find(isDrink)
     if (c) card++
     if (c && !c.otherwise) cardPlain++
-    if (r.cards.length || r.night) anyShown++
+    if (r.cards.length || r.night || r.late) anyShown++
     if (drink.withN >= 8) {
       eligible++
       if (isFound(drink)) shown++
@@ -120,25 +120,27 @@ function run(offset: number, s: Scenario) {
   return { card: card / WORLDS, cardPlain: cardPlain / WORLDS, anyShown: anyShown / WORLDS, shown: eligible ? shown / eligible : 0, eligible }
 }
 
-/** То же для позднего отбоя: карточка, найденная пара без оговорки (даже если ведро заняла выпивка), мощность. */
+/** То же для позднего отбоя: строка «Ночь», найденная пара без оговорки, мощность; `computed` — в скольких мирах пара вообще посчитана. */
 function runLate(offset: number, s: Scenario, goal: Goal) {
   let card = 0
   let foundPlain = 0
   let anyShown = 0
   let shown = 0
   let eligible = 0
+  let computed = 0
   for (let k = 0; k < WORLDS; k++) {
     const r = linksOf(world(offset + k, s), goal)
     const late = r.pairs.find(isLate)
-    if (r.cards.some(isLate)) card++
+    if (late) computed++
+    if (r.late) card++
     if (late && isFound(late) && !late.otherwise) foundPlain++
-    if (r.cards.length || r.night) anyShown++
+    if (r.cards.length || r.night || r.late) anyShown++
     if (late && late.withN >= 8) {
       eligible++
       if (isFound(late)) shown++
     }
   }
-  return { card: card / WORLDS, foundPlain: foundPlain / WORLDS, anyShown: anyShown / WORLDS, shown: eligible ? shown / eligible : 0, eligible }
+  return { computed, card: card / WORLDS, foundPlain: foundPlain / WORLDS, anyShown: anyShown / WORLDS, shown: eligible ? shown / eligible : 0, eligible }
 }
 
 describe('связи — приёмка по мирам', () => {
@@ -179,6 +181,7 @@ describe('поздний отбой — приёмка по мирам (срез
     for (const [goal, offset] of [['sleep', 600_000], ['all', 700_000]] as const) {
       const r = runLate(offset, nullWeekend, goal)
       console.log(`поздний отбой, нулевой, ${goal}:`, r)
+      expect(r.computed).toBe(WORLDS)
       expect(r.card).toBeLessThanOrEqual(0.1)
       expect(r.anyShown).toBeLessThanOrEqual(0.1)
     }
@@ -187,6 +190,7 @@ describe('поздний отбой — приёмка по мирам (срез
   it('эффект −2 к сну после позднего отбоя, 8+ поздних ночей: ●○○ и выше — не меньше 70 % миров', () => {
     const r = runLate(800_000, { drink: { weekday: 0.1, friSat: 0.1, sun: 0.1 }, effect: 0, weekendShift: 0, lateEffect: -2 }, 'sleep')
     console.log('поздний отбой, эффект −2:', r)
+    expect(r.computed).toBe(WORLDS)
     expect(r.eligible).toBeGreaterThan(WORLDS / 3)
     expect(r.shown).toBeGreaterThanOrEqual(0.7)
   })
@@ -194,6 +198,7 @@ describe('поздний отбой — приёмка по мирам (срез
   it('смешанный: алкоголь и отбой сдвигает, и сон портит, у отбоя своего эффекта нет — связь без «а может быть иначе» не больше 10 % миров', () => {
     const r = runLate(900_000, { drink: { weekday: 0.25, friSat: 0.25, sun: 0.25 }, effect: -2, weekendShift: 0 }, 'sleep')
     console.log('поздний отбой, смешанный:', r)
+    expect(r.computed).toBe(WORLDS)
     expect(r.foundPlain).toBeLessThanOrEqual(0.1)
   })
 })
