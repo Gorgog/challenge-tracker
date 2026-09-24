@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addDays, dayKey, parseDay } from '@/domain/date'
 import type { Challenge, DayLog, DayStart, EntryMap } from '@/domain/types'
@@ -575,6 +575,83 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     const dialog = screen.getByRole('dialog', { name: 'После отбоя с 00:30 и позже сон обычно хуже' })
     expect(within(dialog).getByText('после отбоя раньше 00:30 (48)')).toBeInTheDocument()
     expect(within(dialog).getByText('после отбоя с 00:30 (7)')).toBeInTheDocument()
+  })
+
+  /** Страница аналитики и куда ведёт «Попробовать»: на «Челленджах» видно, с каким черновиком пришли. */
+  function showRoutes() {
+    function Challenges() {
+      const state = useLocation().state as { draft?: string } | null
+      return <p>{`Челленджи, черновик: ${state?.draft ?? 'нет'}`}</p>
+    }
+    render(
+      <MemoryRouter initialEntries={['/analytics']}>
+        <Routes>
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/challenges" element={<Challenges />} />
+          <Route path="/analytics/challenges" element={<p>Разбор челленджей</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('«Ночь»: «Попробовать: ложусь раньше» — форма челленджа с черновиком (срез 4б)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    showRoutes()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    await user.click(within(links()).getByRole('button', { name: 'Попробовать: ложусь раньше' }))
+    expect(screen.getByText('Челленджи, черновик: bedtime')).toBeInTheDocument()
+  })
+
+  it('«Сон · Плохая ночь»: «Попробовать» — только когда плохие ночи чаще после позднего отбоя', () => {
+    const w = drinkWorld()
+    const bad = [1, 9, 17, 25, 33, 41, 49].map(key)
+    mocked.logs = w.logs.map((l) => ({ ...l, tags: [], ...(bad.includes(l.day) ? { mood: 3, wellbeing: 3 } : {}) }))
+    const withNights = (late: boolean) =>
+      w.starts.map((s) => {
+        const isBad = bad.includes(s.day)
+        return { ...s, morning: { sleep: isBad ? 2 : 7, wellbeing: 6, mood: 6, night: late && isBad ? night(60, 460) : night(-30, 460) } }
+      })
+    mocked.starts = withNights(false)
+    showRoutes()
+    expect(within(links()).getByText('Плохая ночь')).toBeInTheDocument()
+    expect(within(links()).queryByRole('button', { name: 'Попробовать: ложусь раньше' })).toBeNull()
+    cleanup()
+    // плохие ночи — после позднего отбоя: связь «поздний отбой → сон» есть, кнопка у «Сна» тоже
+    mocked.starts = withNights(true)
+    showRoutes()
+    const box = links()
+    expect(within(box).getByText('Плохая ночь')).toBeInTheDocument()
+    expect(within(box).queryByText('Ночь')).toBeNull() // на цели «Всё» утро после позднего — как обычно
+    expect(within(box).getAllByRole('button', { name: 'Попробовать: ложусь раньше' })).toHaveLength(1)
+  })
+
+  it('«Ложусь раньше» уже идёт — вместо «Попробовать» ссылка в разбор челленджей', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    mocked.challenges = [push, { ...push, id: 'bed', name: 'Ложусь раньше', code: 'ЛР', measure: 'bedtime', goal: -30, unit: '' }]
+    showRoutes()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    expect(within(links()).queryByRole('button', { name: 'Попробовать: ложусь раньше' })).toBeNull()
+    await user.click(within(links()).getByRole('link', { name: '«Ложусь раньше» уже идёт ›' }))
+    expect(screen.getByText('Разбор челленджей')).toBeInTheDocument()
+  })
+
+  it('шторка дня: у «Ложусь раньше» — лёг до цели, позже, ночь не записана', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    nightWorld()
+    const bed = { ...push, id: 'bed', name: 'Ложусь раньше', code: 'ЛР', measure: 'bedtime' as const, goal: -30, unit: '' }
+    mocked.challenges = [bed]
+    mocked.entries = { bed: { [key(6)]: -40, [key(5)]: 60, [key(4)]: NaN } }
+    show()
+    await user.click(dayButton(/^чт, 17 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('лёг до 23:30')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(dayButton(/^пт, 18 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('позже 23:30')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(dayButton(/^сб, 19 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('ночь не записана')).toBeInTheDocument()
   })
 
   it('порог один на экран: 30 дней не меняют «с 00:30» ни в ряду, ни в строке «Ночь»', async () => {

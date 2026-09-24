@@ -2,7 +2,9 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Challenge } from '@/domain/types'
+import { addDays, dayKey, parseDay, todayKey } from '@/domain/date'
+import type { Challenge, DayStart } from '@/domain/types'
+import { MemoryRouter } from 'react-router'
 import { ChallengesPage } from './ChallengesPage'
 
 const mocked = vi.hoisted(() => ({
@@ -28,6 +30,7 @@ const mocked = vi.hoisted(() => ({
   purge: vi.fn(),
   failed: false,
   list: [] as Challenge[],
+  starts: [] as DayStart[],
   idle: () => ({ mutate: () => {}, mutateAsync: async () => {} }),
 }))
 
@@ -37,6 +40,7 @@ vi.mock('@/data/queries', () => ({
   useTags: () => ({ data: [], isPending: false }),
   useEntries: () => ({ data: {}, isPending: false }),
   useDayLogs: () => ({ data: [], isPending: false }),
+  useDayStarts: () => ({ data: mocked.starts, isPending: false }),
   useCreateChallenge: mocked.idle,
   useSetPaused: mocked.idle,
   useDeleteChallenge: mocked.idle,
@@ -80,7 +84,11 @@ describe('экран челленджей — тост по факту', () => {
     const answers = mocked.purgeHook.answers
     answers.length = 0
     const user = userEvent.setup()
-    render(<ChallengesPage />)
+    render(
+      <MemoryRouter>
+        <ChallengesPage />
+      </MemoryRouter>,
+    )
     await user.click(screen.getByRole('button', { name: /Удалённые/ }))
     for (let i = 0; i < 2; i++) {
       await user.click(screen.getAllByRole('button', { name: 'Удалить навсегда' })[i]!)
@@ -97,9 +105,38 @@ describe('экран челленджей — тост по факту', () => {
 
   it('не загрузилось — так и сказано, а не «Челленджей пока нет»', () => {
     mocked.failed = true
-    render(<ChallengesPage />)
+    render(
+      <MemoryRouter>
+        <ChallengesPage />
+      </MemoryRouter>,
+    )
     expect(screen.getByRole('alert')).toHaveTextContent('Не удалось загрузить')
     expect(screen.queryByText(/Челленджей пока нет/)).toBeNull()
     expect(screen.queryByRole('button', { name: /Новый челлендж/ })).toBeNull()
+  })
+})
+
+describe('«Попробовать: ложусь раньше» из аналитики (срез 4б)', () => {
+  const night = { bed: 0, wake: 460, bedHow: 'exact' as const, wakeHow: 'exact' as const }
+  it('форма открыта с черновиком: «Ложусь раньше», «Время», обычный отбой на 30 минут раньше', async () => {
+    mocked.list = []
+    /* три ночи до сегодня — от настоящих часов: страница берёт «сегодня» сама */
+    mocked.starts = [4, 3, 2].map((back) => dayKey(addDays(parseDay(todayKey()), -back))).map((day) => ({
+      day,
+      morning: { sleep: 7, wellbeing: 6, mood: 6, night },
+      startedAt: `${day}T08:00:00`,
+    }))
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/challenges', state: { draft: 'bedtime' } }]}>
+        <ChallengesPage />
+      </MemoryRouter>,
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Новый челлендж' })
+    expect(within(dialog).getByLabelText(/название/i)).toHaveValue('Ложусь раньше')
+    expect(within(dialog).getByRole('button', { name: 'Время' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(dialog).getByLabelText('Лечь не позже')).toHaveValue('23:30')
+    await user.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

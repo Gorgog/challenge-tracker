@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { todayKey } from '@/domain/date'
@@ -257,5 +257,82 @@ describe('форма правки челленджа', () => {
     await user.click(screen.getByRole('switch', { name: /запереть правила/i }))
     await user.click(save())
     expect(saved(onSave).rulesLocked).toBe(true)
+  })
+})
+
+describe('«Время» — лечь не позже (срез 4б)', () => {
+  const open = (props: Partial<Parameters<typeof ChallengeForm>[0]> = {}) => {
+    const onCreate = vi.fn()
+    const onSave = vi.fn()
+    render(<ChallengeForm open existing={[]} tags={TAGS} onCreate={onCreate} onSave={onSave} onCancel={vi.fn()} usualBed={0} {...props} />)
+    return { onCreate, onSave, user: userEvent.setup() }
+  }
+  const bedField = () => screen.getByLabelText('Лечь не позже')
+
+  it('третий вариант у привычки — «Время»; поле — обычный отбой на 30 минут раньше; отмечать не нужно', async () => {
+    const { user } = open()
+    await user.click(screen.getByRole('button', { name: 'Время' }))
+    expect(bedField()).toHaveValue('23:30')
+    expect(screen.getByText(/Обычно ты ложишься в 00:00 — подставили на 30 минут раньше/)).toBeInTheDocument()
+    expect(screen.getByText(/Отмечать не нужно: считается само из «Лёг» утром/)).toBeInTheDocument()
+    // цели в день и единицы у времени нет
+    expect(screen.queryByLabelText(/цель в день/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Отказ' }))
+    expect(screen.queryByRole('button', { name: 'Время' })).not.toBeInTheDocument()
+  })
+
+  it('создаёт челлендж: цель — минуты от полуночи утра (23:30 = −30, 00:30 = 30), без единицы', async () => {
+    const { user, onCreate } = open()
+    await user.type(nameField(), 'Ложусь раньше')
+    await user.click(screen.getByRole('button', { name: 'Время' }))
+    await user.click(submit())
+    expect(created(onCreate)).toMatchObject({ kind: 'do', measure: 'bedtime', goal: -30, unit: null })
+    fireEvent.change(bedField(), { target: { value: '00:30' } })
+    await user.click(submit())
+    expect((onCreate.mock.calls[1]![0] as Challenge).goal).toBe(30)
+  })
+
+  it('своего обычного отбоя ещё нет — поле пустое, «Создать» ждёт времени', async () => {
+    const { user } = open({ usualBed: null })
+    await user.type(nameField(), 'Ложусь раньше')
+    await user.click(screen.getByRole('button', { name: 'Время' }))
+    expect(bedField()).toHaveValue('')
+    expect(screen.queryByText(/Обычно ты ложишься/)).not.toBeInTheDocument()
+    expect(submit()).toBeDisabled()
+    fireEvent.change(bedField(), { target: { value: '23:00' } })
+    expect(submit()).toBeEnabled()
+  })
+
+  it('черновик из аналитики: название и «Время» уже выбраны', () => {
+    open({ initial: { name: 'Ложусь раньше', measure: 'bedtime' } })
+    expect(nameField()).toHaveValue('Ложусь раньше')
+    expect(screen.getByRole('button', { name: 'Время' })).toHaveAttribute('aria-pressed', 'true')
+    expect(bedField()).toHaveValue('23:30')
+    expect(submit()).toBeEnabled()
+  })
+
+  it('правка: время открывается как записано и сохраняется, измерение остаётся «Время»', async () => {
+    const c: Challenge = {
+      id: 'bed',
+      name: 'Ложусь раньше',
+      code: 'ЛР',
+      kind: 'do',
+      measure: 'bedtime',
+      goal: -45,
+      unit: null,
+      color: 'var(--chart-1)',
+      tagIds: [],
+      startDate: '2026-09-01',
+      lengthDays: null,
+      pauses: [],
+      rulesLocked: false,
+      deletedAt: null,
+      sortOrder: 0,
+    }
+    const { user, onSave } = open({ challenge: c, existing: [c] })
+    expect(bedField()).toHaveValue('23:15')
+    fireEvent.change(bedField(), { target: { value: '23:00' } })
+    await user.click(screen.getByRole('button', { name: /сохранить/i }))
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ measure: 'bedtime', goal: -60, unit: null })
   })
 })

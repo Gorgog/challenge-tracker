@@ -1,14 +1,15 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Challenge, DayLog, DayStart, Settings } from '@/domain/types'
+import type { Challenge, DayLog, DayStart, EntryMap, Settings } from '@/domain/types'
 import { DayPage } from './DayPage'
 
 const TODAY = '2026-09-21'
 
 const mocked = vi.hoisted(() => ({
   challenges: [] as Challenge[],
+  entries: {} as Record<string, EntryMap>,
   logs: [] as DayLog[],
   starts: [] as DayStart[],
   startsPending: false,
@@ -34,7 +35,7 @@ const answer = (name: string, data: unknown) =>
 
 vi.mock('@/data/queries', () => ({
   useChallenges: () => answer('challenges', mocked.challenges),
-  useEntries: () => answer('entries', {}),
+  useEntries: () => answer('entries', mocked.entries),
   useDayLogs: () => answer('logs', mocked.logs),
   useDayGroups: () => ({ data: ['tasks', 'holds'], isPending: false }),
   useDayStarts: () =>
@@ -110,6 +111,7 @@ beforeEach(() => {
   at(8)
   Object.assign(mocked, {
     challenges: [read, smoke],
+    entries: {},
     logs: [],
     starts: [],
     startsPending: false,
@@ -558,5 +560,42 @@ describe('экран дня — день закрыт', () => {
     expect(screen.getByText('День закрыт')).toBeInTheDocument()
     expect(screen.queryByText('День не начат')).toBeNull()
     expect(screen.queryByText(/^Утро/)).toBeNull()
+  })
+})
+
+describe('«Ложусь раньше» на экране дня (срез 4б)', () => {
+  const bed: Challenge = { ...read, id: 'bed', code: 'ЛР', name: 'Ложусь раньше', measure: 'bedtime', goal: -30, sortOrder: 2 }
+  const YESTERDAY = '2026-09-20'
+  const show = (yesterday: number | undefined) => {
+    mocked.challenges = [read, bed]
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.entries = { bed: yesterday === undefined ? {} : { [YESTERDAY]: yesterday } }
+    render(<DayPage />)
+  }
+
+  it('строка без отметки: цель, сегодня считается завтра, вчерашний отбой; в счёт задач не идёт', () => {
+    show(-40)
+    expect(screen.getByText('Ложусь раньше · до 23:30')).toBeInTheDocument()
+    expect(screen.getByText('Сегодня посчитается завтра утром · вчера лёг в 23:20 ✓')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Отметить: Ложусь раньше' })).toBeNull()
+    expect(screen.getByText(/0 из 1 задачи закрыто/)).toBeInTheDocument()
+  })
+
+  it('вчера позже цели, ночь не записана, ещё не известна — так и сказано', () => {
+    show(40)
+    expect(screen.getByText('Сегодня посчитается завтра утром · вчера лёг в 00:40 — позже')).toBeInTheDocument()
+    cleanup()
+    show(NaN)
+    expect(screen.getByText('Сегодня посчитается завтра утром · вчера — ночь не записана')).toBeInTheDocument()
+    cleanup()
+    show(undefined)
+    expect(screen.getByText('Сегодня посчитается завтра утром · вчера — посчитается, когда начнёшь день')).toBeInTheDocument()
+  })
+
+  it('цифра с клавиатуры не отмечает «Ложусь раньше»', async () => {
+    const user = userEvent.setup()
+    show(-40)
+    await user.keyboard('2')
+    expect(mocked.setEntry).not.toHaveBeenCalled()
   })
 })

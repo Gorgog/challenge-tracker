@@ -79,3 +79,10 @@ describe('строка челленджа', () => {
     expect(screen.getByLabelText(/правила заперты/i)).toBeInTheDocument()
   })
 })
+
+describe('«Ложусь раньше» в списке (срез 4б)', () => {
+  it('подпись — время отбоя и откуда оно берётся, без «в день»', () => {
+    setup(challenge({ measure: 'bedtime', goal: -30, name: 'Ложусь раньше' }))
+    expect(screen.getByText(/^лечь не позже 23:30 · считается из утра · бессрочно/)).toBeInTheDocument()
+  })
+})

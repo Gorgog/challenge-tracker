@@ -178,3 +178,17 @@ describe('ChallengesInsight — прогресс, потом честность 
     expect(screen.getByRole('alert')).toHaveTextContent('Не удалось загрузить')
   })
 })
+
+describe('«Ложусь раньше» в разборе (срез 4б)', () => {
+  it('прогресс — из записанных ночей; сказано, что отбой считается сам', () => {
+    const bed: Challenge = { ...base, id: 'bed', name: 'Ложусь раньше', measure: 'bedtime', goal: -30, lengthDays: null, startDate: key(10) }
+    Object.assign(mocked, world(() => false))
+    mocked.challenges = [bed]
+    // 10…1 день назад: до 23:30 — 6 ночей, позже — 3, не записана — 1 (не в счёт)
+    mocked.entries = { bed: Object.fromEntries([-40, -40, 30, NaN, -40, 30, -40, 30, -40, -40].map((v, i) => [key(10 - i), v])) }
+    show()
+    const card = screen.getByRole('article', { name: 'Ложусь раньше' })
+    expect(within(card).getByText('6 из 9')).toBeInTheDocument()
+    expect(within(card).getByText('Отбой считается сам из времени, которое ты отмечаешь утром.')).toBeInTheDocument()
+  })
+})
