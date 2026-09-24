@@ -186,6 +186,10 @@ export function OverviewChart({
                     const h = cell as number
                     return <rect key={i} x={cx - 4} y={top + 10 - h} width={8} height={Math.max(1, h)} rx={1.5} fill={h <= BAD_SLEEP ? 'var(--worse)' : 'var(--axis)'} />
                   }
+                  if (row.kind === 'late') {
+                    if (cell === 'no') return <circle key={i} data-late="no" cx={cx} cy={mid} r={1.2} fill="var(--axis)" />
+                    return <rect key={i} data-late="late" x={cx - 4} y={mid - 4} width={8} height={8} rx={1.5} fill="var(--worse)" opacity={0.75} />
+                  }
                   if (row.kind === 'tag') {
                     if (cell === 'no') return <circle key={i} cx={cx} cy={mid} r={1.2} fill="var(--axis)" />
                     return <rect key={i} x={cx - 4} y={mid - 4} width={8} height={8} rx={1.5} fill={HARMFUL_TAGS.includes(row.label) ? 'var(--worse)' : 'var(--secondary-foreground)'} />

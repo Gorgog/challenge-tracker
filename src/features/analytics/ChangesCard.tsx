@@ -1,5 +1,6 @@
 import type { ChangeLine, Changes } from '@/domain/overview'
 import { BAD_SLEEP } from '@/domain/timeline'
+import { clockText } from '@/domain/night'
 import { plural } from '@/lib/plural'
 
 /** Строка словами и «было»; `up` — доля выросла. Числа — те же, что сравнивало правило. */
@@ -16,7 +17,9 @@ function line(l: ChangeLine): { text: string; was: string; up: boolean } {
       ? `«${l.tag}»: ${l.now} из ${l.of} ${plural(l.of, 'вечера', 'вечеров', 'вечеров')}`
       : l.kind === 'badSleep'
         ? `Плохих ночей: ${l.now} из ${l.of}`
-        : `Пропущено утр: ${l.now} из ${l.of}`
+        : l.kind === 'lateBed'
+          ? `Отбой с ${clockText(l.from)} и позже: ${l.now} из ${l.of} ${plural(l.of, 'ночи', 'ночей', 'ночей')}`
+          : `Пропущено утр: ${l.now} из ${l.of}`
   return { text, was: `было ${l.was} из ${l.wasOf}`, up: l.now / Math.max(1, l.of) > l.was / Math.max(1, l.wasOf) }
 }
 

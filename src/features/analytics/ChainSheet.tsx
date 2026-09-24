@@ -1,10 +1,11 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Chain, ChainRow } from '@/domain/links'
+import { clockText } from '@/domain/night'
 import { plural } from '@/lib/plural'
 import { LEVEL } from './linkWords'
 import { num1 } from './words'
 
-const PART = { morning: 'Утро', day: 'День', evening: 'Вечер' } as const
+const PART = { night: 'Ночь', morning: 'Утро', day: 'День', evening: 'Вечер' } as const
 const times = (n: number) => `${n} ${plural(n, 'раз', 'раза', 'раз')}`
 
 /** Шаг «как обычно» и шаг по 1–2 дням — серым: это не отличие. */
@@ -13,6 +14,12 @@ function cells(r: ChainRow): { value: string; note: string; same: boolean } {
   if (r.kind === 'habit') {
     const note = r.side === 'few' ? 'мало дней' : `обычно ${Math.round(r.usualShare * 10)} из 10`
     return { value: `${r.hits} из ${r.known}`, note, same: quiet }
+  }
+  if (r.kind === 'time') {
+    const value = clockText(r.mean)
+    if (r.side === 'few') return { value, note: 'мало дней', same: true }
+    if (r.side === 'same') return { value, note: '≈ как обычно', same: true }
+    return { value, note: `обычно ${clockText(r.usual)} · ${r.side === 'later' ? 'позже' : 'раньше'} в ${r.count} из ${r.n}`, same: false }
   }
   if (r.side === 'few') return { value: num1(r.mean), note: 'мало дней', same: true }
   if (r.side === 'same') return { value: num1(r.mean), note: '≈ как обычно', same: true }
@@ -23,8 +30,7 @@ function cells(r: ChainRow): { value: string; note: string; same: boolean } {
 export const chainLead = (c: Chain) => `после вечера с «${c.tag}» (${times(c.episodes)})`
 
 /**
- * «Что обычно шло следом» (макет, без строк отбоя и подъёма — их пока не записываем): утро, день, вечер
- * после фактора против обычного. Шаги «как обычно» — серым, не выкидываются. Порядок, а не причины.
+ * «Что обычно шло следом» (макет): ночь, утро, день, вечер после фактора против обычного. Шаги «как обычно» — серым, не выкидываются. Порядок, а не причины.
  */
 export function ChainSheet({
   chain,

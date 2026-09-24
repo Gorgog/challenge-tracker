@@ -1,4 +1,5 @@
 import { dayKey, parseDay } from './date'
+import { clockText } from './night'
 import { dayOutcome } from './streaks'
 import {
   BAD_SLEEP,
@@ -145,6 +146,27 @@ export function dayShift(history: TimelineDay[], index: number, today: Date, mor
   return shiftOfDay(stateOf(prev?.evening ?? null), stateOf(d.morning), stateOf(d.evening), morningPending(d, today, morningOpen))
 }
 
+/* ---------- поздний отбой ---------- */
+
+/** Поздний отбой — на столько минут позже своего обычного и больше. */
+export const LATE_BED = 60
+
+const bedOf = (d: TimelineDay | undefined) => d?.morning?.night?.bed ?? null
+
+/**
+ * С какого времени отбой поздний: обычный — медиана отбоя за `BAND_DAYS` до окна (окно не входит, как у
+ * полосы), до 5 минут, плюс `LATE_BED`. Ночей до окна меньше `BAND_MIN` — по всем ночам; меньше
+ * `BAND_FLOOR` — позднего нет. Минуты от полуночи утра: 30 — это 00:30.
+ */
+export function lateFrom(history: TimelineDay[], windowStart: number): number | null {
+  const beds = (list: TimelineDay[]) => list.map(bedOf).filter((v): v is number => v !== null)
+  let base = beds(history.slice(Math.max(0, windowStart - BAND_DAYS), windowStart))
+  if (base.length < BAND_MIN) base = beds(history)
+  if (base.length < BAND_FLOOR) return null
+  const usual = percentile([...base].sort((a, b) => a - b), 0.5)
+  return Math.round(usual / 5) * 5 + LATE_BED
+}
+
 /* ---------- ряды под графиком ---------- */
 
 export type Row =
@@ -152,14 +174,20 @@ export type Row =
   /** 'yes' / 'no' — вечер закрыт; null — вечер не закрыт, тег неизвестен. */
   | { kind: 'tag'; key: string; label: string; cells: ('yes' | 'no' | null)[] }
   | { kind: 'challenge'; key: string; label: string; cells: Outcome[] }
+  /** Ночь после вечера дня: 'late' — с `lateFrom` и позже; null — не записана или ещё не прошла. */
+  | { kind: 'late'; key: string; label: string; cells: ('late' | 'no' | null)[] }
 
-/** Сон (кроме цели «Сон») и два самых частых тега окна — сразу; остальные теги и челленджи — в «ещё». */
+/**
+ * Сон (кроме цели «Сон») и два самых частых тега окна — сразу; остальные теги, поздний отбой и челленджи —
+ * в «ещё». Отбой стоит у дня, после вечера которого лёг (как в макете): у последнего дня окна ночь ещё впереди.
+ */
 export function eventRows(
   window: TimelineDay[],
   goal: Goal,
   challenges: Challenge[],
   entries: Record<string, EntryMap>,
   today: Date,
+  late: number | null = null,
 ): { main: Row[]; more: Row[] } {
   const counts = new Map<string, number>()
   for (const d of window) for (const t of d.tags) counts.set(t, (counts.get(t) ?? 0) + 1)
@@ -173,8 +201,14 @@ export function eventRows(
   const main: Row[] = []
   if (goal !== 'sleep') main.push({ kind: 'sleep', key: 'sleep', label: 'сон', cells: window.map((d) => d.morning?.sleep ?? null) })
   main.push(...tags.slice(0, 2).map(tagRow))
+  const nightAfter = window.map((_, i) => bedOf(window[i + 1]))
+  const lateRow: Row[] =
+    late !== null && nightAfter.some((b) => b !== null)
+      ? [{ kind: 'late', key: 'late', label: `отбой с ${clockText(late)}`, cells: nightAfter.map((b) => (b === null ? null : b >= late ? 'late' : 'no')) }]
+      : []
   const more: Row[] = [
     ...tags.slice(2).map(tagRow),
+    ...lateRow,
     ...challenges.map(
       (c): Row => ({
         kind: 'challenge',
@@ -195,6 +229,8 @@ export type ChangeLine =
   | ({ kind: 'tag'; tag: string; good: boolean | null } & Share)
   | ({ kind: 'badSleep'; good: boolean } & Share)
   | ({ kind: 'skippedMornings'; good: boolean } & Share)
+  /** Ночи с отбоем с `from` и позже — от записанных ночей. */
+  | ({ kind: 'lateBed'; from: number; good: boolean } & Share)
   | { kind: 'challenge'; challenge: Challenge; hits: number; known: number; wasHits: number; wasKnown: number; good: boolean }
 
 export type Changes = { status: 'ok'; lines: ChangeLine[] } | { status: 'prevEmpty' } | { status: 'curEmpty' }
@@ -221,6 +257,7 @@ export function changes(
   entries: Record<string, EntryMap>,
   today: Date,
   morningOpen = false,
+  late: number | null = null,
 ): Changes {
   const cur = history.slice(Math.max(0, index - len + 1), index + 1)
   const prevStart = index - 2 * len + 1
@@ -252,6 +289,13 @@ export function changes(
   const due = (l: TimelineDay[]) => l.filter((d) => !(d.day === todayKey && morningPending(d, today, morningOpen)))
   const skipped = share((l) => l.filter((d) => !d.morning).length, due)
   const skippedLines: ChangeLine[] = Math.abs(shift(skipped)) >= minDiff ? [{ kind: 'skippedMornings', ...skipped, good: shift(skipped) < 0 }] : []
+  /* ночи — только если в обоих периодах записаны хотя бы наполовину: иначе «не записывал» сошло бы за «не было» */
+  const nights = (l: TimelineDay[]) => l.filter((d) => bedOf(d) !== null)
+  const lateShare = share((l) => l.filter((d) => bedOf(d)! >= late!).length, nights)
+  const lateLines: ChangeLine[] =
+    late !== null && lateShare.of * 2 >= len && lateShare.wasOf * 2 >= len && Math.abs(shift(lateShare)) >= minDiff
+      ? [{ kind: 'lateBed', from: late, ...lateShare, good: shift(lateShare) < 0 }]
+      : []
 
   const window = history.slice(Math.max(0, index - 29), index + 1)
   const challengeLines: ChangeLine[] = challenges.flatMap((c) => {
@@ -264,7 +308,7 @@ export function changes(
 
   const size = (l: ChangeLine) =>
     Math.abs(l.kind === 'challenge' ? shareShift(l.hits, l.known, l.wasHits, l.wasKnown, len) : shareShift(l.now, l.of, l.was, l.wasOf, len))
-  const lines = [...tagLines, ...sleepLines, ...skippedLines, ...challengeLines]
+  const lines = [...tagLines, ...sleepLines, ...lateLines, ...skippedLines, ...challengeLines]
     .map((l, i) => ({ l, i }))
     .sort((a, b) => size(b.l) - size(a.l) || a.i - b.i)
     .slice(0, CHANGES_SHOWN)

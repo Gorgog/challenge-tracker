@@ -3,7 +3,7 @@ import { dayOutcome } from './streaks'
 import { goalValue, isComplete, pointClass, type Band, type Goal } from './overview'
 import { DAY_TAGS } from './tags'
 import { BAD_SLEEP, HARMFUL_TAGS, round1, stateOf, type TimelineDay } from './timeline'
-import type { Challenge, EntryMap } from './types'
+import type { Challenge, EntryMap, Night } from './types'
 
 /*
  * Связи v1 (срез 2 новой аналитики, 24.09; свод `research/2026-09-24-analytics-clean/`, §3.4–3.5, §6.1).
@@ -331,12 +331,16 @@ export function explains(history: TimelineDay[], windowStart: number, band: Band
 /** Шаг цепочки «как обычно» — меньше балла; у привычки — доля ближе четверти. */
 export const CHAIN_SAME = 1
 export const CHAIN_SAME_SHARE = 0.25
+/** Шаг «как обычно» у времени ночи — средние ближе стольких минут; «позже в k» — ночи на столько позже и больше. */
+export const CHAIN_SAME_MIN = 30
 
 /** few — дней меньше трёх: не отличие и не «как обычно», а «мало дней». */
 export type ChainSide = 'worse' | 'better' | 'same' | 'few'
 export type ChainRow =
   | { kind: 'scale'; part: 'morning' | 'evening'; label: string; n: number; mean: number; usual: number; side: ChainSide; count: number }
   | { kind: 'habit'; part: 'day'; label: string; hits: number; known: number; usualShare: number; side: ChainSide }
+  /** Время ночи — минуты от полуночи утра, средние до 5 минут: как на экране. */
+  | { kind: 'time'; part: 'night' | 'morning'; label: string; n: number; mean: number; usual: number; side: 'later' | 'earlier' | 'same' | 'few'; count: number }
 
 export type Chain = {
   tag: string
@@ -354,8 +358,8 @@ export type Chain = {
 }
 
 /**
- * «Что обычно шло следом» (урезанный шаблон макета: отбоя и подъёма пока нет): после вечера с тегом —
- * утро, привычки днём, вечер, каждый шаг против обычного (дни после закрытых вечеров без тега). Шаги,
+ * «Что обычно шло следом» (урезанный шаблон макета): после вечера с тегом — ночь (лёг), утро (сон, встал,
+ * самочувствие), привычки днём, вечер, каждый шаг против обычного (дни после закрытых вечеров без тега). Шаги,
  * не отличающиеся от обычного, остаются — серым. Конец (самочувствие и настроение вечером после) сам должен
  * быть связью ●○○ и выше — теми же правилами, что и пары; иначе цепочки нет. Это порядок событий, а не причины.
  */
@@ -386,6 +390,19 @@ export function chain(history: TimelineDay[], link: Link, challenges: Challenge[
     const count = side === 'worse' || side === 'better' ? w.filter((v) => (side === 'worse' ? v < usual : v > usual)).length : 0
     return [{ kind: 'scale', part, label, n: w.length, mean: round1(m), usual: round1(usual), side, count }]
   }
+  const step5 = (v: number) => Math.round(v / 5) * 5 + 0
+  const time = (part: 'night' | 'morning', label: string, pick: (n: Night) => number): ChainRow[] => {
+    const of = (l: TimelineDay[]) => l.flatMap((d) => (d.morning?.night ? [pick(d.morning.night)] : []))
+    const w = of(days(withTag))
+    const o = of(days(base))
+    if (!w.length || !o.length) return []
+    const m = step5(mean(w)!)
+    const usual = step5(mean(o)!)
+    const side = w.length < PART_MIN ? 'few' : Math.abs(m - usual) < CHAIN_SAME_MIN ? 'same' : m > usual ? 'later' : 'earlier'
+    const count =
+      side === 'later' ? w.filter((v) => v >= usual + CHAIN_SAME_MIN).length : side === 'earlier' ? w.filter((v) => v <= usual - CHAIN_SAME_MIN).length : 0
+    return [{ kind: 'time', part, label, n: w.length, mean: m, usual, side, count }]
+  }
   const habits: ChainRow[] = challenges
     .filter((c) => c.kind === 'do')
     .flatMap((c) => {
@@ -410,7 +427,9 @@ export function chain(history: TimelineDay[], link: Link, challenges: Challenge[
     episodes: withTag.length,
     days: days(withTag).map((d) => d.day),
     rows: [
+      ...time('night', 'лёг', (n) => n.bed),
       ...scale('morning', 'сон', (d) => d.morning?.sleep ?? null),
+      ...time('morning', 'встал', (n) => n.wake),
       ...scale('morning', 'самочувствие и настроение', (d) => stateOf(d.morning)),
       ...habits,
       ...scale('evening', 'самочувствие и настроение', (d) => stateOf(d.evening)),

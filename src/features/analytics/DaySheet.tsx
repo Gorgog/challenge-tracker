@@ -1,12 +1,13 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
+import { clockText } from '@/domain/night'
 import { dayName, shiftText } from './words'
 
 const outcomeText = (c: Challenge, o: Outcome) =>
   o === 'pending' ? 'день ещё идёт' : c.kind === 'quit' ? (o === 'hit' ? 'без срыва' : 'срыв') : o === 'hit' ? 'выполнен' : 'пропущен'
 
-/** Один день целиком: утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
+/** Один день целиком: ночь перед ним, утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
 export function DaySheet({
   day,
   isToday,
@@ -26,7 +27,10 @@ export function DaySheet({
   const m = day?.morning ?? null
   const e = day?.evening ?? null
   const v = (x: number | undefined) => (x === undefined ? '—' : String(x))
+  const n = m?.night ?? null
   const rows: [string, string, string][] = [
+    ['лёг', n ? clockText(n.bed) : '—', ''],
+    ['встал', n ? clockText(n.wake) : '—', ''],
     ['сон', m ? v(m.sleep) : '—', ''],
     ['самочувствие', m ? v(m.wellbeing) : '—', e ? v(e.wellbeing) : '—'],
     ['настроение', m ? v(m.mood) : '—', e ? v(e.mood) : '—'],

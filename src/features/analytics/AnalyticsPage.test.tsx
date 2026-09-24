@@ -495,7 +495,7 @@ describe('AnalyticsPage — «Что обычно шло следом»', () => 
 
 describe('AnalyticsPage — ночь: лёг и встал', () => {
   const night = (bed: number, wake: number) => ({ bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const })
-  /** world() с ночами: обычно лёг 23:30, встал 7:40; после вечеров с алкоголем (7…1 назад) — 01:30 и 9:00. */
+  /** world() с ночами: обычно лёг 23:30, встал 7:40; после вечеров с алкоголем (7…1 назад) — 1:30 и 9:00. */
   function nightWorld() {
     const w = world()
     const lateMornings = new Set([6, 5, 4, 3, 2, 1, 0].map(key))
@@ -511,7 +511,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     show()
     await user.click(dayButton(/^чт, 17 сентября/))
     let dialog = screen.getByRole('dialog', { name: 'чт, 17 сентября' })
-    expect(within(dialog).getByRole('row', { name: 'лёг 01:30' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: 'лёг 1:30' })).toBeInTheDocument()
     expect(within(dialog).getByRole('row', { name: 'встал 9:00' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await user.click(dayButton(/^вт, 15 сентября/))
@@ -558,7 +558,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     show()
     await user.click(within(links()).getByRole('button', { name: /Что обычно шло следом/ }))
     const dialog = screen.getByRole('dialog', { name: 'Что обычно шло следом' })
-    expect(within(dialog).getByRole('row', { name: 'Ночь лёг 01:30 обычно 23:30 · позже в 6 из 6' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: 'Ночь лёг 1:30 обычно 23:30 · позже в 6 из 6' })).toBeInTheDocument()
     expect(within(dialog).getByRole('row', { name: 'встал 9:00 обычно 7:40 · позже в 6 из 6' })).toBeInTheDocument()
     const rows = within(dialog).getAllByRole('row').map((r) => r.textContent)
     expect(rows.findIndex((t) => t?.includes('лёг'))).toBe(0)
