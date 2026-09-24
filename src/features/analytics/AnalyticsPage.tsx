@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
+import { links as linksOf, type Link as LinkData } from '@/domain/links'
 import { morningOpen } from '@/domain/dayStart'
 import { changes as changesOf, dayShift, eventRows, GOALS, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
@@ -12,6 +13,8 @@ import { useClock } from '@/features/day/useClock'
 import { plural } from '@/lib/plural'
 import { ChangesCard } from './ChangesCard'
 import { DaySheet } from './DaySheet'
+import { LinkSheet } from './LinkSheet'
+import { LinksCard } from './LinksCard'
 import { OverviewChart } from './OverviewChart'
 import { GOAL_CHART, GOAL_CHIP, headline, num1 } from './words'
 
@@ -42,6 +45,10 @@ export function AnalyticsPage() {
   const [len, setLen] = useState<Period>(14)
   /* открытый день — датой: после полуночи окно сдвигается, а день остаётся */
   const [openDay, setOpenDay] = useState<string | null>(null)
+  const [openLink, setOpenLink] = useState<LinkData | null>(null)
+  /* дни из карточки связи — ключами: окно могут переключить, а дни остаются */
+  const [highlight, setHighlight] = useState<string[] | null>(null)
+  const chartRef = useRef<HTMLElement>(null)
 
   const live = useMemo(() => (challenges.data ?? []).filter(isLive).sort((a, b) => a.sortOrder - b.sortOrder), [challenges.data])
   const entriesById = useMemo(() => entries.data ?? {}, [entries.data])
@@ -68,6 +75,7 @@ export function AnalyticsPage() {
       verdict: verdict(window, band, goal),
       rows: { main: rows.main.map(short), more: rows.more.map(short) },
       changes: changesOf(history, history.length - 1, len, live, entriesById, today, open),
+      links: linksOf(history, goal),
     }
   }, [history, len, goal, live, entriesById, todayK, open])
 
@@ -81,6 +89,20 @@ export function AnalyticsPage() {
   const sheetShift = sheetIndex >= 0 ? dayShift(history!, sheetIndex, parseDay(todayK), open) : null
   const head = view ? headline(view.verdict, goal, len) : null
   const band = view?.band
+  const lit = useMemo(() => (highlight ? new Set(highlight) : undefined), [highlight])
+  const litShown = view && lit ? view.window.filter((d) => lit.has(d.day)).length : 0
+
+  /* показать дни связи: окно — 30 дней, если в 14 они не влезают; цель та же, что у карточки */
+  const showDays = (days: string[]) => {
+    setOpenLink(null)
+    setHighlight(days)
+    if (history && days.some((d) => d < history[history.length - 14]!.day)) setLen(30)
+    chartRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }
+  const pickGoal = (g: Goal) => {
+    setGoal(g)
+    setHighlight(null)
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-7">
@@ -96,7 +118,7 @@ export function AnalyticsPage() {
       </div>
       <div role="group" aria-label="Цель" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
         {GOALS.map((g) => (
-          <button key={g} type="button" aria-pressed={goal === g} onClick={() => setGoal(g)} className={choice(goal === g)}>
+          <button key={g} type="button" aria-pressed={goal === g} onClick={() => pickGoal(g)} className={choice(goal === g)}>
             {GOAL_CHIP[g]}
           </button>
         ))}
@@ -117,22 +139,44 @@ export function AnalyticsPage() {
             {head.sub && <p className="text-[13px] text-muted-foreground">{head.sub}</p>}
           </div>
 
-          <section aria-label="График" className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-3">
+          <section ref={chartRef} aria-label="График" className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-3">
             <p className="text-[13px] font-semibold">{GOAL_CHART[goal]}</p>
             {band?.kind === 'band' && (
               <p className="text-[12.5px] text-muted-foreground">
                 {`Полоса — твоё обычное: ${num1(band.low)}–${num1(band.high)} (${band.short ? 'пока ' : ''}по ${band.days} ${plural(band.days, 'полному дню', 'полным дням', 'полным дням')}${band.short ? ', уточнится' : ' за 4 недели до этих'})`}
               </p>
             )}
-            <OverviewChart days={view.window} goal={goal} band={view.band} rows={view.rows} onOpenDay={(i) => setOpenDay(view.window[i]!.day)} />
+            {highlight && (
+              <p className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                <span>
+                  {litShown === highlight.length
+                    ? `Подсвечено ${litShown} ${plural(litShown, 'день', 'дня', 'дней')}`
+                    : `Подсвечено ${litShown} ${plural(litShown, 'день', 'дня', 'дней')} из ${highlight.length} — остальные раньше`}
+                </span>
+                <button type="button" aria-label="Убрать подсветку" onClick={() => setHighlight(null)} className="text-primary">
+                  ✕ убрать
+                </button>
+              </p>
+            )}
+            <OverviewChart
+              days={view.window}
+              goal={goal}
+              band={view.band}
+              rows={view.rows}
+              highlight={lit}
+              onOpenDay={(i) => setOpenDay(view.window[i]!.day)}
+            />
           </section>
 
           <ChangesCard changes={view.changes} len={len} />
+
+          <LinksCard data={view.links} goal={goal} onOpen={setOpenLink} />
 
           <Link to="/challenges" className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
 
+          <LinkSheet link={openLink} goal={goal} onShow={showDays} onClose={() => setOpenLink(null)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
         </>
       )}

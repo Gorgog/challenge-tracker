@@ -20,12 +20,15 @@ export function OverviewChart({
   goal,
   band,
   rows,
+  highlight,
   onOpenDay,
 }: {
   days: TimelineDay[]
   goal: Goal
   band: Band
   rows: { main: Row[]; more: Row[] }
+  /** Дни, подсвеченные из карточки связи («Показать эти дни на графике»). */
+  highlight?: ReadonlySet<string>
   onOpenDay: (index: number) => void
 }) {
   const [ref, width] = useWidth(640)
@@ -133,6 +136,12 @@ export function OverviewChart({
               </text>
             </g>
           ))}
+          {highlight &&
+            days.map((d, i) =>
+              highlight.has(d.day) ? (
+                <rect key={d.day} data-highlight x={PLOT.left + i * cw} y={PLOT.top - 6} width={cw} height={PLOT.height + 12} fill="var(--worse)" opacity={0.12} rx={3} />
+              ) : null,
+            )}
           {scrub !== null && <rect x={PLOT.left + scrub * cw} y={PLOT.top - 6} width={cw} height={height - PLOT.top + 6} fill="var(--primary)" opacity={0.14} rx={3} />}
           <path d={path} fill="none" stroke="var(--axis)" strokeWidth={1.2} />
           {values.map((v, i) => {
