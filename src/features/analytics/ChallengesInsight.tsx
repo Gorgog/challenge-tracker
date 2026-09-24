@@ -5,6 +5,7 @@ import { isLive } from '@/domain/challenges'
 import { challengeInsight, startedTogether, type HabitInsight, type Insight } from '@/domain/challengeInsight'
 import { addDays, parseDay, todayKey } from '@/domain/date'
 import { LINK_MIN } from '@/domain/links'
+import { isPaused } from '@/domain/pauses'
 import { timeline } from '@/domain/timeline'
 import type { Challenge } from '@/domain/types'
 import { plural } from '@/lib/plural'
@@ -14,23 +15,24 @@ const HISTORY = 90
 const q = (s: string) => `«${s}»`
 const listOf = (v: string[]) => (v.length < 2 ? v.join('') : `${v.slice(0, -1).join(', ')} и ${v[v.length - 1]}`)
 
-function progressText(r: Insight): string {
+function progressText(c: Challenge, r: Insight): string {
   if (r.of !== null && r.ended) return `срок ${r.of} ${plural(r.of, 'день', 'дня', 'дней')} ✓`
+  if (isPaused(c)) return `на паузе · ${r.of !== null ? `день ${r.day} из ${r.of}` : `прошло ${r.day} ${plural(r.day, 'день', 'дня', 'дней')}`}`
   if (r.of !== null) return `день ${r.day} из ${r.of}`
   return `идёт ${r.day} ${plural(r.day, 'день', 'дня', 'дней')}`
 }
 
 /** Можно ли честно сравнивать дни с привычкой и без — словами (макет «Челленджи»). */
-function habitText(c: Challenge, h: HabitInsight): string[] {
+function habitText(h: HabitInsight): string[] {
   const out: string[] = []
   const m = h.mornings
   if (!h.enough) {
     const lack = h.misses < LINK_MIN ? `пропусков ${h.misses}` : `выполнений ${h.done}`
     let s = `Сравнивать пока рано: ${lack}, нужно ${LINK_MIN}.`
-    if (h.unfair && m) s += ` И смотри: пропуски пришлись на утра хуже (${num1(m.miss)} против ${num1(m.hit)}) — простое «в дни ${q(c.name)} лучше» будет нечестным.`
+    if (h.unfair && m) s += ` И смотри: пропуски пришлись на утра хуже (${num1(m.miss)} против ${num1(m.hit)}) — простое «с ним лучше» будет нечестным.`
     out.push(s)
   } else if (h.unfair && m) {
-    out.push(`Сравнить честно пока нельзя: ${q(c.name)} чаще пропускался в дни, которые уже с утра были тяжёлыми (утро ${num1(m.miss)} против ${num1(m.hit)}).`)
+    out.push(`Сравнить честно пока нельзя: пропуски чаще приходились на дни, которые уже с утра были тяжёлыми (утро ${num1(m.miss)} против ${num1(m.hit)}).`)
   } else if (h.unfair === null) {
     out.push('Утр в дни пропусков записано мало — проверить, честно ли сравнение, пока нельзя.')
   } else {
@@ -92,9 +94,9 @@ export function ChallengesInsight() {
                 <h2 className="text-[16px] font-semibold">{c.name}</h2>
                 <span className="font-mono text-[14px]">{`${r.hits} из ${r.known}`}</span>
               </div>
-              <p className="text-[12.5px] text-muted-foreground">{progressText(r)}</p>
+              <p className="text-[12.5px] text-muted-foreground">{progressText(c, r)}</p>
               {r.habit ? (
-                habitText(c, r.habit).map((s) => (
+                habitText(r.habit).map((s) => (
                   <p key={s} className="text-[13.5px]">
                     {s}
                   </p>
