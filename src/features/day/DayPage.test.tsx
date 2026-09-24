@@ -281,7 +281,7 @@ describe('экран дня — пока день не начат', () => {
   it('до утреннего часа «Начать день» открывает окно утра и записывает утро', async () => {
     const user = userEvent.setup()
     render(<DayPage />)
-    expect(screen.getByText(/три коротких вопроса/i)).toBeInTheDocument()
+    expect(screen.getByText(/пять коротких вопросов: когда лёг и встал, сон/i)).toBeInTheDocument()
 
     await user.click(pageStart())
     await fillMorning(user)
@@ -448,7 +448,7 @@ describe('экран дня — начало дня без ловушек', () =
   it('на границе часа плашка обновляется сама — при возврате во вкладку', async () => {
     at(14, 59)
     render(<DayPage />)
-    expect(screen.getByText(/три коротких вопроса/i)).toBeInTheDocument()
+    expect(screen.getByText(/пять коротких вопросов: когда лёг и встал, сон/i)).toBeInTheDocument()
 
     at(15, 1)
     act(() => {
