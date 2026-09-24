@@ -44,7 +44,11 @@ describe.skipIf(!dbTestsOn)('база: доступ только к своему
     ).id
     await repo.setEntry(challengeId, '2026-09-21', 20)
     await repo.saveDayLog({ day: '2026-09-21', mood: 5, wellbeing: 5, productivity: 5, tags: [], note: 'личное', closedAt: '2026-09-21T21:00:00.000Z' })
-    await repo.startDay({ day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 6 }, startedAt: '2026-09-21T07:00:00.000Z' })
+    await repo.startDay({
+      day: '2026-09-21',
+      morning: { sleep: 7, wellbeing: 6, mood: 6, night: { bed: -30, wake: 460, bedHow: 'usual', wakeHow: 'exact' } },
+      startedAt: '2026-09-21T07:00:00.000Z',
+    })
     await repo.saveSettings({ morningUntil: 12 })
   }, DB_TIMEOUT)
 
@@ -106,6 +110,28 @@ describe.skipIf(!dbTestsOn)('база: доступ только к своему
     expect(again.error).not.toBeNull()
     const { data } = await a.client.from('day_starts').select('morning_sleep').single()
     expect(data?.morning_sleep).toBe(7)
+  }, DB_TIMEOUT)
+
+  it('ночь: границы, порядок, целиком и только при утре; не правится', async () => {
+    const started_at = new Date().toISOString()
+    const morning = { morning_sleep: 6, morning_wellbeing: 6, morning_mood: 6, started_at }
+    const whole = { bed_min: -30, wake_min: 460, bed_how: 'exact', wake_how: 'exact' }
+    const bad: Record<string, object> = {
+      'отбой за границей': { ...morning, ...whole, bed_min: 800 },
+      'подъём за границей': { ...morning, ...whole, wake_min: 1440 },
+      'лёг не раньше, чем встал': { ...morning, ...whole, bed_min: 460 },
+      'без подъёма': { ...morning, ...whole, wake_min: null, wake_how: null },
+      'без способа ответа': { ...morning, ...whole, bed_how: null },
+      'чужой способ ответа': { ...morning, ...whole, bed_how: 'shift' },
+      'ночь без утра': { started_at, ...whole },
+    }
+    for (const [name, row] of Object.entries(bad)) {
+      const { error } = await a.client.from('day_starts').insert({ day: '2026-09-22', ...row })
+      expect(error, name).not.toBeNull()
+    }
+    await a.client.from('day_starts').update({ bed_min: 60 }).eq('day', '2026-09-21')
+    const { data } = await a.client.from('day_starts').select('bed_min, wake_min, bed_how, wake_how').eq('day', '2026-09-21').single()
+    expect(data).toEqual({ bed_min: -30, wake_min: 460, bed_how: 'usual', wake_how: 'exact' })
   }, DB_TIMEOUT)
 
   it('замок челленджа: правила под замком не меняются, замок не снимается', async () => {

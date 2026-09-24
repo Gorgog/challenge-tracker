@@ -79,17 +79,32 @@ describe('строки базы ↔ домен', () => {
     expect(dayLogFromRow({ ...dayLogToRow(log), closed_at: null }).closedAt).toBeNull()
   })
 
-  it('начало дня: утро — три столбца; пропущенное утро — null', () => {
-    const start: DayStart = { day: '2026-09-21', morning: { sleep: 0, wellbeing: 6, mood: 10 }, startedAt: '2026-09-21T07:30:00.000Z' }
+  it('начало дня: утро — три столбца, ночь — четыре; пропущенное утро — null', () => {
+    const start: DayStart = {
+      day: '2026-09-21',
+      morning: { sleep: 0, wellbeing: 6, mood: 10, night: { bed: -30, wake: 460, bedHow: 'usual', wakeHow: 'exact' } },
+      startedAt: '2026-09-21T07:30:00.000Z',
+    }
     expect(dayStartToRow(start)).toEqual({
       day: '2026-09-21',
       morning_sleep: 0,
       morning_wellbeing: 6,
       morning_mood: 10,
+      bed_min: -30,
+      wake_min: 460,
+      bed_how: 'usual',
+      wake_how: 'exact',
       started_at: '2026-09-21T07:30:00.000Z',
     })
     expect(dayStartFromRow(dayStartToRow(start))).toEqual(start)
     const skipped: DayStart = { day: '2026-09-20', morning: null, startedAt: '2026-09-20T16:00:00.000Z' }
-    expect(dayStartFromRow({ ...dayStartToRow(skipped), started_at: '2026-09-20T16:00:00+00:00' })).toEqual(skipped)
+    const skippedRow = dayStartToRow(skipped)
+    expect([skippedRow.bed_min, skippedRow.wake_min, skippedRow.bed_how, skippedRow.wake_how]).toEqual([null, null, null, null])
+    expect(dayStartFromRow({ ...skippedRow, started_at: '2026-09-20T16:00:00+00:00' })).toEqual(skipped)
+  })
+
+  it('утро без ночи (до 25.09) — ночь null', () => {
+    const start: DayStart = { day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 6 }, startedAt: '2026-09-21T07:30:00.000Z' }
+    expect(dayStartFromRow(dayStartToRow(start)).morning).toEqual({ sleep: 7, wellbeing: 6, mood: 6, night: null })
   })
 })

@@ -210,8 +210,30 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         await r.startDay({ day: '2026-09-20', morning: null, startedAt: '2026-09-20T16:00:00.000Z' })
         expect(await r.listDayStarts()).toEqual([
           { day: '2026-09-20', morning: null, startedAt: '2026-09-20T16:00:00.000Z' },
-          morning,
+          { ...morning, morning: { ...morning.morning, night: null } },
         ])
+      }, t)
+
+      it('ночь перед утром сохраняется и читается; утро без ночи — ночь null', async () => {
+        const r = await makeRepo()
+        const night = { bed: -30, wake: 460, bedHow: 'usual' as const, wakeHow: 'exact' as const }
+        await r.startDay({ day: '2026-09-22', morning: { sleep: 6, wellbeing: 6, mood: 7, night }, startedAt: '2026-09-22T05:00:00.000Z' })
+        await r.startDay({ day: '2026-09-23', morning: { sleep: 8, wellbeing: 7, mood: 7 }, startedAt: '2026-09-23T05:00:00.000Z' })
+        const starts = await r.listDayStarts()
+        expect(starts.map((s) => s.morning?.night)).toEqual([night, null])
+      }, t)
+
+      it('ночь с отбоем не раньше подъёма или вне границ — отказ, день не начат', async () => {
+        const r = await makeRepo()
+        const at = (day: string, bed: number, wake: number) => ({
+          day,
+          morning: { sleep: 6, wellbeing: 6, mood: 6, night: { bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const } },
+          startedAt: `${day}T05:00:00.000Z`,
+        })
+        await expect(r.startDay(at('2026-09-22', 460, 460))).rejects.toThrow()
+        await expect(r.startDay(at('2026-09-23', 800, 900))).rejects.toThrow()
+        await expect(r.startDay(at('2026-09-24', -30, 1500))).rejects.toThrow()
+        expect(await r.listDayStarts()).toEqual([])
       }, t)
 
       it('настройки и порядок блоков дня сохраняются', async () => {

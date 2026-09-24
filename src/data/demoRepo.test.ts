@@ -692,7 +692,7 @@ describe('сценарий демо из хранилища', () => {
 })
 
 describe('начало дня', () => {
-  const morning = { sleep: 7, wellbeing: 6, mood: 5 }
+  const morning = { sleep: 7, wellbeing: 6, mood: 5, night: { bed: -30, wake: 460, bedHow: 'usual' as const, wakeHow: 'exact' as const } }
   const start = { day: '2026-09-21', morning, startedAt: '2026-09-21T06:30:00.000Z' }
   const withStorage = (storage: Storage) => createDemoRepo({ today: TODAY, seed: 20260921, storage })
 
@@ -720,15 +720,17 @@ describe('начало дня', () => {
     await r.startDay(start)
     const got = (await r.listDayStarts()).find((s) => s.day === '2026-09-21')!
     got.morning!.sleep = 0
-    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning?.sleep).toBe(7)
+    got.morning!.night!.bed = 120
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning).toEqual(morning)
   })
 
   it('хранит копию: правка переданного объекта после записи утро не меняет', async () => {
     const r = repo()
-    const given = { ...start, morning: { ...morning } }
+    const given = { ...start, morning: { ...morning, night: { ...morning.night } } }
     await r.startDay(given)
     given.morning.sleep = 0
-    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning?.sleep).toBe(7)
+    given.morning.night.wake = 600
+    expect((await r.listDayStarts()).find((s) => s.day === '2026-09-21')?.morning).toEqual(morning)
   })
 
   it('начало дня переживает пересоздание', async () => {
