@@ -415,6 +415,9 @@ describe('AnalyticsPage — случаи и «Объясняет плохие д
     const box = screen.getByRole('region', { name: 'Объясняет плохие дни' })
     expect(within(box).getByText('Объясняет плохие дни · это не совет')).toBeInTheDocument()
     expect(within(box).getByText('«болел» — 4 дня из 7 плохих')).toBeInTheDocument()
+    // по макету ссылка «Челленджи ›» — последней, после всех блоков разбора
+    const last = screen.getByRole('link', { name: 'Челленджи ›' })
+    expect(box.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('плохих дней с такими тегами нет — блока нет', () => {
