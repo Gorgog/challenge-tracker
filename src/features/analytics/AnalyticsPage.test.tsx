@@ -492,3 +492,76 @@ describe('AnalyticsPage — «Что обычно шло следом»', () => 
     expect(within(links()).getByRole('button', { name: /Что обычно шло следом/ })).toHaveTextContent('после вечера с «алкоголь»')
   })
 })
+
+describe('AnalyticsPage — ночь: лёг и встал', () => {
+  const night = (bed: number, wake: number) => ({ bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const })
+  /** world() с ночами: обычно лёг 23:30, встал 7:40; после вечеров с алкоголем (7…1 назад) — 01:30 и 9:00. */
+  function nightWorld() {
+    const w = world()
+    const lateMornings = new Set([6, 5, 4, 3, 2, 1, 0].map(key))
+    mocked.starts = w.starts.map((s) =>
+      s.morning ? { ...s, morning: { ...s.morning, night: lateMornings.has(s.day) ? night(90, 540) : night(-30, 460) } } : s,
+    )
+  }
+
+  it('шторка дня: ночь перед ним — «лёг» и «встал» в утре; без записи — прочерк', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    nightWorld()
+    mocked.starts = mocked.starts.map((s) => (s.day === key(8) ? { ...s, morning: { ...s.morning!, night: null } } : s))
+    show()
+    await user.click(dayButton(/^чт, 17 сентября/))
+    let dialog = screen.getByRole('dialog', { name: 'чт, 17 сентября' })
+    expect(within(dialog).getByRole('row', { name: 'лёг 01:30' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: 'встал 9:00' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(dayButton(/^вт, 15 сентября/))
+    dialog = screen.getByRole('dialog', { name: 'вт, 15 сентября' })
+    expect(within(dialog).getByRole('row', { name: 'лёг —' })).toBeInTheDocument()
+  })
+
+  it('«ещё ряды»: поздний отбой — с часа позже обычного; клетка — у вечера, после которого лёг', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    nightWorld()
+    show()
+    expect(within(chart()).queryByText('отбой с 00:30')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
+    expect(within(chart()).getByText('отбой с 00:30')).toBeInTheDocument()
+    expect(chart().querySelectorAll('[data-late="late"]')).toHaveLength(7)
+    expect(chart().querySelectorAll('[data-late="no"]')).toHaveLength(6)
+  })
+
+  it('«Что изменилось»: поздних ночей — долей записанных ночей', () => {
+    nightWorld()
+    show()
+    const changed = screen.getByRole('region', { name: 'Что изменилось' })
+    expect(within(changed).getByText('Отбой с 00:30 и позже: 7 из 14 ночей')).toBeInTheDocument()
+  })
+
+  it('ночей до окна нет — ни ряда, ни строки: позднего без своего обычного не бывает', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    nightWorld()
+    mocked.starts = mocked.starts.map((s) => (s.day < key(3) && s.morning ? { ...s, morning: { ...s.morning, night: null } } : s))
+    show()
+    await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
+    expect(within(chart()).queryByText(/отбой с/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Отбой с/)).not.toBeInTheDocument()
+  })
+
+  it('«Что обычно шло следом»: ночью — лёг, утром — встал, против обычного', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = drinkWorld()
+    const afterDays = [3, 12, 21, 30, 39, 48].map(key)
+    mocked.logs = w.logs.map((l) => (afterDays.includes(l.day) ? { ...l, mood: 3, wellbeing: 3 } : l))
+    mocked.starts = w.starts.map((s) =>
+      s.morning ? { ...s, morning: { ...s.morning, night: afterDays.includes(s.day) ? night(90, 540) : night(-30, 460) } } : s,
+    )
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Что обычно шло следом/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Что обычно шло следом' })
+    expect(within(dialog).getByRole('row', { name: 'Ночь лёг 01:30 обычно 23:30 · позже в 6 из 6' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: 'встал 9:00 обычно 7:40 · позже в 6 из 6' })).toBeInTheDocument()
+    const rows = within(dialog).getAllByRole('row').map((r) => r.textContent)
+    expect(rows.findIndex((t) => t?.includes('лёг'))).toBe(0)
+    expect(rows.findIndex((t) => t?.includes('встал'))).toBe(rows.findIndex((t) => t?.startsWith('Утросон')) + 1)
+  })
+})

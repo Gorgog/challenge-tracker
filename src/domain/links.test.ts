@@ -6,16 +6,18 @@ import type { Challenge, EntryMap } from './types'
 
 const TODAY = parseDay('2026-09-23') // среда
 
-type Spec = { m?: number | null; e?: number | null; sleep?: number; prod?: number; tags?: string[] }
+/** `bed`, `wake` — ночь перед этим утром (минуты от полуночи утра); без `bed` ночь не записана. */
+type Spec = { m?: number | null; e?: number | null; sleep?: number; prod?: number; tags?: string[]; bed?: number; wake?: number }
 
 /** История из `len` дней по сегодня; `dow` — 0 понедельник … 6 воскресенье. По умолчанию утро и вечер 6, сон 7. */
 function hist(len: number, spec: (i: number, dow: number) => Spec = () => ({})): TimelineDay[] {
   return Array.from({ length: len }, (_, i) => {
     const date = addDays(TODAY, i - len + 1)
-    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [] } = spec(i, isoDow(date))
+    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [], bed, wake = 460 } = spec(i, isoDow(date))
+    const night = bed === undefined ? null : { bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const }
     return {
       day: dayKey(date),
-      morning: m === null ? null : { sleep, wellbeing: m, mood: m },
+      morning: m === null ? null : { sleep, wellbeing: m, mood: m, night },
       started: m !== null,
       evening: e === null ? null : { mood: e, wellbeing: e, productivity: prod },
       tags: e === null ? [] : tags,
@@ -556,6 +558,35 @@ describe('chain — что обычно шло следом', () => {
       { kind: 'scale', part: 'evening', label: 'самочувствие и настроение', n: 6, mean: 3, usual: 6, side: 'worse', count: 6 },
       { kind: 'scale', part: 'evening', label: 'продуктивность', n: 6, mean: 6, usual: 6, side: 'same', count: 0 },
     ])
+  })
+
+  it('ночь: «лёг» — ночью первым, «встал» — утром после сна; позже в k из n', () => {
+    const h = bad().map((d, i) => ({ ...d, morning: d.morning && { ...d.morning, night: { bed: after(i) ? 90 : -30, wake: after(i) ? 540 : 460, bedHow: 'exact' as const, wakeHow: 'usual' as const } } }))
+    const c = chain(h, top(h), [], {}, TODAY)!
+    expect(c.rows[0]).toEqual({ kind: 'time', part: 'night', label: 'лёг', n: 6, mean: 90, usual: -30, side: 'later', count: 6 })
+    expect(c.rows[1]).toMatchObject({ kind: 'scale', label: 'сон' })
+    expect(c.rows[2]).toEqual({ kind: 'time', part: 'morning', label: 'встал', n: 6, mean: 540, usual: 460, side: 'later', count: 6 })
+  })
+
+  it('ночь: средние ближе 30 минут — «как обычно»; «позже в k» — только ночи на 30 минут позже и больше', () => {
+    const beds = [90, 90, 90, 90, -20, -30]
+    let k = 0
+    const h = bad().map((d, i) => {
+      const bed = after(i) ? beds[k++]! : i % 2 ? -30 : -20
+      return { ...d, morning: d.morning && { ...d.morning, night: { bed, wake: after(i) ? 480 : 460, bedHow: 'exact' as const, wakeHow: 'exact' as const } } }
+    })
+    const c = chain(h, top(h), [], {}, TODAY)!
+    // обычный отбой — 23:35 (среднее −30 и −20), после — (4 × 90 − 20 − 30) / 6 ≈ 52 → 00:50 до 5 минут
+    expect(c.rows[0]).toMatchObject({ label: 'лёг', mean: 50, usual: -25, side: 'later', count: 4 })
+    expect(c.rows[2]).toMatchObject({ label: 'встал', mean: 480, usual: 460, side: 'same', count: 0 })
+  })
+
+  it('ночь после фактора записана меньше трёх раз — «мало дней»; ни разу — строки нет', () => {
+    let k = 0
+    const two = bad().map((d, i) => (after(i) && k++ >= 2 ? d : { ...d, morning: d.morning && { ...d.morning, night: { bed: after(i) ? 90 : -30, wake: 460, bedHow: 'exact' as const, wakeHow: 'exact' as const } } }))
+    expect(chain(two, top(two), [], {}, TODAY)!.rows[0]).toMatchObject({ label: 'лёг', n: 2, side: 'few', count: 0 })
+    const none = bad().map((d, i) => (after(i) ? d : { ...d, morning: d.morning && { ...d.morning, night: { bed: -30, wake: 460, bedHow: 'exact' as const, wakeHow: 'exact' as const } } }))
+    expect(chain(none, top(none), [], {}, TODAY)!.rows.some((r) => r.kind === 'time')).toBe(false)
   })
 
   it('привычки днём: «1 из 6 · обычно 8 из 10»; отказы и чужие дни не в счёт', () => {
