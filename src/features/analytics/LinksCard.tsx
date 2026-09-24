@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LINK_MIN, LINK_RECORDED, type Chain, type Link, type Links } from '@/domain/links'
+import { CONTEXT_TAGS, LINK_CLOSED, LINK_MIN, LINK_RECORDED, type Chain, type Link, type Links } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
 import { chainLead } from './ChainSheet'
@@ -9,6 +9,7 @@ const BUCKET = { less: 'Меньше', more: 'Больше' } as const
 const KICKER = 'text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase'
 const CARD = 'flex flex-col gap-2.5 rounded-2xl border border-border bg-card px-4 py-3.5'
 const links = (n: number) => `${n} ${plural(n, 'связь', 'связи', 'связей')}`
+const need = (l: Link) => Math.max(0, LINK_MIN - l.withN) + Math.max(0, LINK_MIN - l.withoutN)
 
 /** Пять квадратиков: сколько дней набрано до порога. */
 function Bar({ have }: { have: number }) {
@@ -20,27 +21,33 @@ function Bar({ have }: { have: number }) {
   )
 }
 
-/** Пары, ближе всего к 5 + 5: сперва те, где видели хоть день «с». Теги «не в моих силах» — тоже, это счётчик. */
+/**
+ * Пары, ближе всего к 5 + 5: только те, где видели хоть день «с» и где до порога правда чего-то не хватает.
+ * Теги «не в моих силах» сюда не идут: советом они не станут, их место — «Объясняет плохие дни».
+ */
 function nearest(pairs: Link[]) {
-  const need = (l: Link) => Math.max(0, LINK_MIN - l.withN) + Math.max(0, LINK_MIN - l.withoutN)
   return pairs
-    .filter((l) => l.level === 'early' && l.withN > 0)
+    .filter((l) => l.level === 'early' && l.withN > 0 && need(l) > 0 && !(l.factor.kind === 'tag' && CONTEXT_TAGS.includes(l.factor.tag)))
     .sort((a, b) => need(a) - need(b))
     .slice(0, 3)
 }
 
+/** Почему связей пока нет: записей мало, вечера закрыты редко или смотрели, а заметного нет. */
+function gateText(data: Links): string | null {
+  const g = data.gate
+  if (g.recorded < LINK_RECORDED) return `Записано ${g.recorded} ${plural(g.recorded, 'день', 'дня', 'дней')} — чтобы искать связи, нужно хотя бы ${LINK_RECORDED}.`
+  if (!g.ok) return `Вечера закрыты в ${Math.round(g.closedShare * 100)} % дней — чтобы сравнивать «с» и «без», нужно хотя бы ${Math.round(LINK_CLOSED * 100)} %.`
+  if (data.checked > 0) return `Смотрели ${links(data.checked)} — заметных пока нет.`
+  return null
+}
+
 function Early({ data }: { data: Links }) {
   const rows = nearest(data.pairs)
+  const why = gateText(data)
   return (
     <section aria-label="Связи: пока рано" className={CARD}>
       <h2 className={KICKER}>Связи: пока рано</h2>
-      {!data.gate.ok && data.gate.recorded < LINK_RECORDED ? (
-        <p className="text-[14px]">{`Записано ${data.gate.recorded} ${plural(data.gate.recorded, 'день', 'дня', 'дней')} — чтобы искать связи, нужно хотя бы ${LINK_RECORDED}.`}</p>
-      ) : !data.gate.ok ? (
-        <p className="text-[14px]">Вечера закрыты меньше чем в 70 % дней — сравнивать «с» и «без» пока нечестно.</p>
-      ) : data.checked > 0 ? (
-        <p className="text-[14px]">{`Смотрели ${links(data.checked)} — заметных пока нет.`}</p>
-      ) : null}
+      {why && <p className="text-[14px]">{why}</p>}
       <p className="text-[14px] text-muted-foreground">Нужно 5 дней «с» и 5 «без» — тогда покажем, что с чем идёт.</p>
       {rows.length > 0 && (
         <>
@@ -52,7 +59,7 @@ function Early({ data }: { data: Links }) {
                 aria-label={`${factorName(l)}: с — ${Math.min(l.withN, LINK_MIN)} из ${LINK_MIN}, без — ${l.withoutN >= LINK_MIN ? 'есть' : `${l.withoutN} из ${LINK_MIN}`}`}
                 className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 text-[14px]"
               >
-                <span>{l.factor.kind === 'tag' ? factorName(l) : 'плохая ночь'}</span>
+                <span>{factorName(l)}</span>
                 <span className="text-[12.5px] text-muted-foreground">
                   с <Bar have={l.withN} /> {Math.min(l.withN, LINK_MIN)}/{LINK_MIN}
                 </span>
@@ -67,7 +74,38 @@ function Early({ data }: { data: Links }) {
   )
 }
 
-/** «Что попробовать» — до трёх связей по одной на ведро; нет ни одной — «Связи: пока рано» с прогрессом. */
+/** Одна найденная связь: ведро (или «Сон» у плохой ночи — это не совет), точки уверенности, числа, «Подробнее». */
+function Item({ l, label, tone, goal, onOpen }: { l: Link; label: string; tone: string; goal: Goal; onOpen: (l: Link) => void }) {
+  const [explained, setExplained] = useState(false)
+  const level = LEVEL[l.level as keyof typeof LEVEL]
+  return (
+    <li className="flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className={`text-[10.5px] font-semibold tracking-wider uppercase ${tone}`}>{label}</span>
+        <span className="flex-1 text-[15px] font-semibold">{linkTitle(l)}</span>
+        <button
+          type="button"
+          aria-label={`Уверенность: ${level.word}`}
+          aria-expanded={explained}
+          onClick={() => setExplained(!explained)}
+          className="font-mono text-[13px] tracking-tight text-primary"
+        >
+          {level.dots}
+        </button>
+      </div>
+      {explained && <p className="rounded-lg bg-secondary px-2.5 py-1.5 text-[12.5px]">{level.explain}</p>}
+      <p className="text-[13.5px] text-muted-foreground">{linkLine(l, goal)}</p>
+      <button type="button" aria-label={`Подробнее: ${linkTitle(l)}`} onClick={() => onOpen(l)} className="self-start text-[13.5px] text-primary">
+        Подробнее ›
+      </button>
+    </li>
+  )
+}
+
+/**
+ * «Что попробовать» — до двух связей по одной на ведро и плохая ночь строкой «Сон»; нет ни одной — «Связи:
+ * пока рано» с прогрессом. «Заметных» — ровно то, что видно.
+ */
 export function LinksCard({
   data,
   goal,
@@ -82,39 +120,15 @@ export function LinksCard({
   onOpen: (l: Link) => void
   onOpenChain: () => void
 }) {
-  const [explained, setExplained] = useState<number | null>(null)
-  if (!data.cards.length) return <Early data={data} />
+  if (!data.cards.length && !data.night) return <Early data={data} />
   return (
     <section aria-label="Что попробовать" className={CARD}>
       <h2 className={KICKER}>Что попробовать</h2>
       <ul className="flex flex-col gap-3">
-        {data.cards.map((l, i) => {
-          const level = LEVEL[l.level as keyof typeof LEVEL]
-          return (
-            <li key={factorName(l)} className="flex flex-col gap-1">
-              <div className="flex items-baseline gap-2">
-                <span className={`text-[10.5px] font-semibold tracking-wider uppercase ${l.bucket === 'less' ? 'text-worse' : 'text-better'}`}>
-                  {BUCKET[l.bucket!]}
-                </span>
-                <span className="flex-1 text-[15px] font-semibold">{linkTitle(l)}</span>
-                <button
-                  type="button"
-                  aria-label={`Уверенность: ${level.word}`}
-                  aria-expanded={explained === i}
-                  onClick={() => setExplained(explained === i ? null : i)}
-                  className="font-mono text-[13px] tracking-tight text-primary"
-                >
-                  {level.dots}
-                </button>
-              </div>
-              {explained === i && <p className="rounded-lg bg-secondary px-2.5 py-1.5 text-[12.5px]">{level.explain}</p>}
-              <p className="text-[13.5px] text-muted-foreground">{linkLine(l, goal)}</p>
-              <button type="button" onClick={() => onOpen(l)} className="self-start text-[13.5px] text-primary">
-                Подробнее ›
-              </button>
-            </li>
-          )
-        })}
+        {data.cards.map((l) => (
+          <Item key={factorName(l)} l={l} label={BUCKET[l.bucket!]} tone={l.bucket === 'less' ? 'text-worse' : 'text-better'} goal={goal} onOpen={onOpen} />
+        ))}
+        {data.night && <Item l={data.night} label="Сон" tone="text-muted-foreground" goal={goal} onOpen={onOpen} />}
       </ul>
       {chain && (
         <button type="button" onClick={onOpenChain} className="flex flex-col items-start gap-0.5 border-t border-border pt-2.5 text-left">

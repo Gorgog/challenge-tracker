@@ -26,9 +26,14 @@ export type HabitInsight = {
   done: number
   /** 5 + 5 есть. */
   enough: boolean
-  /** Средние утра в дни пропуска и выполнения; утр мало — null. */
+  /** Средние утра в дни пропуска и выполнения (до десятых, как на экране); утр мало — null. */
   mornings: { miss: number; hit: number } | null
-  /** Утро в дни пропуска хуже на `BAD_MORNING` — true; проверить нельзя — null. */
+  /** Утро в дни пропуска хуже на `BAD_MORNING` по видимым числам; утр мало — null. */
+  morningsWorse: boolean | null
+  /**
+   * Сравнение «выполнил / пропустил» нечестное: утро в дни пропуска хуже или перед пропуском чаще были
+   * определённые вечера («чаще пропуск после» не пуст; методика §4.2). Проверить нельзя — null.
+   */
   unfair: boolean | null
   /** Теги прошлого вечера, чаще встречавшиеся перед пропуском. */
   after: { tag: string; count: number }[]
@@ -72,12 +77,15 @@ function habitInsight(c: Challenge, entries: EntryMap, history: TimelineDay[], t
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'ru'))
     .map(({ tag, count }) => ({ tag, count }))
 
+  /* разница — по тем же числам, что на экране: 4,4 против 5,1 — это 0,7 */
+  const morningsWorse = mornings ? round1(mornings.hit - mornings.miss) >= BAD_MORNING : null
   return {
     misses: miss.length,
     done: hit.length,
     enough: miss.length >= LINK_MIN && hit.length >= LINK_MIN,
     mornings,
-    unfair: mornings ? mornings.miss <= mornings.hit - BAD_MORNING : null,
+    morningsWorse,
+    unfair: morningsWorse || after.length > 0 ? true : morningsWorse === null ? null : false,
     after,
   }
 }
@@ -98,14 +106,16 @@ export function challengeInsight(c: Challenge, entries: EntryMap, history: Timel
   }
 }
 
-/** Группы челленджей, начавшихся почти вместе (сосед ближе `TOGETHER_DAYS` дней): их влияние не разделить. */
+/**
+ * Группы челленджей, начавшихся почти вместе — не дальше `TOGETHER_DAYS` дней от первого в группе (а не
+ * цепочкой соседей: старты каждые 3 дня — не «почти вместе»). Их влияние не разделить.
+ */
 export function startedTogether(challenges: Challenge[]): Challenge[][] {
   const sorted = [...challenges].sort((a, b) => a.startDate.localeCompare(b.startDate))
   const groups: Challenge[][] = []
   for (const c of sorted) {
-    const last = groups[groups.length - 1]
-    const prev = last?.[last.length - 1]
-    if (last && prev && daysBetween(parseDay(prev.startDate), parseDay(c.startDate)) <= TOGETHER_DAYS) last.push(c)
+    const group = groups[groups.length - 1]
+    if (group && daysBetween(parseDay(group[0]!.startDate), parseDay(c.startDate)) <= TOGETHER_DAYS) group.push(c)
     else groups.push([c])
   }
   return groups.filter((g) => g.length > 1)

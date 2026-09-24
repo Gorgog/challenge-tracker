@@ -157,7 +157,7 @@ export function AnalyticsPage() {
             )}
             {highlight && (
               <p className="flex items-baseline justify-between gap-2 text-[12.5px]">
-                <span>
+                <span role="status">
                   {litShown === highlight.length
                     ? `Подсвечено ${litShown} ${plural(litShown, 'день', 'дня', 'дней')}`
                     : `Подсвечено ${litShown} ${plural(litShown, 'день', 'дня', 'дней')} из ${highlight.length} — остальные раньше`}

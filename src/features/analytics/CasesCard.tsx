@@ -16,7 +16,12 @@ export function CasesCard({ list, goal, onShow }: { list: Case[]; goal: Goal; on
         {list.map((c) => (
           <li key={c.tag} className="flex flex-col gap-0.5">
             <p className="text-[14.5px]">{caseLine(c, goal)}</p>
-            <button type="button" onClick={() => onShow(c.days)} className="self-start text-[13.5px] text-primary">
+            <button
+              type="button"
+              aria-label={`Показать на графике дни после «${c.tag}»`}
+              onClick={() => onShow(c.days)}
+              className="self-start text-[13.5px] text-primary"
+            >
               Показать эти дни на графике
             </button>
           </li>

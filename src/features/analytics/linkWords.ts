@@ -56,7 +56,7 @@ export function linkLine(l: Link, goal: Goal): string {
 }
 
 /** Заголовок строки в списке. */
-export const linkTitle = (l: Link) => (l.factor.kind === 'tag' ? `${factorName(l)} вечером` : 'Плохие ночи')
+export const linkTitle = (l: Link) => (l.factor.kind === 'tag' ? `${factorName(l)} вечером` : 'Плохая ночь')
 
 /** Заголовок карточки связи — со временем, без «из-за». */
 export function sheetTitle(l: Link, goal: Goal): string {
@@ -78,15 +78,15 @@ export function otherwiseText(l: Link): string | null {
   if (!o) return null
   const lead = `А может быть иначе: ${o.together} из ${ofTimes(o.of)}`
   if (o.kind === 'weekend') {
-    return `${lead} это было утро субботы или воскресенья — выходные и так бывают другими. С поправкой на выходные разница ${num1(Math.abs(o.diff))}.`
+    return `${lead} это была суббота или воскресенье — выходные и так бывают другими. С поправкой на выходные разница ${num1(Math.abs(o.diff))}.`
   }
   const other = `«${o.tag}»`
   const was = l.factor.kind === 'tag' ? `это был ещё и вечер с ${other}` : `накануне был вечер с ${other}`
   if (o.diff === null) return `${lead} ${was} — разделить их пока нельзя.`
+  /* причину не называем: только что осталось без совпавших вечеров, и число не спорит со словами */
+  if (Math.abs(o.diff) < 0.5) return `${lead} ${was}. Без таких вечеров разницы почти нет.`
   const raw = l.withMean! - l.withoutMean!
-  if (Math.sign(o.diff) !== Math.sign(raw) || Math.abs(o.diff) < 0.5) {
-    return `${lead} ${was}. Без таких вечеров разницы почти нет — возможно, дело в ${other}.`
-  }
+  if (Math.sign(o.diff) !== Math.sign(raw)) return `${lead} ${was}. Без таких вечеров — наоборот: на ${num1(Math.abs(o.diff))} в другую сторону.`
   return `${lead} ${was}. Без таких вечеров разница ${num1(Math.abs(o.diff))}.`
 }
 
@@ -101,13 +101,23 @@ const CASE_NOUN: Record<Goal, string> = {
 const plain = (v: number) => (Number.isInteger(v) ? String(v) : num1(v))
 const listOf = (v: string[]) => (v.length < 2 ? v.join('') : `${v.slice(0, -1).join(', ')} и ${v[v.length - 1]}`)
 
-/** Случаи без обобщения: каждое число отдельно и своё обычное рядом. */
+/**
+ * Случаи без обобщения: каждое число отдельно, рядом — что бывает после других вечеров (не полоса «обычно»
+ * с графика: та считается по полным дням). Неотмеченные дни после тега названы, «оба» — только о записанных.
+ */
 export function caseLine(c: Case, goal: Goal): string {
   const day = goal === 'productivity'
   const n = c.values.length
+  const rec = c.missing ? (day ? ' записанный' : ' записанное') : ''
+  const recs = c.missing ? ' записанных' : ''
   const lead =
-    n === 1 ? (day ? 'Единственный день' : 'Единственное утро') : n === 2 ? (day ? 'Оба дня' : 'Оба утра') : `Все ${n} ${day ? 'дня' : 'утра'}`
-  return `${lead} после «${c.tag}» ${CASE_NOUN[goal]} — ${listOf(c.values.map(plain))}. Твоё обычное — около ${plain(c.usual)}.`
+    n === 1
+      ? day ? `Единственный${rec} день` : `Единственное${rec} утро`
+      : n === 2
+        ? `Оба${recs} ${day ? 'дня' : 'утра'}`
+        : `Все ${n}${recs} ${day ? 'дня' : 'утра'}`
+  const miss = c.missing ? ` Ещё ${times(c.missing)} ${day ? 'вечер не закрыт' : 'утро не отмечено'}.` : ''
+  return `${lead} после «${c.tag}» ${CASE_NOUN[goal]} — ${listOf(c.values.map(plain))}. После других вечеров — около ${plain(c.usual)}.${miss}`
 }
 
 /** Под прогрессом «пока рано»: вредное не зовём, остальному — сколько не хватает. */

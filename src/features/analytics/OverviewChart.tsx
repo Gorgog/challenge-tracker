@@ -56,7 +56,8 @@ export function OverviewChart({
     path += `${i > 0 && full[i - 1] && values[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`
   })
   const dates = [...new Set([0, Math.floor((n - 1) / 2), n - 1])]
-  const label = (i: number) => `${dayName(days[i]!.day)}${values[i] === null ? ': нет записи' : `: ${num1(values[i]!)}`}`
+  const label = (i: number) =>
+    `${dayName(days[i]!.day)}${values[i] === null ? ': нет записи' : `: ${num1(values[i]!)}`}${highlight?.has(days[i]!.day) ? ', подсвечен' : ''}`
 
   const indexFrom = (e: PointerEvent<SVGSVGElement>) => {
     const own = (e.target as Element).getAttribute?.('data-index')
@@ -139,7 +140,7 @@ export function OverviewChart({
           {highlight &&
             days.map((d, i) =>
               highlight.has(d.day) ? (
-                <rect key={d.day} data-highlight x={PLOT.left + i * cw} y={PLOT.top - 6} width={cw} height={PLOT.height + 12} fill="var(--worse)" opacity={0.12} rx={3} />
+                <rect key={d.day} data-highlight x={PLOT.left + i * cw} y={PLOT.top - 6} width={cw} height={PLOT.height + 12} fill="var(--muted-foreground)" opacity={0.18} rx={3} />
               ) : null,
             )}
           {scrub !== null && <rect x={PLOT.left + scrub * cw} y={PLOT.top - 6} width={cw} height={height - PLOT.top + 6} fill="var(--primary)" opacity={0.14} rx={3} />}

@@ -7,8 +7,14 @@ import { num1 } from './words'
 const PART = { morning: 'Утро', day: 'День', evening: 'Вечер' } as const
 const times = (n: number) => `${n} ${plural(n, 'раз', 'раза', 'раз')}`
 
+/** Шаг «как обычно» и шаг по 1–2 дням — серым: это не отличие. */
 function cells(r: ChainRow): { value: string; note: string; same: boolean } {
-  if (r.kind === 'habit') return { value: `${r.hits} из ${r.known}`, note: `обычно ${Math.round(r.usualShare * 10)} из 10`, same: r.same }
+  const quiet = r.side === 'same' || r.side === 'few'
+  if (r.kind === 'habit') {
+    const note = r.side === 'few' ? 'мало дней' : `обычно ${Math.round(r.usualShare * 10)} из 10`
+    return { value: `${r.hits} из ${r.known}`, note, same: quiet }
+  }
+  if (r.side === 'few') return { value: num1(r.mean), note: 'мало дней', same: true }
   if (r.side === 'same') return { value: num1(r.mean), note: '≈ как обычно', same: true }
   return { value: num1(r.mean), note: `обычно ${num1(r.usual)} · ${r.side === 'worse' ? 'хуже' : 'лучше'} в ${r.count} из ${r.n}`, same: false }
 }
@@ -59,7 +65,7 @@ export function ChainSheet({
             <div className="flex flex-col gap-1 border-t border-border pt-3 text-[13px] text-muted-foreground">
               <p className="text-foreground">Это порядок событий, а не цепочка причин: следующий день мог пойти хуже и сам по себе.</p>
               {chain.compare && (
-                <p>{`Для сравнения: после плохой ночи без «${chain.tag}» накануне (${times(chain.compare.n)}) вечер ${num1(chain.compare.evening)}.`}</p>
+                <p>{`Для сравнения: после плохой ночи без «${chain.tag}» накануне (${times(chain.compare.n)}) самочувствие и настроение вечером — ${num1(chain.compare.evening)}.`}</p>
               )}
               <p>
                 {chain.level === 'notable'

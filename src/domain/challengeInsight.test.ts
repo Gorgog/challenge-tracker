@@ -126,11 +126,11 @@ describe('challengeInsight — привычка: тест плохого утр�
     expect(r).toMatchObject({ morningsWorse: false, unfair: true })
   })
 
-  it('«чаще пропуск после» — чаще встречавшиеся первыми', () => {
-    const h = hist((i) => ({ tags: [...([3, 7, 11].includes(i) ? ['дедлайн'] : []), ...([15, 19, 23, 27].includes(i) ? ['алкоголь'] : [])] }))
+  it('«чаще пропуск после» — чаще встречавшиеся первыми, а не по алфавиту', () => {
+    const h = hist((i) => ({ tags: [...([3, 7, 11, 31].includes(i) ? ['дедлайн'] : []), ...([15, 19, 23].includes(i) ? ['алкоголь'] : [])] }))
     expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit!.after).toEqual([
-      { tag: 'алкоголь', count: 4 },
-      { tag: 'дедлайн', count: 3 },
+      { tag: 'дедлайн', count: 4 },
+      { tag: 'алкоголь', count: 3 },
     ])
   })
 
