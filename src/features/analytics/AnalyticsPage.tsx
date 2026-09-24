@@ -89,6 +89,8 @@ export function AnalyticsPage() {
       rows: { main: rows.main.map(short), more: rows.more.map(short) },
       changes: changesOf(history, history.length - 1, len, live, entriesById, today, open, late),
       links: linkData,
+      /* у «Сна · Плохая ночь» «Попробовать» — только если плохие ночи чаще после позднего отбоя (связь по сну) */
+      tryEarlier: (goal === 'sleep' ? linkData : linksOf(history, 'sleep', late)).late !== null,
       chain: linkData.cards[0] ? chainOf(history, linkData.cards[0], live, entriesById, today) : null,
       cases: casesOf(history, goal),
       explains: explainsOf(history, windowStart, band, goal),
@@ -192,6 +194,8 @@ export function AnalyticsPage() {
           <LinksCard
             data={view.links}
             goal={goal}
+            tryEarlier={view.tryEarlier}
+            bedtimeRunning={live.some((c) => c.measure === 'bedtime')}
             chain={view.chain}
             onOpenChain={() => setChainOpen(true)}
             onShow={showDays}

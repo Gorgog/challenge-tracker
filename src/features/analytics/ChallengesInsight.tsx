@@ -106,6 +106,7 @@ export function ChallengesInsight() {
                 <span className="font-mono text-[14px]">{`${r.hits} из ${r.known}`}</span>
               </div>
               <p className="text-[12.5px] text-muted-foreground">{progressText(c, r)}</p>
+              {c.measure === 'bedtime' && <p className="text-[13.5px]">Отбой считается сам из времени, которое ты отмечаешь утром.</p>}
               {r.habit ? (
                 habitText(r.habit).map((s) => (
                   <p key={s} className="text-[13.5px]">

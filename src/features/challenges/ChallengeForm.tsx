@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import type { ChallengePatch } from '@/domain/challenges'
 import { todayKey } from '@/domain/date'
 import { buildChallenge, codeFor } from '@/domain/newChallenge'
+import { bedFromInput, clockText, inputOf } from '@/domain/night'
 import type { Challenge, ChallengeKind, ChallengeMeasure, Tag } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { TagPicker } from './TagPicker'
@@ -32,7 +33,14 @@ export type ChallengeFormProps = {
   /** Передан — тег можно создать прямо из выбора, не уходя из формы. */
   onCreateTag?: (name: string) => Promise<Tag>
   onCancel: () => void
+  /** Обычный отбой (минуты от полуночи утра) — от него подставляется «Лечь не позже»; своего ещё нет — null. */
+  usualBed?: number | null
+  /** Черновик нового челленджа — например, «Ложусь раньше» из аналитики. */
+  initial?: { name?: string; measure?: ChallengeMeasure }
 }
+
+/** «Лечь не позже» по умолчанию — на столько минут раньше обычного отбоя. */
+const EARLIER = 30
 
 export function ChallengeForm({
   open,
@@ -43,15 +51,22 @@ export function ChallengeForm({
   onSave,
   onCreateTag,
   onCancel,
+  usualBed = null,
+  initial,
 }: ChallengeFormProps) {
   const editing = Boolean(challenge)
   /* Замок, который стоял ещё до открытия формы. Здесь его не снять. */
   const rulesFrozen = Boolean(challenge?.rulesLocked)
 
-  const [name, setName] = useState(challenge?.name ?? '')
+  const [name, setName] = useState(challenge?.name ?? initial?.name ?? '')
   const [kind, setKind] = useState<ChallengeKind>(challenge?.kind ?? 'do')
-  const [measure, setMeasure] = useState<ChallengeMeasure>(challenge?.measure ?? 'binary')
-  const [goalText, setGoalText] = useState(String(challenge?.goal ?? 1))
+  const [measure, setMeasure] = useState<ChallengeMeasure>(challenge?.measure ?? initial?.measure ?? 'binary')
+  const [goalText, setGoalText] = useState(String(challenge?.measure === 'bedtime' ? 1 : (challenge?.goal ?? 1)))
+  /* время отбоя: у правки — как записано, у нового — обычный отбой минус полчаса, своего нет — пусто */
+  const suggestedBed = usualBed === null ? null : usualBed - EARLIER
+  const [bedText, setBedText] = useState(
+    challenge?.measure === 'bedtime' ? inputOf(challenge.goal) : suggestedBed === null ? '' : inputOf(suggestedBed),
+  )
   const [unit, setUnit] = useState(challenge?.unit ?? '')
   const [limited, setLimited] = useState(challenge ? challenge.lengthDays !== null : false)
   const [lengthText, setLengthText] = useState(String(challenge?.lengthDays ?? 30))
@@ -65,11 +80,13 @@ export function ChallengeForm({
   const code =
     challenge && name.trim() === challenge.name ? challenge.code : codeFor(name)
   const counted = kind === 'do' && measure === 'count'
-  const ready = name.trim().length > 0
+  const timed = kind === 'do' && measure === 'bedtime'
+  const bed = bedFromInput(bedText)
+  const ready = name.trim().length > 0 && (!timed || bed !== null)
 
   const submit = () => {
     if (!ready) return
-    const goal = counted ? Number(goalText) || 1 : 1
+    const goal = counted ? Number(goalText) || 1 : timed ? bed! : 1
     const lengthDays = limited ? Number(lengthText) || 1 : null
 
     if (challenge) {
@@ -83,7 +100,7 @@ export function ChallengeForm({
           ? {}
           : {
               kind,
-              measure: counted ? 'count' : 'binary',
+              measure: counted ? 'count' : timed ? 'bedtime' : 'binary',
               goal,
               unit: counted ? unit.trim() || null : null,
               lengthDays,
@@ -165,7 +182,36 @@ export function ChallengeForm({
               >
                 Число
               </Choice>
+              <Choice
+                active={measure === 'bedtime'}
+                disabled={rulesFrozen}
+                onClick={() => setMeasure('bedtime')}
+              >
+                Время
+              </Choice>
             </div>
+          </div>
+        )}
+
+        {timed && (
+          <div className="flex flex-col gap-1.5">
+            <Field id="ch-bed" label="Лечь не позже">
+              <Input
+                id="ch-bed"
+                type="time"
+                step={300}
+                value={bedText}
+                disabled={rulesFrozen}
+                onChange={(e) => setBedText(e.target.value)}
+                className="w-32"
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              {!editing && usualBed !== null
+                ? `Обычно ты ложишься в ${clockText(usualBed)} — подставили на ${EARLIER} минут раньше. `
+                : ''}
+              Отмечать не нужно: считается само из «Лёг» утром.
+            </p>
           </div>
         )}
 

@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { LockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatHuman, parseDay } from '@/domain/date'
+import { clockText } from '@/domain/night'
 import { isPaused } from '@/domain/pauses'
 import type { Challenge } from '@/domain/types'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,9 @@ export function ChallengeRow({
       ? 'отказ'
       : c.measure === 'count'
         ? `цель ${c.goal.toLocaleString('ru')} ${c.unit ?? ''} в день`
-        : 'привычка · галочка за день'
+        : c.measure === 'bedtime'
+          ? `лечь не позже ${clockText(c.goal)} · считается из утра`
+          : 'привычка · галочка за день'
 
   const term = c.lengthDays
     ? `${c.lengthDays} ${plural(c.lengthDays, 'день', 'дня', 'дней')}`

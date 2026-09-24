@@ -4,8 +4,18 @@ import type { Challenge, Outcome } from '@/domain/types'
 import { clockText } from '@/domain/night'
 import { dayName, shiftText } from './words'
 
+/** У «Ложусь раньше» — время, а не галочка: лёг до цели, позже, ночь не записана или ещё узнается утром. */
+const bedtimeText = (c: Challenge, o: Outcome) =>
+  o === 'unknown' ? 'ночь не записана' : o === 'pending' ? 'посчитается утром' : `${o === 'hit' ? 'лёг до' : 'позже'} ${clockText(c.goal)}`
+
 const outcomeText = (c: Challenge, o: Outcome) =>
-  o === 'pending' ? 'день ещё идёт' : c.kind === 'quit' ? (o === 'hit' ? 'без срыва' : 'срыв') : o === 'hit' ? 'выполнен' : 'пропущен'
+  c.measure === 'bedtime'
+    ? bedtimeText(c, o)
+    : o === 'pending'
+      ? 'день ещё идёт'
+      : c.kind === 'quit'
+        ? o === 'hit' ? 'без срыва' : 'срыв'
+        : o === 'hit' ? 'выполнен' : 'пропущен'
 
 /** Один день целиком: ночь перед ним, утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
 export function DaySheet({

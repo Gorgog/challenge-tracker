@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import { PlusIcon, TagsIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import {
   useCreateChallenge,
   useCreateTag,
   useDayLogs,
+  useDayStarts,
   useDeleteChallenge,
   useDeleteTag,
   useEntries,
@@ -18,6 +20,7 @@ import {
 } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { todayKey } from '@/domain/date'
+import { usualNight } from '@/domain/night'
 import { isPaused } from '@/domain/pauses'
 import type { Challenge } from '@/domain/types'
 import { plural } from '@/lib/plural'
@@ -25,6 +28,9 @@ import { ChallengeForm } from './ChallengeForm'
 import { ChallengeRow } from './ChallengeRow'
 import { DeletedChallenges } from './DeletedChallenges'
 import { TagsDialog } from './TagsDialog'
+
+/** Черновик «Ложусь раньше» — с ним форму открывает «Попробовать» в аналитике. */
+const BEDTIME_DRAFT = { name: 'Ложусь раньше', measure: 'bedtime' } as const
 
 export function ChallengesPage() {
   const challenges = useChallenges()
@@ -41,7 +47,18 @@ export function ChallengesPage() {
   const createTag = useCreateTag()
   const deleteTag = useDeleteTag()
   const updateChallenge = useUpdateChallenge()
-  const [formOpen, setFormOpen] = useState(false)
+  /* пришли из аналитики с «Попробовать: ложусь раньше» — форма сразу открыта с черновиком */
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [draft] = useState(() => ((location.state as { draft?: string } | null)?.draft === 'bedtime' ? BEDTIME_DRAFT : undefined))
+  const [formOpen, setFormOpen] = useState(draft !== undefined)
+  const starts = useDayStarts()
+  const usualBed = starts.data ? usualNight(starts.data, todayKey()).bed : null
+  /* закрыл форму — черновик из аналитики своё отработал: обновление страницы её снова не откроет */
+  const closeForm = () => {
+    setFormOpen(false)
+    if (draft) void navigate('.', { replace: true, state: null })
+  }
   const [tagsOpen, setTagsOpen] = useState(false)
   const [editing, setEditing] = useState<Challenge | null>(null)
 
@@ -166,10 +183,12 @@ export function ChallengesPage() {
           existing={all}
           tags={tags.data ?? []}
           onCreateTag={(name) => createTag.mutateAsync(name)}
-          onCancel={() => setFormOpen(false)}
-          onCreate={(draft) => {
-            createChallenge.mutateAsync(draft).then(() => toast(`Челлендж «${draft.name}» заведён`), () => {})
-            setFormOpen(false)
+          usualBed={usualBed}
+          initial={draft}
+          onCancel={closeForm}
+          onCreate={(created) => {
+            createChallenge.mutateAsync(created).then(() => toast(`Челлендж «${created.name}» заведён`), () => {})
+            closeForm()
           }}
         />
       )}

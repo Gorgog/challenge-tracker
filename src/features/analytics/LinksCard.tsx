@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router'
 import { CONTEXT_TAGS, LINK_CLOSED, LINK_MIN, LINK_RECORDED, type Chain, type Link, type Links } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
@@ -85,6 +86,7 @@ function Item({
   goal,
   onOpen,
   onShow,
+  action,
 }: {
   l: Link
   label: string
@@ -92,6 +94,8 @@ function Item({
   goal: Goal
   onOpen: (l: Link) => void
   onShow?: (days: string[]) => void
+  /** Что попробовать — у «Ночи» и у «Сна» это «Ложусь раньше». */
+  action?: ReactNode
 }) {
   const [explained, setExplained] = useState(false)
   const level = LEVEL[l.level as keyof typeof LEVEL]
@@ -124,7 +128,31 @@ function Item({
           Показать эти дни на графике
         </button>
       )}
+      {action}
     </li>
+  )
+}
+
+/**
+ * «Попробовать: ложусь раньше» — форма челленджа с черновиком (срез 4б); если такой уже идёт — ссылка на его разбор,
+ * а не второй челлендж.
+ */
+function TryEarlier({ running }: { running: boolean }) {
+  const navigate = useNavigate()
+  if (running)
+    return (
+      <RouterLink to="/analytics/challenges" className="self-start text-[13.5px] text-primary">
+        «Ложусь раньше» уже идёт ›
+      </RouterLink>
+    )
+  return (
+    <button
+      type="button"
+      onClick={() => void navigate('/challenges', { state: { draft: 'bedtime' } })}
+      className="self-start rounded-lg bg-accent px-2.5 py-1.5 text-[13px] font-medium text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      Попробовать: ложусь раньше
+    </button>
   )
 }
 
@@ -139,6 +167,8 @@ export function LinksCard({
   onOpen,
   onOpenChain,
   onShow,
+  tryEarlier,
+  bedtimeRunning,
 }: {
   data: Links
   goal: Goal
@@ -147,6 +177,10 @@ export function LinksCard({
   onOpen: (l: Link) => void
   onOpenChain: () => void
   onShow: (days: string[]) => void
+  /** Плохие ночи чаще после позднего отбоя (связь «поздний отбой → сон» найдена) — у «Сна» есть что попробовать. */
+  tryEarlier: boolean
+  /** «Ложусь раньше» уже идёт — вместо «Попробовать» ссылка на разбор. */
+  bedtimeRunning: boolean
 }) {
   if (!data.cards.length && !data.night && !data.late) return <Early data={data} />
   return (
@@ -157,8 +191,20 @@ export function LinksCard({
           <Item key={factorName(l)} l={l} label={BUCKET[l.bucket!]} tone={l.bucket === 'less' ? 'text-worse' : 'text-better'} goal={goal} onOpen={onOpen} />
         ))}
         {/* по порядку суток: ночь, потом сон и вечер после него */}
-        {data.late && <Item l={data.late} label="Ночь" tone="text-muted-foreground" goal={goal} onOpen={onOpen} />}
-        {data.night && <Item l={data.night} label="Сон" tone="text-muted-foreground" goal={goal} onOpen={onOpen} onShow={onShow} />}
+        {data.late && (
+          <Item l={data.late} label="Ночь" tone="text-muted-foreground" goal={goal} onOpen={onOpen} action={<TryEarlier running={bedtimeRunning} />} />
+        )}
+        {data.night && (
+          <Item
+            l={data.night}
+            label="Сон"
+            tone="text-muted-foreground"
+            goal={goal}
+            onOpen={onOpen}
+            onShow={onShow}
+            action={tryEarlier ? <TryEarlier running={bedtimeRunning} /> : undefined}
+          />
+        )}
       </ul>
       {chain && (
         <button type="button" onClick={onOpenChain} className="flex flex-col items-start gap-0.5 border-t border-border pt-2.5 text-left">

@@ -42,13 +42,15 @@ export function buildChallenge(
   today: string,
 ): Omit<Challenge, 'id'> {
   const counted = draft.kind === 'do' && draft.measure === 'count'
+  /* время отбоя — только у привычки; цель — минуты от полуночи утра */
+  const bedtime = draft.kind === 'do' && draft.measure === 'bedtime'
 
   return {
     name: draft.name.trim(),
     code: (draft.code.trim() || codeFor(draft.name)).toUpperCase(),
     kind: draft.kind,
-    measure: counted ? 'count' : 'binary',
-    goal: counted ? draft.goal : 1,
+    measure: counted ? 'count' : bedtime ? 'bedtime' : 'binary',
+    goal: counted || bedtime ? draft.goal : 1,
     unit: counted ? draft.unit.trim() || null : null,
     color: pickColor(existing),
     tagIds: [...draft.tagIds],
