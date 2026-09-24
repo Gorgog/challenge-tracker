@@ -348,3 +348,40 @@ describe('AnalyticsPage — случаи и «Объясняет плохие д
     expect(screen.queryByRole('region', { name: 'Объясняет плохие дни' })).not.toBeInTheDocument()
   })
 })
+
+describe('AnalyticsPage — «Что обычно шло следом»', () => {
+  /** drinkWorld, но и вечер после алкоголя — 3; спорт после алкоголя пропущен, в остальные дни — сделан. */
+  function chainWorld() {
+    const w = drinkWorld()
+    const afterDays = [3, 12, 21, 30, 39, 48].map(key)
+    mocked.logs = w.logs.map((l) => (afterDays.includes(l.day) ? { ...l, mood: 3, wellbeing: 3 } : l))
+    mocked.starts = w.starts
+    mocked.challenges = [{ ...push, measure: 'binary', goal: 1 }]
+    mocked.entries = { push: Object.fromEntries(w.logs.filter((l) => !afterDays.includes(l.day)).map((l) => [l.day, 1])) }
+  }
+
+  it('ссылка под «Что попробовать» — после чего и сколько раз', () => {
+    chainWorld()
+    show()
+    expect(within(links()).getByRole('button', { name: /Что обычно шло следом/ })).toHaveTextContent('после вечера с «алкоголь» (6 раз)')
+  })
+
+  it('порядок событий: утро, день, вечер против обычного; «как обычно» — серым; не причины', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    chainWorld()
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Что обычно шло следом/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Что обычно шло следом' })
+    expect(within(dialog).getByRole('row', { name: /сон 7,0 ≈ как обычно/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: /самочувствие 3,0 обычно 6,0 · хуже в 6 из 6/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: /Отжиматься по 20 раз 0 из 6 обычно 10 из 10/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('row', { name: /настроение 3,0 обычно 7,0 · хуже в 6 из 6/ })).toBeInTheDocument()
+    expect(within(dialog).getByText(/Это порядок событий, а не цепочка причин/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Уверенность ●○○ — 6 раз, это мало.')).toBeInTheDocument()
+  })
+
+  it('вечер после не хуже обычного — ссылки нет', () => {
+    show()
+    expect(within(links()).queryByRole('button', { name: /Что обычно шло следом/ })).not.toBeInTheDocument()
+  })
+})
