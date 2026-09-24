@@ -592,10 +592,33 @@ describe('«Ложусь раньше» на экране дня (срез 4б)'
     expect(screen.getByText('Сегодня посчитается завтра утром · вчера — посчитается, когда начнёшь день')).toBeInTheDocument()
   })
 
-  it('цифра с клавиатуры не отмечает «Ложусь раньше»', async () => {
+  it('стоит в «Идут сами» — его не отмечают; номера и цифры — только у задач «Отмечаю сам» (ревью 4б)', async () => {
     const user = userEvent.setup()
-    show(-40)
+    const write: Challenge = { ...read, id: 'write', code: 'ПСТ', name: 'Писать', sortOrder: 3 }
+    mocked.challenges = [read, { ...bed, sortOrder: 1 }, write]
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.entries = { bed: { [YESTERDAY]: -40 } }
+    render(<DayPage />)
+    const follows = (a: HTMLElement, b: HTMLElement) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const own = screen.getByText('Идут сами')
+    const row = screen.getByText('Ложусь раньше · до 23:30')
+    expect(follows(own, row)).toBe(true)
+    expect(follows(screen.getByText('Писать'), own)).toBe(true)
+    expect(screen.getByText(/0 из 2 задач закрыто/)).toBeInTheDocument()
     await user.keyboard('2')
-    expect(mocked.setEntry).not.toHaveBeenCalled()
+    // «2» — вторая задача «Отмечаю сам» («Писать»), а не «Ложусь раньше»
+    expect(mocked.setEntry).toHaveBeenCalledTimes(1)
+    expect(mocked.setEntry.mock.calls[0]![0]).toMatchObject({ challengeId: 'write' })
+  })
+
+  it('лёг ровно в цель — выполнено; челлендж начат сегодня — про вчера молчит', () => {
+    show(-30)
+    expect(screen.getByText('Сегодня посчитается завтра утром · вчера лёг в 23:30 ✓')).toBeInTheDocument()
+    cleanup()
+    mocked.challenges = [read, { ...bed, startDate: TODAY }]
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.entries = { bed: { [YESTERDAY]: -40 } }
+    render(<DayPage />)
+    expect(screen.getByText('Сегодня посчитается завтра утром')).toBeInTheDocument()
   })
 })

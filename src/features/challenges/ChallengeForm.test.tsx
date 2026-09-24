@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { todayKey } from '@/domain/date'
@@ -334,5 +334,47 @@ describe('«Время» — лечь не позже (срез 4б)', () => {
     fireEvent.change(bedField(), { target: { value: '23:00' } })
     await user.click(screen.getByRole('button', { name: /сохранить/i }))
     expect(onSave.mock.calls[0]![0]).toMatchObject({ measure: 'bedtime', goal: -60, unit: null })
+  })
+})
+
+describe('«Время» — правки по ревью 4б', () => {
+  const base: Challenge = {
+    id: 'x',
+    name: 'Читать',
+    code: 'ЧТ',
+    kind: 'do',
+    measure: 'binary',
+    goal: 1,
+    unit: null,
+    color: 'var(--chart-1)',
+    tagIds: [],
+    startDate: '2026-09-01',
+    lengthDays: null,
+    pauses: [],
+    rulesLocked: false,
+    deletedAt: null,
+    sortOrder: 0,
+  }
+  const edit = (c: Challenge) =>
+    render(<ChallengeForm open existing={[c]} tags={TAGS} challenge={c} onSave={vi.fn()} onCancel={vi.fn()} usualBed={0} />)
+
+  it('у заведённого измерение на «Время» и обратно не меняется (решение Georgy)', () => {
+    edit(base)
+    expect(screen.getByRole('button', { name: 'Время' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Число' })).toBeEnabled()
+    cleanup()
+    edit({ ...base, measure: 'bedtime', goal: -30 })
+    expect(screen.getByRole('button', { name: 'Галочка' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Число' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Отказ' })).toBeDisabled()
+    expect(screen.getByLabelText('Лечь не позже')).toBeEnabled()
+  })
+
+  it('обычный отбой около полудня — подстановка не перескакивает через полдень', async () => {
+    const user = userEvent.setup()
+    render(<ChallengeForm open existing={[]} tags={TAGS} onCreate={vi.fn()} onCancel={vi.fn()} usualBed={-715} />)
+    await user.click(screen.getByRole('button', { name: 'Время' }))
+    // 12:05 − 30 минут — не 11:35 «утра следующего дня», а самое раннее, что можно: 12:00
+    expect(screen.getByLabelText('Лечь не позже')).toHaveValue('12:00')
   })
 })

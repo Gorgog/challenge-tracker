@@ -208,6 +208,19 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         expect(await r.listChallenges()).toEqual([])
       }, t)
 
+      it('правка: цель вне ночи — отказ; измерение на «Время» и обратно не меняется (ревью 4б)', async () => {
+        const r = await makeRepo()
+        const bed = await r.createChallenge(draft({ measure: 'bedtime', goal: -30, unit: '' }))
+        await expect(r.updateChallenge(bed.id, { goal: 720 })).rejects.toThrow()
+        await r.updateChallenge(bed.id, { goal: -60 })
+        expect(await byId(r, bed.id)).toMatchObject({ measure: 'bedtime', goal: -60 })
+        await r.updateChallenge(bed.id, { measure: 'binary', goal: 1 })
+        expect(await byId(r, bed.id)).toMatchObject({ measure: 'bedtime', goal: -60 })
+        const read = await r.createChallenge(draft())
+        await r.updateChallenge(read.id, { measure: 'bedtime', goal: -30 })
+        expect(await byId(r, read.id)).toMatchObject({ measure: 'binary', goal: 1 })
+      }, t)
+
       it('отметку руками поставить нельзя: выполнение считается из утра', async () => {
         const r = await makeRepo()
         const c = await r.createChallenge(draft({ measure: 'bedtime', goal: -30, unit: '' }))

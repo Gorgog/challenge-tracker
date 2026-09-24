@@ -637,7 +637,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(screen.getByText('Разбор челленджей')).toBeInTheDocument()
   })
 
-  it('шторка дня: у «Ложусь раньше» — лёг до цели, позже, ночь не записана', async () => {
+  it('шторка дня: у «Ложусь раньше» — своё время «вечером лёг в …», не путается с «лёг» утра (ревью 4б)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     nightWorld()
     const bed = { ...push, id: 'bed', name: 'Ложусь раньше', code: 'ЛР', measure: 'bedtime' as const, goal: -30, unit: '' }
@@ -645,13 +645,33 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     mocked.entries = { bed: { [key(6)]: -40, [key(5)]: 60, [key(4)]: NaN } }
     show()
     await user.click(dayButton(/^чт, 17 сентября/))
-    expect(within(screen.getByRole('dialog')).getByText('лёг до 23:30')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('вечером лёг в 23:20 ✓')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await user.click(dayButton(/^пт, 18 сентября/))
-    expect(within(screen.getByRole('dialog')).getByText('позже 23:30')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('вечером лёг в 1:00 — позже 23:30')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await user.click(dayButton(/^сб, 19 сентября/))
     expect(within(screen.getByRole('dialog')).getByText('ночь не записана')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    // вчера: сегодняшнее утро ещё не принесло ночь в отметки — «посчитается утром»
+    await user.click(dayButton(/^вт, 22 сентября/))
+    expect(within(screen.getByRole('dialog')).getByText('посчитается утром')).toBeInTheDocument()
+  })
+
+  it('«Ложусь раньше» на паузе — не «уже идёт»: можно попробовать снова (ревью 4б)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    const bed = { ...push, id: 'bed', name: 'Ложусь раньше', code: 'ЛР', measure: 'bedtime' as const, goal: -30, unit: '' }
+    mocked.challenges = [push, { ...bed, pauses: [{ from: key(3), to: null }] }]
+    showRoutes()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    expect(within(links()).getByRole('button', { name: 'Попробовать: ложусь раньше' })).toBeInTheDocument()
+    cleanup()
+    // срок кончился — тоже
+    mocked.challenges = [push, { ...bed, startDate: key(40), lengthDays: 30 }]
+    showRoutes()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    expect(within(links()).getByRole('button', { name: 'Попробовать: ложусь раньше' })).toBeInTheDocument()
   })
 
   it('порог один на экран: 30 дней не меняют «с 00:30» ни в ряду, ни в строке «Ночь»', async () => {

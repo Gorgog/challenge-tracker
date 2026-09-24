@@ -717,6 +717,15 @@ describe('chain — что обычно шло следом', () => {
     expect((day[0] as { usualShare: number }).usualShare).toBeGreaterThan(0.75)
   })
 
+  it('«Ложусь раньше» — ночь после вечера с фактором, та же, что строка «лёг», а не ночь следующего дня (ревью 4б)', () => {
+    const h = bad()
+    const bedtime: Challenge = { ...sport, id: 'bed', name: 'Ложусь раньше', measure: 'bedtime', goal: -30 }
+    // после вечера с алкоголем (i % 9 = 2) лёг в 1:30, в остальные ночи — в 23:20; ключ — день вечера
+    const entries: EntryMap = Object.fromEntries(h.map((d, i) => [d.day, i % 9 === 2 ? 90 : -40]))
+    const c = chain(h, top(h), [bedtime], { bed: entries }, TODAY)!
+    expect(c.rows.find((r) => r.kind === 'habit')).toMatchObject({ label: 'Ложусь раньше', hits: 0, known: 6, side: 'worse' })
+  })
+
   it('утро не отмечено — считается отдельно', () => {
     const h = bad().map((d, i) => (i === 12 ? { ...d, morning: null, started: false } : d))
     const c = chain(h, top(h), [], {}, TODAY)!

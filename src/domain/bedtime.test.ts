@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { bedtimeEntries } from './bedtime'
 import { challengeInsight } from './challengeInsight'
+import { applyPatch } from './challenges'
 import { addDays, dayKey, parseDay } from './date'
 import { bestStreak, completionRate, currentStreak, dayOutcome, fullDays } from './streaks'
 import type { Challenge, DayStart, EntryMap } from './types'
@@ -119,5 +120,38 @@ describe('серии и доли — «не записано» как пауза
   it('разбор челленджа: известных — только выполнено и пропуск', () => {
     const r = challengeInsight(early, entries, [], TODAY)
     expect(r).toMatchObject({ hits: 6, known: 7 })
+  })
+})
+
+describe('правки «Ложусь раньше» (ревью 4б, решение Georgy)', () => {
+  const read: Challenge = { ...early, id: 'read', measure: 'binary', goal: 1 }
+
+  it('измерение не меняется на «Время» и обратно: иначе прошлые дни задним числом получат другие исходы', () => {
+    expect(applyPatch(read, { measure: 'bedtime', goal: -30 })).toMatchObject({ measure: 'binary', goal: 1 })
+    expect(applyPatch(early, { measure: 'binary', goal: 1 })).toMatchObject({ measure: 'bedtime', goal: -30 })
+    // «Галочка» ↔ «Число» — по-прежнему можно, как и время у самого «Ложусь раньше»
+    expect(applyPatch(read, { measure: 'count', goal: 20 })).toMatchObject({ measure: 'count', goal: 20 })
+    expect(applyPatch(early, { goal: -60 })).toMatchObject({ measure: 'bedtime', goal: -60 })
+  })
+})
+
+describe('«чаще пропуск после» у «Ложусь раньше» — вечер перед этой же ночью (ревью 4б)', () => {
+  it('поздняя ночь после вечера с тегом — тег того же дня, а не накануне', () => {
+    // 20 дней: «алкоголь» вечерами 4, 8, 12, 16 дней назад — после них ложился в 1:00; остальные ночи — 23:10
+    const drinks = [4, 8, 12, 16]
+    const history = Array.from({ length: 20 }, (_, i) => {
+      const back = 19 - i
+      return {
+        day: key(back),
+        morning: { sleep: 7, wellbeing: 6, mood: 6 },
+        started: true,
+        evening: back === 0 ? null : { mood: 6, wellbeing: 6, productivity: 6 },
+        tags: drinks.includes(back) ? ['алкоголь'] : [],
+      }
+    })
+    const c = { ...early, startDate: key(19) }
+    const entries: EntryMap = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [key(19 - i), drinks.includes(19 - i) ? 60 : -50]))
+    const r = challengeInsight(c, entries, history, TODAY)
+    expect(r.habit?.after).toEqual([{ tag: 'алкоголь', count: 4 }])
   })
 })
