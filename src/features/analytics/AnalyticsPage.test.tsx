@@ -213,6 +213,11 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(screen.queryByTestId('headline')).not.toBeInTheDocument()
   })
 
+  it('внизу — «Челленджи ›» в разбор челленджей', () => {
+    show()
+    expect(screen.getByRole('link', { name: 'Челленджи ›' })).toHaveAttribute('href', '/analytics/challenges')
+  })
+
   it('челленджей нет — обзор всё равно есть, подсказка про день на месте, внизу — куда идти', () => {
     mocked.challenges = []
     show()
