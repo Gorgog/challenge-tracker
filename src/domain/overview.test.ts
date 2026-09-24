@@ -318,24 +318,32 @@ describe('eventRows — ряд позднего отбоя', () => {
 })
 
 describe('changes — поздний отбой', () => {
-  it('доля записанных ночей с позднего и позже, как у плохих ночей', () => {
-    /* прошлые 14: поздно 1 раз; эти 14: 5 раз */
+  it('доля записанных ночей с позднего и позже; ночь — после вечера дня, как в ряду: у сегодня её ещё нет', () => {
+    /* bed у дня i — ночь перед его утром, то есть после вечера i − 1. Прошлые 14 вечеров — поздно 1 раз, эти 14 — 5 из 13 */
     const h = days(28, (i) => ({ bed: [3, 15, 17, 20, 22, 26].includes(i) ? 60 : -30 }))
     const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
-    expect(c.status === 'ok' && c.lines).toEqual([{ kind: 'lateBed', from: 30, now: 5, of: 14, was: 1, wasOf: 14, good: false }])
+    expect(c.status === 'ok' && c.lines).toEqual([{ kind: 'lateBed', from: 30, now: 5, of: 13, was: 1, wasOf: 14, good: false }])
+  })
+
+  it('ночь перед первым днём периода — после вечера прошлого периода, а не этого (ревью 24.09: ряд и строка расходились)', () => {
+    /* поздние ночи после вечеров 0, 1 и 13 — все в прошлом периоде */
+    const h = days(28, (i) => ({ bed: [1, 2, 14].includes(i) ? 60 : -30 }))
+    const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
+    expect(c.status === 'ok' && c.lines).toEqual([{ kind: 'lateBed', from: 30, now: 0, of: 13, was: 3, wasOf: 14, good: true }])
   })
 
   it('ночи записаны меньше чем наполовину в любом периоде — не мерка: неделя после появления вопроса', () => {
     const h = days(28, (i) => (i >= 21 ? { bed: 90 } : {}))
     const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
     expect(c.status === 'ok' && c.lines).toEqual([])
-    /* прошлые 14: записаны 3 ночи, все ранние — без правила «наполовину» вышло бы «было 0 из 3» */
+    /* после прошлых 14 вечеров записаны 4 ночи — без правила «наполовину» вышло бы «было 1 из 4» */
     const prevFew = days(28, (i) => (i >= 11 ? { bed: i >= 14 ? 90 : -30 } : {}))
     const f = changes(prevFew, 27, 14, [], {}, TODAY, false, 30)
     expect(f.status === 'ok' && f.lines).toEqual([])
-    const prevHalf = days(28, (i) => (i >= 7 ? { bed: i >= 14 ? 90 : -30 } : {}))
+    /* ровно наполовину — 7 ночей после прошлых вечеров — сравниваем */
+    const prevHalf = days(28, (i) => (i >= 8 ? { bed: i >= 14 ? 90 : -30 } : {}))
     const d = changes(prevHalf, 27, 14, [], {}, TODAY, false, 30)
-    expect(d.status === 'ok' && d.lines).toEqual([{ kind: 'lateBed', from: 30, now: 14, of: 14, was: 0, wasOf: 7, good: false }])
+    expect(d.status === 'ok' && d.lines).toEqual([{ kind: 'lateBed', from: 30, now: 13, of: 13, was: 1, wasOf: 7, good: false }])
   })
 
   it('позднего нет — строки нет', () => {

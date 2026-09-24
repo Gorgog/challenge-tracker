@@ -530,14 +530,14 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(chart().querySelectorAll('[data-late="no"]')).toHaveLength(6)
   })
 
-  it('«Что изменилось»: поздних ночей — долей записанных ночей', () => {
+  it('«Что изменилось»: поздних ночей — долей записанных, те же ночи, что в ряду (7 + 6 = 13)', () => {
     nightWorld()
     show()
     const changed = screen.getByRole('region', { name: 'Что изменилось' })
-    expect(within(changed).getByText('Отбой с 00:30 и позже: 7 из 14 ночей')).toBeInTheDocument()
+    expect(within(changed).getByText('Отбой с 00:30 и позже: 7 из 13 ночей')).toBeInTheDocument()
   })
 
-  it('ночей до окна нет — ни ряда, ни строки: позднего без своего обычного не бывает', async () => {
+  it('ночей всего меньше пяти — ни ряда, ни строки: своего обычного ещё нет', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     nightWorld()
     mocked.starts = mocked.starts.map((s) => (s.day < key(3) && s.morning ? { ...s, morning: { ...s.morning, night: null } } : s))

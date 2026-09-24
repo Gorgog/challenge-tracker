@@ -72,6 +72,11 @@ describe('usualNight — середина своих ответов за 14 дн
     expect(usualNight(starts, '2026-09-25')).toEqual({ bed: -25, wake: 465 })
   })
 
+  it('округлённое обычное не выходит за границы базы: отбой до 11:55, подъём до 23:55', () => {
+    const starts = ['2026-09-22', '2026-09-23', '2026-09-24'].map((d) => start(d, night(718, 1439)))
+    expect(usualNight(starts, '2026-09-25')).toEqual({ bed: 715, wake: 1435 })
+  })
+
   it('меньше трёх ответов — обычного нет', () => {
     const starts = [start('2026-09-23', night(-30, 460)), start('2026-09-24', night(-30, 460))]
     expect(usualNight(starts, '2026-09-25')).toEqual({ bed: null, wake: null })

@@ -296,6 +296,20 @@ describe('экран дня — пока день не начат', () => {
     )
   })
 
+  it('часы страницы отстают на минуту — подъём в текущую минуту не «ещё не наступило» (ревью 24.09)', async () => {
+    at(7, 39)
+    const user = userEvent.setup()
+    render(<DayPage />)
+    await user.click(pageStart())
+    /* часы страницы обновятся только через минуту, а на деле уже 7:40:30 */
+    vi.setSystemTime(new Date(2026, 8, 21, 7, 40, 30))
+    await fillMorning(user, { bed: '23:30', wake: '07:40' })
+    expect(mocked.startDay).toHaveBeenCalledWith(
+      expect.objectContaining({ morning: expect.objectContaining({ night: expect.objectContaining({ wake: 460 }) }) }),
+      expect.anything(),
+    )
+  })
+
   it('«как обычно» — из своих прошлых утр: середина ответов за 14 дней', async () => {
     const night = (bed: number, wake: number) => ({ bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const })
     mocked.starts = [

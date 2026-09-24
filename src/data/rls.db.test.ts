@@ -127,7 +127,8 @@ describe.skipIf(!dbTestsOn)('база: доступ только к своему
     }
     for (const [name, row] of Object.entries(bad)) {
       const { error } = await a.client.from('day_starts').insert({ day: '2026-09-22', ...row })
-      expect(error, name).not.toBeNull()
+      /* именно проверка базы (check_violation), а не опечатка в колонке или права */
+      expect(error?.code, name).toBe('23514')
     }
     await a.client.from('day_starts').update({ bed_min: 60 }).eq('day', '2026-09-21')
     const { data } = await a.client.from('day_starts').select('bed_min, wake_min, bed_how, wake_how').eq('day', '2026-09-21').single()

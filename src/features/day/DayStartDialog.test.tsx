@@ -10,7 +10,7 @@ const NINE = new Date(2026, 8, 21, 9, 0)
 
 const setup = ({ usual = USUAL, now = NINE }: { usual?: UsualNight; now?: Date } = {}) => {
   const handlers = { onStart: vi.fn(), onSkip: vi.fn(), onCancel: vi.fn() }
-  render(<DayStartDialog open day="2026-09-21" usual={usual} now={now} {...handlers} />)
+  render(<DayStartDialog open day="2026-09-21" usual={usual} now={() => now} {...handlers} />)
   return { ...handlers, user: userEvent.setup() }
 }
 
