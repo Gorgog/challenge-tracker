@@ -66,7 +66,12 @@ export function usualNight(starts: DayStart[], today: string): UsualNight {
   const from = dayKey(addDays(parseDay(today), -NIGHT_USUAL_DAYS))
   const nights = starts.flatMap((s) => (s.day >= from && s.day < today && s.morning?.night ? [s.morning.night] : []))
   if (nights.length < NIGHT_USUAL_MIN) return { bed: null, wake: null }
-  return { bed: step(median(nights.map((n) => n.bed))), wake: step(median(nights.map((n) => n.wake))) }
+  /* до 5 минут, но в границах базы: медиана 718 не станет 720 */
+  const within = (v: number, lo: number, hi: number) => Math.min(hi - NIGHT_STEP, Math.max(lo, v))
+  return {
+    bed: within(step(median(nights.map((n) => n.bed))), -HALF, HALF),
+    wake: within(step(median(nights.map((n) => n.wake))), 0, DAY),
+  }
 }
 
 /**

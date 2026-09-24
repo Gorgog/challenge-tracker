@@ -438,7 +438,8 @@ describe('экран дня — начало дня без ловушек', () =
     await user.click(pageStart())
 
     vi.setSystemTime(new Date(2026, 8, 22, 0, 5))
-    await fillMorning(user)
+    /* окно сверяет подъём с настоящими часами: в 0:05 встать можно было только до 0:05 */
+    await fillMorning(user, { bed: '23:30', wake: '00:00' })
 
     expect(mocked.startDay).not.toHaveBeenCalledWith(expect.objectContaining({ day: TODAY }), expect.anything())
     expect(screen.getByText(/22 сентября/)).toBeInTheDocument()

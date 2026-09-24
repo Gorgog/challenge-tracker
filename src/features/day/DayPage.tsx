@@ -492,7 +492,7 @@ export function DayPage() {
           open
           day={todayK}
           usual={usualNight(starts, todayK)}
-          now={now}
+          now={() => new Date()}
           onStart={(morning) => start(morning)}
           onSkip={() => start(null)}
           onCancel={() => setStartOpen(false)}

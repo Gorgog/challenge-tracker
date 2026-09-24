@@ -289,9 +289,20 @@ export function changes(
   const due = (l: TimelineDay[]) => l.filter((d) => !(d.day === todayKey && morningPending(d, today, morningOpen)))
   const skipped = share((l) => l.filter((d) => !d.morning).length, due)
   const skippedLines: ChangeLine[] = Math.abs(shift(skipped)) >= minDiff ? [{ kind: 'skippedMornings', ...skipped, good: shift(skipped) < 0 }] : []
-  /* ночи — только если в обоих периодах записаны хотя бы наполовину: иначе «не записывал» сошло бы за «не было» */
-  const nights = (l: TimelineDay[]) => l.filter((d) => bedOf(d) !== null)
-  const lateShare = share((l) => l.filter((d) => bedOf(d)! >= late!).length, nights)
+  /*
+   * Ночь — после вечера дня, как в ряду под графиком (записана утром следующего): у сегодняшнего дня её ещё нет.
+   * Только если в обоих периодах ночи записаны хотя бы наполовину: иначе «не записывал» сошло бы за «не было».
+   */
+  const nightsAfter = (from: number, to: number) =>
+    from < 0 ? [] : history.slice(from + 1, to + 2).map(bedOf).filter((b): b is number => b !== null)
+  const nowBeds = nightsAfter(Math.max(0, index - len + 1), index)
+  const wasBeds = nightsAfter(prevStart, index - len)
+  const lateShare: Share = {
+    now: nowBeds.filter((b) => b >= late!).length,
+    of: nowBeds.length,
+    was: wasBeds.filter((b) => b >= late!).length,
+    wasOf: wasBeds.length,
+  }
   const lateLines: ChangeLine[] =
     late !== null && lateShare.of * 2 >= len && lateShare.wasOf * 2 >= len && Math.abs(shift(lateShare)) >= minDiff
       ? [{ kind: 'lateBed', from: late, ...lateShare, good: shift(lateShare) < 0 }]

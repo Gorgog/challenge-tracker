@@ -36,8 +36,11 @@ export type DayStartDialogProps = {
   day: string
   /** Обычный отбой и подъём (`usualNight`); null — ответов пока мало, только точное время. */
   usual: UsualNight
-  /** Часы страницы: подъём позже этого времени не записать. */
-  now: Date
+  /**
+   * Который час — спрашивается при каждом вводе: часы страницы отстают до минуты, и подъём в текущую минуту
+   * выглядел бы «ещё не наступившим». Подъём позже этого времени не записать.
+   */
+  now: () => Date
   onStart: (morning: Morning) => void
   /** Пропустить утро: день начнётся без оценок. */
   onSkip: () => void
@@ -54,7 +57,7 @@ export function DayStartDialog({ open, day, usual, now, onStart, onSkip, onCance
   const [scores, setScores] = useState<Draft>({ sleep: null, wellbeing: null, mood: null })
   const [bed, setBed] = useState<NightAnswer>(NONE)
   const [wake, setWake] = useState<NightAnswer>(NONE)
-  const nowMin = minutesOf(now)
+  const nowMin = minutesOf(now())
   const problem = nightProblem({ bed: bed.value, wake: wake.value }, nowMin)
   const ready = SCALES.every((s) => scores[s.field] !== null) && bed.how !== null && wake.how !== null && problem === null
   const date = parseDay(day)
