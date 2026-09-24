@@ -478,6 +478,57 @@ describe('chain — что обычно шло следом', () => {
     expect(c.compare).toEqual({ n: 6, evening: 5 })
   })
 
+  it('только для связи ●○○ и выше', () => {
+    const h = bad()
+    expect(chain(h, { ...top(h), level: 'none' }, [], {}, TODAY)).toBeNull()
+    expect(chain(h, { ...top(h), level: 'early' }, [], {}, TODAY)).toBeNull()
+  })
+
+  it('день после незакрытого вечера — ни «после», ни «обычно»', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? ['алкоголь'] : [],
+      e: i % 9 === 5 ? null : after(i) ? 3 : 6,
+      sleep: after(i) ? 3 : i % 9 === 6 ? 1 : 7,
+      m: after(i) ? 3 : 6,
+    }))
+    expect(chain(h, top(h), [], {}, TODAY)!.rows[0]).toMatchObject({ label: 'сон', usual: 7 })
+  })
+
+  it('вечер после известен меньше 5 раз — цепочки нет', () => {
+    const h = bad().map((d, i) => (i === 12 || i === 21 ? { ...d, evening: null, tags: [] } : d))
+    expect(top(h).withN).toBe(6)
+    expect(chain(h, top(h), [], {}, TODAY)).toBeNull()
+  })
+
+  it('«хуже в k из n» считает только дни ниже обычного', () => {
+    let n = 0
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? ['алкоголь'] : [],
+      sleep: after(i) ? (n++ === 5 ? 8 : 3) : 7,
+      m: after(i) ? 3 : 6,
+      e: after(i) ? 3 : 6,
+    }))
+    expect(chain(h, top(h), [], {}, TODAY)!.rows[0]).toMatchObject({ label: 'сон', side: 'worse', count: 5, n: 6 })
+  })
+
+  it('привычка: дни до старта и сегодняшний, ещё не отмеченный, не в счёт; доля как обычно — серым', () => {
+    const h = bad()
+    const late = { ...sport, startDate: h[10]!.day }
+    const all: EntryMap = Object.fromEntries(h.slice(0, -1).map((d) => [d.day, 1]))
+    const row = chain(h, top(h), [late], { sport: all }, TODAY)!.rows.find((r) => r.part === 'day')!
+    expect(row).toMatchObject({ hits: 5, known: 5, usualShare: 1, same: true })
+  })
+
+  it('плохих ночей без фактора меньше трёх — сравнения нет', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? ['алкоголь'] : [],
+      sleep: after(i) || i === 6 || i === 15 ? 3 : 7,
+      m: after(i) ? 3 : 6,
+      e: after(i) ? 3 : 6,
+    }))
+    expect(chain(h, top(h), [], {}, TODAY)!.compare).toBeNull()
+  })
+
   it('8+ раз и связь ●●○ — цепочка ●●○; меньше — ●○○', () => {
     const h = hist(LINK_DAYS, (i) => ({ tags: i % 7 === 2 ? ['алкоголь'] : [], m: after(i, 7) ? 3 : 6, e: after(i, 7) ? 3 : 6 }))
     expect(top(h).level).toBe('notable')

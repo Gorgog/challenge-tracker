@@ -1,7 +1,9 @@
 import { isoDow, parseDay } from './date'
+import { dayOutcome } from './streaks'
 import { goalValue, isComplete, pointClass, type Band, type Goal } from './overview'
 import { DAY_TAGS } from './tags'
 import { BAD_SLEEP, HARMFUL_TAGS, round1, stateOf, type TimelineDay } from './timeline'
+import type { Challenge, EntryMap } from './types'
 
 /*
  * Связи v1 (срез 2 новой аналитики, 24.09; свод `research/2026-09-24-analytics-clean/`, §3.4–3.5, §6.1).
@@ -302,6 +304,95 @@ export function explains(history: TimelineDay[], windowStart: number, band: Band
     if (rest.length && hit.length / bad.length < (EXPLAIN_RATIO * restHit) / rest.length) return []
     return [{ tag, count: hit.length, bad: bad.length, days: hit.map((d) => history[d.i]!.day) }]
   }).sort((a, b) => b.count - a.count)
+}
+
+/* ---------- что обычно шло следом ---------- */
+
+/** Шаг цепочки «как обычно» — меньше балла; у привычки — доля ближе четверти. */
+export const CHAIN_SAME = 1
+export const CHAIN_SAME_SHARE = 0.25
+
+export type ChainRow =
+  | { kind: 'scale'; part: 'morning' | 'evening'; label: string; n: number; mean: number; usual: number; side: 'worse' | 'better' | 'same'; count: number }
+  | { kind: 'habit'; part: 'day'; label: string; hits: number; known: number; usualShare: number; same: boolean }
+
+export type Chain = {
+  tag: string
+  /** Вечеров с тегом, после которых день известен. */
+  episodes: number
+  /** Дни после — для графика. */
+  days: string[]
+  rows: ChainRow[]
+  /** Сколько раз утро после не отмечено. */
+  noMorning: number
+  /** Как у связи: у ●●○ дней «с» уже 8 и больше. */
+  level: 'maybe' | 'notable'
+  /** С обратной стороны: плохая ночь без фактора накануне — вечер того дня. */
+  compare: { n: number; evening: number } | null
+}
+
+/**
+ * «Что обычно шло следом» (урезанный шаблон макета: отбоя и подъёма пока нет): после вечера с тегом —
+ * утро, привычки днём, вечер, каждый шаг против обычного (дни после закрытых вечеров без тега). Шаги,
+ * не отличающиеся от обычного, остаются — серым. Цепочки нет, если конец (вечер после) не отличается от
+ * обычного на балл после сжатия или эпизодов меньше `LINK_MIN`. Это порядок событий, а не причины.
+ */
+export function chain(history: TimelineDay[], link: Link, challenges: Challenge[], entries: Record<string, EntryMap>, today: Date): Chain | null {
+  if (link.factor.kind !== 'tag' || (link.level !== 'maybe' && link.level !== 'notable')) return null
+  const tag = link.factor.tag
+  const window = history.slice(-LINK_DAYS)
+  const next = window.flatMap((d, i) => (i > 0 && window[i - 1]!.evening ? [{ d, i }] : []))
+  const withTag = next.filter(({ i }) => window[i - 1]!.tags.includes(tag)).map(({ d }) => d)
+  const base = next.filter(({ i }) => !window[i - 1]!.tags.includes(tag)).map(({ d }) => d)
+
+  const endOf = (l: TimelineDay[]) => l.flatMap((d) => (d.evening ? [stateOf(d.evening)!] : []))
+  const endWith = endOf(withTag)
+  const endBase = endOf(base)
+  if (endWith.length < LINK_MIN || endBase.length < LINK_MIN) return null
+  const se = Math.sqrt(variance(endWith) / endWith.length + variance(endBase) / endBase.length)
+  if (Math.abs(shrink(mean(endWith)! - mean(endBase)!, se)) < CHAIN_SAME) return null
+
+  const scale = (part: 'morning' | 'evening', label: string, pick: (d: TimelineDay) => number | null): ChainRow[] => {
+    const w = withTag.flatMap((d) => (pick(d) === null ? [] : [pick(d)!]))
+    const o = base.flatMap((d) => (pick(d) === null ? [] : [pick(d)!]))
+    if (!w.length || !o.length) return []
+    const m = mean(w)!
+    const usual = mean(o)!
+    const side = Math.abs(m - usual) < CHAIN_SAME ? 'same' : m < usual ? 'worse' : 'better'
+    const count = side === 'same' ? 0 : w.filter((v) => (side === 'worse' ? v < usual : v > usual)).length
+    return [{ kind: 'scale', part, label, n: w.length, mean: round1(m), usual: round1(usual), side, count }]
+  }
+  const habits: ChainRow[] = challenges
+    .filter((c) => c.kind === 'do')
+    .flatMap((c) => {
+      const known = (l: TimelineDay[]) =>
+        l.map((d) => dayOutcome(c, entries[c.id] ?? {}, parseDay(d.day), today)).filter((o) => o === 'hit' || o === 'miss')
+      const w = known(withTag)
+      const o = known(base)
+      if (!w.length || !o.length) return []
+      const hits = w.filter((x) => x === 'hit').length
+      const usualShare = o.filter((x) => x === 'hit').length / o.length
+      return [{ kind: 'habit' as const, part: 'day' as const, label: c.name, hits, known: w.length, usualShare, same: Math.abs(hits / w.length - usualShare) < CHAIN_SAME_SHARE }]
+    })
+
+  const badNights = window.flatMap((d, i) =>
+    i > 0 && d.morning && d.morning.sleep <= BAD_SLEEP && d.evening && window[i - 1]!.evening && !window[i - 1]!.tags.includes(tag) ? [stateOf(d.evening)!] : [],
+  )
+  return {
+    tag,
+    episodes: withTag.length,
+    days: withTag.map((d) => d.day),
+    rows: [
+      ...scale('morning', 'сон', (d) => d.morning?.sleep ?? null),
+      ...scale('morning', 'самочувствие', (d) => d.morning?.wellbeing ?? null),
+      ...habits,
+      ...scale('evening', 'настроение', (d) => d.evening?.mood ?? null),
+      ...scale('evening', 'продуктивность', (d) => d.evening?.productivity ?? null),
+    ],
+    noMorning: withTag.filter((d) => !d.morning).length,
+    level: link.level,
+    compare: badNights.length >= PART_MIN ? { n: badNights.length, evening: round1(mean(badNights)!) } : null,
+  }
 }
 
 /** Связи по последним `LINK_DAYS` дням истории для цели. */

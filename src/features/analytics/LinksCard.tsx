@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { LINK_MIN, LINK_RECORDED, type Link, type Links } from '@/domain/links'
+import { LINK_MIN, LINK_RECORDED, type Chain, type Link, type Links } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
+import { chainLead } from './ChainSheet'
 import { earlyNote, factorName, LEVEL, linkLine, linkTitle } from './linkWords'
 
 const BUCKET = { less: 'Меньше', more: 'Больше' } as const
@@ -67,7 +68,20 @@ function Early({ data }: { data: Links }) {
 }
 
 /** «Что попробовать» — до трёх связей по одной на ведро; нет ни одной — «Связи: пока рано» с прогрессом. */
-export function LinksCard({ data, goal, onOpen }: { data: Links; goal: Goal; onOpen: (l: Link) => void }) {
+export function LinksCard({
+  data,
+  goal,
+  chain,
+  onOpen,
+  onOpenChain,
+}: {
+  data: Links
+  goal: Goal
+  /** Цепочка у верхней карточки; нет — ссылки нет. */
+  chain: Chain | null
+  onOpen: (l: Link) => void
+  onOpenChain: () => void
+}) {
   const [explained, setExplained] = useState<number | null>(null)
   if (!data.cards.length) return <Early data={data} />
   return (
@@ -102,6 +116,12 @@ export function LinksCard({ data, goal, onOpen }: { data: Links; goal: Goal; onO
           )
         })}
       </ul>
+      {chain && (
+        <button type="button" onClick={onOpenChain} className="flex flex-col items-start gap-0.5 border-t border-border pt-2.5 text-left">
+          <span className="text-[14px] text-primary">Что обычно шло следом ›</span>
+          <span className="text-[12.5px] text-muted-foreground">{chainLead(chain)}</span>
+        </button>
+      )}
       <p className="text-[12px] text-muted-foreground">{`Смотрели ${links(data.checked)}, заметных ${data.found}.`}</p>
     </section>
   )

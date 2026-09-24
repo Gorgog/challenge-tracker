@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
-import { cases as casesOf, explains as explainsOf, links as linksOf, type Link as LinkData } from '@/domain/links'
+import { cases as casesOf, chain as chainOf, explains as explainsOf, links as linksOf, type Link as LinkData } from '@/domain/links'
 import { morningOpen } from '@/domain/dayStart'
 import { changes as changesOf, dayShift, eventRows, GOALS, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, type Challenge } from '@/domain/types'
 import { useClock } from '@/features/day/useClock'
 import { plural } from '@/lib/plural'
 import { CasesCard, ExplainsCard } from './CasesCard'
+import { ChainSheet } from './ChainSheet'
 import { ChangesCard } from './ChangesCard'
 import { DaySheet } from './DaySheet'
 import { LinkSheet } from './LinkSheet'
@@ -48,6 +49,7 @@ export function AnalyticsPage() {
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [openLink, setOpenLink] = useState<LinkData | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
+  const [chainOpen, setChainOpen] = useState(false)
   /* дни из карточки связи — ключами: окно могут переключить, а дни остаются */
   const [highlight, setHighlight] = useState<string[] | null>(null)
   const chartRef = useRef<HTMLElement>(null)
@@ -70,6 +72,7 @@ export function AnalyticsPage() {
     const rows = eventRows(window, goal, live, entriesById, today)
     /* под графиком у челленджа — короткий код: имя целиком не помещается в колонку подписей */
     const code = new Map(live.map((c) => [c.id, c.code]))
+    const linkData = linksOf(history, goal)
     const short = (r: Row): Row => (r.kind === 'challenge' ? { ...r, label: code.get(r.key.slice('challenge:'.length)) ?? r.label } : r)
     return {
       window,
@@ -77,7 +80,8 @@ export function AnalyticsPage() {
       verdict: verdict(window, band, goal),
       rows: { main: rows.main.map(short), more: rows.more.map(short) },
       changes: changesOf(history, history.length - 1, len, live, entriesById, today, open),
-      links: linksOf(history, goal),
+      links: linkData,
+      chain: linkData.cards[0] ? chainOf(history, linkData.cards[0], live, entriesById, today) : null,
       cases: casesOf(history, goal),
       explains: explainsOf(history, windowStart, band, goal),
     }
@@ -99,6 +103,7 @@ export function AnalyticsPage() {
   /* показать дни связи: окно — 30 дней, если в 14 они не влезают; цель та же, что у карточки */
   const showDays = (days: string[]) => {
     setLinkOpen(false)
+    setChainOpen(false)
     setHighlight(days)
     if (history && days.some((d) => d < history[history.length - 14]!.day)) setLen(30)
     chartRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
@@ -179,6 +184,8 @@ export function AnalyticsPage() {
           <LinksCard
             data={view.links}
             goal={goal}
+            chain={view.chain}
+            onOpenChain={() => setChainOpen(true)}
             onOpen={(l) => {
               setOpenLink(l)
               setLinkOpen(true)
@@ -191,6 +198,7 @@ export function AnalyticsPage() {
 
           <ExplainsCard list={view.explains} />
 
+          <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
           <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
         </>

@@ -381,6 +381,7 @@ describe('AnalyticsPage — «Что обычно шло следом»', () => 
   })
 
   it('вечер после не хуже обычного — ссылки нет', () => {
+    Object.assign(mocked, drinkWorld())
     show()
     expect(within(links()).queryByRole('button', { name: /Что обычно шло следом/ })).not.toBeInTheDocument()
   })
