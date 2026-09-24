@@ -100,8 +100,8 @@ export function challengeInsight(c: Challenge, entries: EntryMap, history: Timel
     of: c.lengthDays,
     ended: end !== null && daysBetween(end, today) > 0,
     hits: outcomes.filter((o) => o === 'hit').length,
-    /* прошедшие дни без пауз — только «выполнено» или «пропуск» */
-    known: outcomes.length,
+    /* прошедшие дни без пауз — только «выполнено» или «пропуск»; неизвестная ночь «Ложусь раньше» — не в счёт */
+    known: outcomes.filter((o) => o === 'hit' || o === 'miss').length,
     habit: c.kind === 'do' ? habitInsight(c, entries, history, today) : null,
   }
 }

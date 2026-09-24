@@ -65,10 +65,23 @@ export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Da
 
   if (c.kind === 'quit') return value === 0 ? 'miss' : 'hit'
 
+  /* время отбоя: ночь после вечера D узнаётся утром D+1 — вчерашний день ещё идёт, пока сегодня не начато */
+  if (c.measure === 'bedtime') {
+    if (value === undefined) return daysBetween(day, today) <= 1 ? 'pending' : 'unknown'
+    if (Number.isNaN(value)) return 'unknown'
+    return value <= c.goal ? 'hit' : 'miss'
+  }
+
   if (value === undefined) return isToday ? 'pending' : 'miss'
   if (value >= c.goal) return 'hit'
   return isToday ? 'pending' : 'miss'
 }
+
+/**
+ * Исход, который пока не решён: «не записано» (ночь «Ложусь раньше») или «ещё идёт» (вчерашний день отбоя до
+ * сегодняшнего утра). Серия на таких днях замирает, как на паузе, а в доли они не идут.
+ */
+const unsettled = (o: Outcome) => o === 'unknown' || o === 'pending'
 
 /**
  * Прошедшие дни, за которые челлендж отвечает. Сегодняшний не входит: он ещё не закончен.
@@ -104,7 +117,7 @@ export function currentStreak(c: Challenge, entries: EntryMap, today: Date): num
 
   let streak = 0
   for (;;) {
-    if (pausedOn(c, dayKey(day))) {
+    if (pausedOn(c, dayKey(day)) || unsettled(dayOutcome(c, entries, day, today))) {
       day = addDays(day, -1)
       continue
     }
@@ -119,7 +132,9 @@ export function bestStreak(c: Challenge, entries: EntryMap, today: Date): number
   let best = 0
   let run = 0
   for (const key of activeDays(c, today)) {
-    if (dayOutcome(c, entries, parseDay(key), today) === 'hit') {
+    const o = dayOutcome(c, entries, parseDay(key), today)
+    if (unsettled(o)) continue
+    if (o === 'hit') {
       run++
       best = Math.max(best, run)
     } else {
@@ -141,10 +156,11 @@ export function completionRate(
 ): number {
   const all = activeDays(c, today)
   const since = lastDays ? dayKey(addDays(today, -lastDays)) : null
-  const window = since ? all.filter((k) => k >= since) : all
+  const window = (since ? all.filter((k) => k >= since) : all)
+    .map((k) => dayOutcome(c, entries, parseDay(k), today))
+    .filter((o) => !unsettled(o))
   if (!window.length) return 0
-  const hits = window.filter((k) => dayOutcome(c, entries, parseDay(k), today) === 'hit').length
-  return hits / window.length
+  return window.filter((o) => o === 'hit').length / window.length
 }
 
 /** Сколько дней за последние `back` закрыты по всем переданным челленджам разом. */
@@ -157,9 +173,10 @@ export function fullDays(
   let count = 0
   for (let i = 1; i <= back; i++) {
     const day = addDays(today, -i)
-    const tracked = challenges.filter(
-      (c) => dayOutcome(c, entriesById[c.id] ?? {}, day, today) !== 'outside',
-    )
+    const tracked = challenges.filter((c) => {
+      const o = dayOutcome(c, entriesById[c.id] ?? {}, day, today)
+      return o !== 'outside' && !unsettled(o)
+    })
     if (!tracked.length) continue
     if (tracked.every((c) => dayOutcome(c, entriesById[c.id] ?? {}, day, today) === 'hit')) count++
   }

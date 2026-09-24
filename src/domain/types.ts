@@ -1,7 +1,10 @@
 /** Привычка (делать) или отказ (не делать) — это разные сущности, см. docs/concept.md. */
 export type ChallengeKind = 'do' | 'quit'
-/** Галочка за день или число с целью. */
-export type ChallengeMeasure = 'binary' | 'count'
+/**
+ * Галочка за день, число с целью или время отбоя («Время» в форме, срез 4б): у `bedtime` отметок нет —
+ * выполнение считается из ночи, записанной утром (`domain/bedtime.ts`).
+ */
+export type ChallengeMeasure = 'binary' | 'count' | 'bedtime'
 /**
  * Период паузы: ключи дней включительно, `to: null` — пауза ещё идёт.
  * Челлендж на паузе не показывается на экране дня. Удаление — отдельно, через `deletedAt`.
@@ -15,7 +18,7 @@ export type Challenge = {
   code: string
   kind: ChallengeKind
   measure: ChallengeMeasure
-  /** Для binary — всегда 1, для count — дневная цель. */
+  /** Для binary — всегда 1, для count — дневная цель, для bedtime — лечь не позже: минуты от полуночи утра (23:30 = −30). */
   goal: number
   unit: string | null
   color: string
@@ -105,6 +108,8 @@ export type Outcome =
   | 'pending'
   /** день вне периода челленджа */
   | 'outside'
+  /** выполнение не узнать: ночь у «Ложусь раньше» не записана — серия замирает, в долю не идёт, как пауза */
+  | 'unknown'
 
 export type ScoreField = 'mood' | 'wellbeing' | 'productivity'
 

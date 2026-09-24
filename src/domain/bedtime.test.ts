@@ -96,6 +96,10 @@ describe('серии и доли — «не записано» как пауза
 
   it('лучшая серия: «не записано» внутри — не обрыв', () => {
     expect(bestStreak(early, entries, TODAY)).toBe(3)
+    // дни 10…1: hit hit ? hit hit miss hit miss miss hit — лучшая 4 (через «не записано»), текущая 1
+    const run = bedtimeEntries([-40, -50, null, -35, -60, 30, -45, 10, 20, -40].map((b, i) => start(9 - i, b)))
+    expect(currentStreak(early, run, TODAY)).toBe(1)
+    expect(bestStreak(early, run, TODAY)).toBe(4)
   })
 
   it('доля — от записанных ночей: 6 из 7', () => {
@@ -106,6 +110,10 @@ describe('серии и доли — «не записано» как пауза
   it('«полные дни» не спотыкаются о «не записано»', () => {
     // дни 3 и 4 назад — только «не записано»: такие дни не в счёт, а не «не закрыты»
     expect(fullDays([early], { bed: entries }, TODAY, 4)).toBe(2)
+    // с другой привычкой, выполненной все 4 дня: день с «не записано» полный — по той, что известна
+    const read: Challenge = { ...early, id: 'read', measure: 'binary', goal: 1 }
+    const all4 = { [key(1)]: 1, [key(2)]: 1, [key(3)]: 1, [key(4)]: 1 }
+    expect(fullDays([early, read], { bed: entries, read: all4 }, TODAY, 4)).toBe(4)
   })
 
   it('разбор челленджа: известных — только выполнено и пропуск', () => {
