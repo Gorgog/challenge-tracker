@@ -22,12 +22,13 @@ const challenge: Challenge = {
   sortOrder: 1,
 }
 
-const setup = (over: { failed?: boolean; streak?: number; frozen?: boolean } = {}) => {
+const setup = (over: { failed?: boolean; answered?: boolean; streak?: number; frozen?: boolean } = {}) => {
   const onToggleRelapse = vi.fn()
   render(
     <HoldCard
       challenge={challenge}
       failed={over.failed ?? false}
+      answered={over.answered ?? false}
       streak={over.streak ?? 40}
       frozen={over.frozen ?? false}
       onToggleRelapse={onToggleRelapse}
@@ -71,5 +72,21 @@ describe('карточка отказа', () => {
 
     await user.click(button)
     expect(onToggleRelapse).not.toHaveBeenCalled()
+  })
+
+  it('пока не отвечено — напоминает, что ответ вечером (срез 5а)', () => {
+    setup()
+    expect(screen.getByText(/ответ — вечером/i)).toBeInTheDocument()
+  })
+
+  it('ответ «Да, без» уже есть — напоминания нет', () => {
+    setup({ answered: true, frozen: true })
+    expect(screen.queryByText(/ответ — вечером/i)).toBeNull()
+    expect(screen.getByText(/дней без срыва/i)).toBeInTheDocument()
+  })
+
+  it('при срыве напоминания нет', () => {
+    setup({ failed: true, streak: 0 })
+    expect(screen.queryByText(/ответ — вечером/i)).toBeNull()
   })
 })

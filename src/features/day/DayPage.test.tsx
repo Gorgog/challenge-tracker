@@ -19,7 +19,7 @@ const mocked = vi.hoisted(() => ({
   settings: { morningUntil: 15 } as Settings,
   startDay: vi.fn(),
   setEntry: vi.fn(),
-  saveDayLog: vi.fn(),
+  closeDay: vi.fn(),
   savePending: false,
   savePaused: false,
   /** Фоновое обновление не прошло: данные есть, `isError` поднят. */
@@ -42,7 +42,7 @@ vi.mock('@/data/queries', () => ({
     mocked.startsPending ? { data: undefined, isPending: true } : answer('starts', mocked.starts),
   useSettings: () => answer('settings', mocked.settings),
   useSetEntry: () => ({ mutate: mocked.setEntry }),
-  useSaveDayLog: () => ({ mutate: mocked.saveDayLog, isPending: mocked.savePending, isPaused: mocked.savePaused }),
+  useCloseDay: () => ({ mutate: mocked.closeDay, isPending: mocked.savePending, isPaused: mocked.savePaused }),
   useStartDay: () => ({ mutate: mocked.startDay, isPending: false }),
   useReorderChallenges: () => ({ mutate: vi.fn() }),
   useSaveDayGroups: () => ({ mutate: vi.fn() }),
@@ -121,7 +121,7 @@ beforeEach(() => {
   })
   mocked.startDay.mockReset()
   mocked.setEntry.mockReset()
-  mocked.saveDayLog.mockReset()
+  mocked.closeDay.mockReset()
   mocked.savePending = false
   mocked.savePaused = false
   mocked.stale = false
@@ -189,7 +189,7 @@ describe('экран дня — данные с сервера', () => {
     at(20)
     mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
     /* как настоящая оптимистичная запись: итог сразу в кэше, запрос идёт */
-    mocked.saveDayLog.mockImplementation((log: DayLog) => {
+    mocked.closeDay.mockImplementation(({ log }: { log: DayLog }) => {
       mocked.logs = [...mocked.logs, log]
       mocked.savePending = true
     })
@@ -201,6 +201,7 @@ describe('экран дня — данные с сервера', () => {
       within(dialog).getByRole('slider', { name }).focus()
       await user.keyboard('{ArrowRight}')
     }
+    await user.click(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Да, без' }))
     await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
     rerender(<DayPage />)
 
@@ -212,7 +213,7 @@ describe('экран дня — данные с сервера', () => {
     /* отказ: кэш откатился, окно с оценками на месте, выйти можно */
     mocked.logs = []
     mocked.savePending = false
-    act(() => mocked.saveDayLog.mock.calls[0]![1].onError(new Error('нет сети')))
+    act(() => mocked.closeDay.mock.calls[0]![1].onError(new Error('нет сети')))
     rerender(<DayPage />)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.queryAllByText('не выбрано')).toHaveLength(0)
@@ -224,7 +225,7 @@ describe('экран дня — данные с сервера', () => {
     at(20)
     mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
     /* TanStack без сети ставит запись на паузу: isPending и isPaused, запроса нет, ошибки нет */
-    mocked.saveDayLog.mockImplementation((log: DayLog) => {
+    mocked.closeDay.mockImplementation(({ log }: { log: DayLog }) => {
       mocked.logs = [...mocked.logs, log]
       mocked.savePending = true
       mocked.savePaused = true
@@ -237,6 +238,7 @@ describe('экран дня — данные с сервера', () => {
       within(dialog).getByRole('slider', { name }).focus()
       await user.keyboard('{ArrowRight}')
     }
+    await user.click(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Да, без' }))
     await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
     rerender(<DayPage />)
 
@@ -256,15 +258,79 @@ describe('экран дня — данные с сервера', () => {
       within(dialog).getByRole('slider', { name }).focus()
       await user.keyboard('{ArrowRight}')
     }
+    await user.click(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Да, без' }))
     await user.click(within(dialog).getByRole('button', { name: /закрыть день/i }))
 
-    expect(mocked.saveDayLog).toHaveBeenCalledTimes(1)
+    expect(mocked.closeDay).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(toast).not.toHaveBeenCalledWith('День закрыт')
 
-    act(() => mocked.saveDayLog.mock.calls[0]![1].onSuccess())
+    act(() => mocked.closeDay.mock.calls[0]![1].onSuccess())
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(toast).toHaveBeenCalledWith('День закрыт')
+  })
+})
+
+describe('экран дня — отказ отвечает вечером «Да, без» (срез 5а)', () => {
+  const closeAt20 = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Завершить день' }))
+    const dialog = screen.getByRole('dialog')
+    for (const name of [/настроение/i, /самочувствие/i, /продуктивность/i]) {
+      within(dialog).getByRole('slider', { name }).focus()
+      await user.keyboard('{ArrowRight}')
+    }
+    return dialog
+  }
+
+  it('в окне итога — вопрос по отказу; без ответа день не закрыть; ответ уходит вместе с итогом', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    const user = userEvent.setup()
+    render(<DayPage />)
+    const dialog = await closeAt20(user)
+    const close = within(dialog).getByRole('button', { name: /закрыть день/i })
+    expect(close).toBeDisabled()
+    await user.click(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Да, без' }))
+    await user.click(close)
+    expect(mocked.closeDay).toHaveBeenCalledTimes(1)
+    expect(mocked.closeDay.mock.calls[0]![0]).toMatchObject({ log: { day: TODAY }, answers: { smoke: 1 } })
+  })
+
+  it('срыв, отмеченный днём, в окне уже стоит «Сорвался»', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.entries = { smoke: { [TODAY]: 0 } }
+    const user = userEvent.setup()
+    render(<DayPage />)
+    const dialog = await closeAt20(user)
+    expect(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Сорвался' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(dialog).getByRole('button', { name: /закрыть день/i })).toBeEnabled()
+  })
+
+  it('отказ на паузе, удалённый или заведённый позже дня — не спрашивается', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.challenges = [
+      read,
+      smoke,
+      { ...smoke, id: 'paused', name: 'На паузе', pauses: [{ from: '2026-09-20', to: null }] },
+      { ...smoke, id: 'gone', name: 'Удалён', deletedAt: '2026-09-21T09:00:00' },
+      { ...smoke, id: 'later', name: 'Со следующего дня', startDate: '2026-09-22' },
+    ]
+    const user = userEvent.setup()
+    render(<DayPage />)
+    const dialog = await closeAt20(user)
+    expect(within(dialog).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Без сигарет'])
+  })
+
+  it('карточка отказа днём напоминает: ответ — вечером', () => {
+    at(12)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    render(<DayPage />)
+    expect(screen.getByText(/ответ — вечером/i)).toBeInTheDocument()
   })
 })
 

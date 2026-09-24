@@ -29,6 +29,9 @@ const repo = vi.hoisted(() => {
     }),
     listEntries: vi.fn(async () => ({}) as Record<string, Record<string, number>>),
     listDayStarts: vi.fn(async () => [] as unknown[]),
+    setEntry: vi.fn((...args: unknown[]) => call(`entry ${args[0]} ${args[2]}`)()),
+    saveDayLog: vi.fn(call('log')),
+    listDayLogs: vi.fn(async () => [] as unknown[]),
   }
 })
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
@@ -38,8 +41,16 @@ vi.mock('./demoRepo', () => ({ createDemoRepo: () => repo }))
 vi.mock('./supabaseClient', () => ({ supabase: {} }))
 vi.mock('./supabaseRepo', () => ({ createSupabaseRepo: () => ({}) }))
 
-const { useChallenges, useCreateChallenge, useEntries, useReorderChallenges, useSetPaused, useStartDay, useUpdateChallenge } =
-  await import('./queries')
+const {
+  useChallenges,
+  useCloseDay,
+  useCreateChallenge,
+  useEntries,
+  useReorderChallenges,
+  useSetPaused,
+  useStartDay,
+  useUpdateChallenge,
+} = await import('./queries')
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient()
@@ -246,5 +257,47 @@ describe('отметки «Ложусь раньше» — из утр, а не 
     })
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.data).toBeUndefined()
+  })
+})
+
+describe('закрытие дня с ответами отказов (срез 5а)', () => {
+  const log = { day: '2026-09-24', mood: 6, wellbeing: 6, productivity: 6, tags: [], note: '', closedAt: '2026-09-24T20:00:00.000Z' }
+  const setup = () => {
+    repo.pending.length = 0
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['entries'], { smoke: { '2026-09-23': 1 } })
+    client.setQueryData(['dayLogs'], [])
+    const { result } = renderHook(() => useCloseDay(), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    })
+    return { client, result }
+  }
+
+  it('ответы и итог видны сразу; в хранилище — сначала ответы, итог — последним', async () => {
+    const { client, result } = setup()
+    act(() => result.current.mutate({ log, answers: { smoke: 1, sugar: 0 } }))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    expect(client.getQueryData(['entries'])).toEqual({ smoke: { '2026-09-23': 1, '2026-09-24': 1 }, sugar: { '2026-09-24': 0 } })
+    expect(client.getQueryData(['dayLogs'])).toEqual([log])
+
+    expect(repo.pending.map((p) => p.name)).toEqual(['entry smoke 1'])
+    act(() => repo.pending[0]!.resolve())
+    await waitFor(() => expect(repo.pending.map((p) => p.name)).toEqual(['entry smoke 1', 'entry sugar 0']))
+    act(() => repo.pending[1]!.resolve())
+    await waitFor(() => expect(repo.pending.map((p) => p.name)).toEqual(['entry smoke 1', 'entry sugar 0', 'log']))
+    expect(repo.setEntry).toHaveBeenCalledWith('smoke', '2026-09-24', 1)
+    act(() => repo.pending[2]!.resolve())
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('ответ не записался — итог не отправлен, оба кэша откатились: день не закрыт без ответа', async () => {
+    const { client, result } = setup()
+    act(() => result.current.mutate({ log, answers: { smoke: 1 } }))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    act(() => repo.pending[0]!.reject({ code: '23514', message: 'нет' }))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(repo.pending.map((p) => p.name)).toEqual(['entry smoke 1'])
+    expect(client.getQueryData(['entries'])).toEqual({ smoke: { '2026-09-23': 1 } })
+    expect(client.getQueryData(['dayLogs'])).toEqual([])
   })
 })

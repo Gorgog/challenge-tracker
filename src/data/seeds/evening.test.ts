@@ -28,10 +28,14 @@ async function evening(scenario: DemoScenario, seed: number): Promise<string> {
   /* «Ложусь раньше» (срез 4б) — без своих отметок и случайных чисел: отпечаток — по остальным, он прежний */
   const challenges = all.filter((c) => c.measure !== 'bedtime')
   const entries = Object.fromEntries(Object.entries(stored).filter(([id]) => challenges.some((c) => c.id === id)))
+  /* «Да, без» отказа (срез 5а) — не случай, а следствие закрытого вечера: отпечаток — без этих единиц, он прежний */
+  const quits = new Set(challenges.filter((c) => c.kind === 'quit').map((c) => c.id))
   const past = Object.fromEntries(
     Object.entries(entries).map(([id, map]) => [
       id,
-      Object.fromEntries(Object.entries(map).filter(([day]) => day !== dayKey(TODAY))),
+      Object.fromEntries(
+        Object.entries(map).filter(([day, value]) => day !== dayKey(TODAY) && !(quits.has(id) && value === 1)),
+      ),
     ]),
   )
   return fingerprint(

@@ -73,15 +73,22 @@ describe('dayOutcome', () => {
     expect(dayOutcome(steps, { '2026-09-21': 7_240 }, TODAY, TODAY)).toBe('pending')
   })
 
-  it('отказ: день без записи засчитывается сам', () => {
+  it('отказ (срез 5а): единица — ответ «Да, без», день выдержан', () => {
     const quit = challenge({ kind: 'quit', name: 'Без сигарет' })
-    expect(dayOutcome(quit, {}, parseDay('2026-09-10'), TODAY)).toBe('hit')
-    expect(dayOutcome(quit, {}, TODAY, TODAY)).toBe('hit')
+    expect(dayOutcome(quit, { '2026-09-10': 1 }, parseDay('2026-09-10'), TODAY)).toBe('hit')
+    expect(dayOutcome(quit, { '2026-09-21': 1 }, TODAY, TODAY)).toBe('hit')
   })
 
   it('отказ: ноль — это отмеченный срыв', () => {
     const quit = challenge({ kind: 'quit' })
     expect(dayOutcome(quit, { '2026-09-10': 0 }, parseDay('2026-09-10'), TODAY)).toBe('miss')
+  })
+
+  it('отказ (срез 5а): без ответа прошлый день — «не записано», а не успех; сегодняшний ещё идёт', () => {
+    const quit = challenge({ kind: 'quit' })
+    expect(dayOutcome(quit, {}, parseDay('2026-09-10'), TODAY)).toBe('unknown')
+    expect(dayOutcome(quit, {}, parseDay('2026-09-20'), TODAY)).toBe('unknown')
+    expect(dayOutcome(quit, {}, TODAY, TODAY)).toBe('pending')
   })
 })
 
@@ -102,19 +109,37 @@ describe('currentStreak', () => {
     expect(currentStreak(c, entriesFrom('2026-09-17', '111.'), TODAY)).toBe(0)
   })
 
-  it('отказ: день без срыва идёт в серию сразу, включая сегодня', () => {
+  it('отказ: день «Да, без» идёт в серию, сегодняшний — как только ответил', () => {
     const quit = challenge({ kind: 'quit', startDate: '2026-09-01' })
-    expect(currentStreak(quit, {}, TODAY)).toBe(21) // с 1 по 21 сентября
+    expect(currentStreak(quit, entriesFrom('2026-09-01', '1'.repeat(21)), TODAY)).toBe(21) // с 1 по 21 сентября
+  })
+
+  it('отказ (срез 5а): сегодня без ответа серию не рвёт — счёт по вчера', () => {
+    const quit = challenge({ kind: 'quit', startDate: '2026-09-01' })
+    expect(currentStreak(quit, entriesFrom('2026-09-01', '1'.repeat(20)), TODAY)).toBe(20)
+  })
+
+  it('отказ (срез 5а): день без ответа серию не рвёт и в неё не входит', () => {
+    const quit = challenge({ kind: 'quit', startDate: '2026-09-01' })
+    // 1–15 выдержаны, 16 и 17 не записаны, 18–21 выдержаны: 15 + 4
+    expect(currentStreak(quit, entriesFrom('2026-09-01', '111111111111111..1111'), TODAY)).toBe(19)
+    expect(bestStreak(quit, entriesFrom('2026-09-01', '111111111111111..1111'), TODAY)).toBe(19)
+  })
+
+  it('отказ (срез 5а): доля — от дней с ответом', () => {
+    const quit = challenge({ kind: 'quit', startDate: '2026-09-17' })
+    // 17 — срыв, 18 — не записан, 19 и 20 — «Да, без»: 2 из 3
+    expect(completionRate(quit, entriesFrom('2026-09-17', '0.11'), TODAY)).toBeCloseTo(2 / 3)
   })
 
   it('отказ: срыв сегодня рвёт серию в тот же день', () => {
     const quit = challenge({ kind: 'quit', startDate: '2026-09-01' })
-    expect(currentStreak(quit, { '2026-09-21': 0 }, TODAY)).toBe(0)
+    expect(currentStreak(quit, { ...entriesFrom('2026-09-01', '1'.repeat(20)), '2026-09-21': 0 }, TODAY)).toBe(0)
   })
 
   it('отказ: считает дни после последнего срыва', () => {
     const quit = challenge({ kind: 'quit', startDate: '2026-09-01' })
-    expect(currentStreak(quit, { '2026-09-15': 0 }, TODAY)).toBe(6) // 16..21
+    expect(currentStreak(quit, entriesFrom('2026-09-01', '11111111111111011111' + '1'), TODAY)).toBe(6) // 16..21
   })
 
   it('серия не уходит за дату старта', () => {
@@ -351,7 +376,7 @@ describe('пауза и финиш — крайние случаи', () => {
       pauses: [{ from: '2026-09-10', to: '2026-09-15' }],
     })
     // срыв 5-го; выдержаны 6–9 и 16–21 — десять дней, пауза между ними не в счёт
-    expect(currentStreak(quit, { '2026-09-05': 0 }, TODAY)).toBe(10)
+    expect(currentStreak(quit, entriesFrom('2026-09-05', '0' + '1'.repeat(16)), TODAY)).toBe(10)
   })
 
   it('окно процента — последние N календарных дней, а не N дней челленджа', () => {

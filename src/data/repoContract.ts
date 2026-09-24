@@ -181,6 +181,19 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         expect((await r.listEntries())[c.id]).toEqual({ '2026-09-20': 0 })
       }, t)
 
+      it('у отказа отметка — только ответ: 1 «Да, без» или 0 «сорвался»; другое — отказ (срез 5а)', async () => {
+        const r = await makeRepo()
+        const c = await r.createChallenge(draft({ kind: 'quit' }))
+        for (const value of [2, 0.5, 30]) {
+          await expect(r.setEntry(c.id, '2026-09-20', value)).rejects.toThrow()
+        }
+        expect((await r.listEntries())[c.id] ?? {}).toEqual({})
+        // у привычки те же числа — обычные отметки
+        const read = await r.createChallenge(draft({ measure: 'count', goal: 20, unit: 'стр.' }))
+        await r.setEntry(read.id, '2026-09-20', 30)
+        expect((await r.listEntries())[read.id]).toEqual({ '2026-09-20': 30 })
+      }, t)
+
       it('число с долями сохраняется как есть', async () => {
         const r = await makeRepo()
         const c = await r.createChallenge(draft({ measure: 'count', goal: 10, unit: 'км' }))

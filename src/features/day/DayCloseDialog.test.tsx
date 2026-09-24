@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { DayLog } from '@/domain/types'
+import type { Challenge, DayLog } from '@/domain/types'
 import { DayCloseDialog } from './DayCloseDialog'
 
 const setup = (over: Partial<Parameters<typeof DayCloseDialog>[0]> = {}) => {
@@ -139,5 +139,104 @@ describe('окно итога дня', () => {
     expect(screen.getByRole('textbox')).toHaveValue('было')
     expect(screen.getByRole('button', { name: /отмена/i })).toBeInTheDocument()
     expect(saveButton()).toBeEnabled()
+  })
+})
+
+describe('окно итога дня — отказы отвечают «Да, без» (срез 5а)', () => {
+  const quit = (id: string, name: string): Challenge => ({
+    id,
+    name,
+    code: 'БСГ',
+    kind: 'quit',
+    measure: 'binary',
+    goal: 1,
+    unit: null,
+    color: 'var(--chart-2)',
+    tagIds: [],
+    startDate: '2026-09-01',
+    lengthDays: null,
+    pauses: [],
+    rulesLocked: false,
+    deletedAt: null,
+    sortOrder: 1,
+  })
+  const smoke = quit('smoke', 'Без сигарет')
+  const sugar = quit('sugar', 'Без сахара')
+  const row = (name: string) => within(screen.getByRole('group', { name }))
+  const scores = async (user: ReturnType<typeof userEvent.setup>) => {
+    for (const name of ['настроение', 'самочувствие', 'продуктивность']) await move(user, name)
+  }
+
+  it('строка на каждый отказ, заранее ничего не выбрано', () => {
+    setup({ quits: [{ challenge: smoke }, { challenge: sugar }] })
+    for (const name of ['Без сигарет', 'Без сахара']) {
+      expect(row(name).getByRole('button', { name: 'Да, без' })).toHaveAttribute('aria-pressed', 'false')
+      expect(row(name).getByRole('button', { name: 'Сорвался' })).toHaveAttribute('aria-pressed', 'false')
+    }
+  })
+
+  it('оценки стоят, а отказ не отвечен — день не закрыть, и сказано почему', async () => {
+    const { user } = setup({ quits: [{ challenge: smoke }, { challenge: sugar }] })
+    await scores(user)
+    expect(saveButton()).toBeDisabled()
+    expect(screen.getByText(/Осталось ответить: 2 отказа/)).toBeInTheDocument()
+
+    await user.click(row('Без сигарет').getByRole('button', { name: 'Да, без' }))
+    expect(saveButton()).toBeDisabled()
+    expect(screen.getByText(/Осталось ответить: 1 отказ/)).toBeInTheDocument()
+
+    await user.click(row('Без сахара').getByRole('button', { name: 'Сорвался' }))
+    expect(saveButton()).toBeEnabled()
+  })
+
+  it('ответы уходят вместе с итогом: «Да, без» — 1, «Сорвался» — 0', async () => {
+    const { user, onSave } = setup({ quits: [{ challenge: smoke }, { challenge: sugar }] })
+    await scores(user)
+    await user.click(row('Без сигарет').getByRole('button', { name: 'Да, без' }))
+    await user.click(row('Без сахара').getByRole('button', { name: 'Сорвался' }))
+    await user.click(saveButton())
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0]![1]).toEqual({ smoke: 1, sugar: 0 })
+  })
+
+  it('срыв, отмеченный днём, уже стоит ответом — и его можно поменять до закрытия', async () => {
+    const { user, onSave } = setup({ quits: [{ challenge: smoke, value: 0 }] })
+    expect(row('Без сигарет').getByRole('button', { name: 'Сорвался' })).toHaveAttribute('aria-pressed', 'true')
+    await scores(user)
+    expect(saveButton()).toBeEnabled()
+
+    await user.click(row('Без сигарет').getByRole('button', { name: 'Да, без' }))
+    await user.click(saveButton())
+    expect(onSave.mock.calls[0]![1]).toEqual({ smoke: 1 })
+  })
+
+  it('без отказов окно как прежде: ответов нет', async () => {
+    const { user, onSave } = setup()
+    expect(screen.queryByRole('button', { name: 'Да, без' })).toBeNull()
+    await scores(user)
+    await user.click(saveButton())
+    expect(onSave.mock.calls[0]![1]).toEqual({})
+  })
+
+  it('правка закрытого дня: ответ виден, но заперт и заново не отправляется; без ответа — «не записано»', async () => {
+    const existing: DayLog = {
+      day: '2026-09-21',
+      mood: 7,
+      wellbeing: 6,
+      productivity: 8,
+      tags: [],
+      note: '',
+      closedAt: '2026-09-21T21:00:00.000Z',
+    }
+    const { user, onSave } = setup({ existing, onCancel: vi.fn(), quits: [{ challenge: smoke, value: 1 }, { challenge: sugar }] })
+    const yes = row('Без сигарет').getByRole('button', { name: 'Да, без' })
+    expect(yes).toHaveAttribute('aria-pressed', 'true')
+    expect(yes).toBeDisabled()
+    expect(row('Без сахара').getByText('не записано')).toBeInTheDocument()
+    expect(row('Без сахара').queryByRole('button')).toBeNull()
+
+    expect(saveButton()).toBeEnabled()
+    await user.click(saveButton())
+    expect(onSave.mock.calls[0]![1]).toEqual({})
   })
 })

@@ -102,6 +102,33 @@ describe('демо-репозиторий: сид', () => {
     expect(unratedDays(logs, TODAY).length).toBeGreaterThan(0)
   })
 
+  /* отказы есть только в `full`: в «выгорании» одни привычки */
+  it.each([20260921, 7, 99])(
+    'отказ (зерно %i): закрытый день в челлендже отвечен (0 или 1), «Да, без» — только в закрытый день (срез 5а)',
+    async (seed) => {
+      const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'full' })
+      const [challenges, entries, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
+      const closed = new Set(logs.map((l) => l.day))
+      const quits = challenges.filter((c) => c.kind === 'quit')
+      expect(quits.length).toBeGreaterThan(0)
+      let unanswered = 0
+      for (const c of quits) {
+        const map = entries[c.id] ?? {}
+        for (const [day, value] of Object.entries(map)) {
+          expect([0, 1]).toContain(value)
+          if (value === 1) expect(closed.has(day)).toBe(true)
+        }
+        for (const day of activeDays(c, TODAY)) {
+          const o = dayOutcome(c, map, parseDay(day), TODAY)
+          if (closed.has(day)) expect(o === 'hit' || o === 'miss').toBe(true)
+          else if (o === 'unknown') unanswered++
+        }
+      }
+      /* незакрытые дни в сиде есть — значит, есть и «не записано» у отказа */
+      expect(unanswered).toBeGreaterThan(0)
+    },
+  )
+
   it('оценки дня лежат в диапазоне шкалы', async () => {
     for (const log of await repo().listDayLogs()) {
       for (const v of [log.mood, log.wellbeing, log.productivity]) {
@@ -128,7 +155,7 @@ describe('setEntry', () => {
     expect('2026-09-20' in ((await r.listEntries())[c!.id] ?? {})).toBe(false)
   })
 
-  it('у отказа снятая отметка возвращает дню статус выдержанного, а ноль — срыв', async () => {
+  it('у отказа ноль — срыв, единица — «Да, без», снятая отметка — «не записано» (срез 5а)', async () => {
     const r = repo()
     const quit = (await r.listChallenges()).find((c) => c.kind === 'quit')!
     const day = parseDay('2026-09-20')
@@ -136,8 +163,11 @@ describe('setEntry', () => {
     await r.setEntry(quit.id, '2026-09-20', 0)
     expect(dayOutcome(quit, (await r.listEntries())[quit.id] ?? {}, day, TODAY)).toBe('miss')
 
-    await r.setEntry(quit.id, '2026-09-20', undefined)
+    await r.setEntry(quit.id, '2026-09-20', 1)
     expect(dayOutcome(quit, (await r.listEntries())[quit.id] ?? {}, day, TODAY)).toBe('hit')
+
+    await r.setEntry(quit.id, '2026-09-20', undefined)
+    expect(dayOutcome(quit, (await r.listEntries())[quit.id] ?? {}, day, TODAY)).toBe('unknown')
   })
 })
 
