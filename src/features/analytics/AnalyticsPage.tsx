@@ -24,6 +24,8 @@ import { GOAL_CHART, GOAL_CHIP, headline, num1 } from './words'
 const HISTORY = 90
 const PERIODS = [14, 30] as const
 type Period = (typeof PERIODS)[number]
+/** От какого окна меряется обычный отбой для порога позднего — от короткого периода, при любом выбранном. */
+const LATE_BASE = PERIODS[0]
 
 const CHOICE = 'rounded-full border px-3 py-1.5 text-[13px] whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring'
 const choice = (on: boolean) => `${CHOICE} ${on ? 'border-foreground bg-foreground text-background' : 'border-input bg-card text-foreground'}`
@@ -69,8 +71,11 @@ export function AnalyticsPage() {
     const windowStart = history.length - len
     const window = history.slice(windowStart)
     const band = usualBand(history, windowStart, goal)
-    /* поздний отбой — от своего обычного до окна: одно число и в ряду, и в «Что изменилось» */
-    const late = lateFrom(history, windowStart)
+    /*
+     * поздний отбой — от своего обычного за 4 недели до последних 14 дней при любом периоде: одно число в ряду,
+     * в «Что изменилось» и в связи, и смена периода (или «Показать эти дни») его не двигает (ревью Opus 24.09)
+     */
+    const late = lateFrom(history, history.length - LATE_BASE)
     const rows = eventRows(window, goal, live, entriesById, today, late)
     /* под графиком у челленджа — короткий код: имя целиком не помещается в колонку подписей */
     const code = new Map(live.map((c) => [c.id, c.code]))

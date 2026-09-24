@@ -129,7 +129,7 @@ function Item({
 }
 
 /**
- * «Что попробовать» — до двух связей по одной на ведро и плохая ночь строкой «Сон»; нет ни одной — «Связи:
+ * «Что попробовать» — до двух связей по одной на ведро, поздний отбой строкой «Ночь» и плохая ночь строкой «Сон»; нет ни одной — «Связи:
  * пока рано» с прогрессом. «Заметных» — ровно то, что видно.
  */
 export function LinksCard({
@@ -148,7 +148,7 @@ export function LinksCard({
   onOpenChain: () => void
   onShow: (days: string[]) => void
 }) {
-  if (!data.cards.length && !data.night) return <Early data={data} />
+  if (!data.cards.length && !data.night && !data.late) return <Early data={data} />
   return (
     <section aria-label="Что попробовать" className={CARD}>
       <h2 className={KICKER}>Что попробовать</h2>
@@ -156,6 +156,8 @@ export function LinksCard({
         {data.cards.map((l) => (
           <Item key={factorName(l)} l={l} label={BUCKET[l.bucket!]} tone={l.bucket === 'less' ? 'text-worse' : 'text-better'} goal={goal} onOpen={onOpen} />
         ))}
+        {/* по порядку суток: ночь, потом сон и вечер после него */}
+        {data.late && <Item l={data.late} label="Ночь" tone="text-muted-foreground" goal={goal} onOpen={onOpen} />}
         {data.night && <Item l={data.night} label="Сон" tone="text-muted-foreground" goal={goal} onOpen={onOpen} onShow={onShow} />}
       </ul>
       {chain && (

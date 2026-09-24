@@ -72,9 +72,14 @@ export type Links = {
   cards: Link[]
   /** Плохая ночь → вечер: видна строкой без ведра, совета «меньше / больше» у неё нет (действие — отбой). */
   night: Link | null
+  /**
+   * Поздний отбой → утро: своя строка «Ночь», за ведро «Меньше» с тегами не спорит — иначе отбой после выпивки
+   * вытеснял бы саму выпивку (ревью Opus, решение Georgy 24.09). Ведро у связи «Меньше» — оно же направление.
+   */
+  late: Link | null
   /** Сколько пар прошли 5 + 5 — «смотрели N связей». */
   checked: number
-  /** Сколько связей видно на экране (карточки и плохая ночь) — «заметных M». */
+  /** Сколько связей видно на экране (карточки, «Ночь» и плохая ночь) — «заметных M». */
   found: number
 }
 
@@ -485,10 +490,13 @@ export function links(history: TimelineDay[], goal: Goal, lateFrom: number | nul
     pairs.push(linkOf({ kind: 'lateBed', from: lateFrom }, withTag, without, gate.ok, half))
   }
   const shown = pairs.filter(found)
+  const late = shown.find((l) => l.factor.kind === 'lateBed' && l.bucket === 'less') ?? null
+  const tagsOnly = shown.filter((l) => l.factor.kind === 'tag')
   const cards = (['less', 'more'] as const)
-    .map((b) => shown.filter((l) => l.bucket === b).sort((a, c) => score(c) - score(a))[0])
+    .map((b) => tagsOnly.filter((l) => l.bucket === b).sort((a, c) => score(c) - score(a))[0])
     .filter((l): l is Link => l !== undefined)
     .sort((a, c) => score(c) - score(a))
   const night = shown.find((l) => l.factor.kind === 'badSleep') ?? null
-  return { gate, pairs, cards, night, checked: pairs.filter((l) => l.level !== 'early').length, found: cards.length + (night ? 1 : 0) }
+  const visible = cards.length + (late ? 1 : 0) + (night ? 1 : 0)
+  return { gate, pairs, cards, night, late, checked: pairs.filter((l) => l.level !== 'early').length, found: visible }
 }
