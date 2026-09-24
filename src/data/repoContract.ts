@@ -189,6 +189,31 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
       }, t)
     })
 
+    describe('«Ложусь раньше» — время отбоя (срез 4б)', () => {
+      it('цель — минуты от полуночи утра, и до полуночи (−30), и после (45); читается как записана', async () => {
+        const r = await makeRepo()
+        const before = await r.createChallenge(draft({ name: 'Ложусь раньше', measure: 'bedtime', goal: -30, unit: '' }))
+        const after = await r.createChallenge(draft({ name: 'До часа ночи', measure: 'bedtime', goal: 45, unit: '' }))
+        expect(await byId(r, before.id)).toMatchObject({ measure: 'bedtime', goal: -30 })
+        expect(await byId(r, after.id)).toMatchObject({ measure: 'bedtime', goal: 45 })
+      }, t)
+
+      it('цель вне ночи или не в целых минутах — отказ, челлендж не заведён', async () => {
+        const r = await makeRepo()
+        for (const goal of [-721, 720, 10.5]) {
+          await expect(r.createChallenge(draft({ measure: 'bedtime', goal, unit: '' }))).rejects.toThrow()
+        }
+        expect(await r.listChallenges()).toEqual([])
+      }, t)
+
+      it('отметку руками поставить нельзя: выполнение считается из утра', async () => {
+        const r = await makeRepo()
+        const c = await r.createChallenge(draft({ measure: 'bedtime', goal: -30, unit: '' }))
+        await expect(r.setEntry(c.id, '2026-09-20', 1)).rejects.toThrow()
+        expect((await r.listEntries())[c.id] ?? {}).toEqual({})
+      }, t)
+    })
+
     describe('день', () => {
       it('итог дня: запись за день одна, повторная перезаписывает; список — по дням', async () => {
         const r = await makeRepo()

@@ -27,6 +27,8 @@ const repo = vi.hoisted(() => {
     startDay: vi.fn(async () => {
       throw { code: '23505', message: 'День 2026-09-23 уже начат: утро не правится' }
     }),
+    listEntries: vi.fn(async () => ({}) as Record<string, Record<string, number>>),
+    listDayStarts: vi.fn(async () => [] as unknown[]),
   }
 })
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
@@ -36,7 +38,7 @@ vi.mock('./demoRepo', () => ({ createDemoRepo: () => repo }))
 vi.mock('./supabaseClient', () => ({ supabase: {} }))
 vi.mock('./supabaseRepo', () => ({ createSupabaseRepo: () => ({}) }))
 
-const { useChallenges, useCreateChallenge, useReorderChallenges, useSetPaused, useStartDay, useUpdateChallenge } =
+const { useChallenges, useCreateChallenge, useEntries, useReorderChallenges, useSetPaused, useStartDay, useUpdateChallenge } =
   await import('./queries')
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -202,5 +204,47 @@ describe('ошибка начала дня видна, даже если со с
         expect.stringMatching(/^Не получилось начать день: День 2026-09-23 уже начат/),
       ),
     )
+  })
+})
+
+describe('отметки «Ложусь раньше» — из утр, а не из хранилища (срез 4б)', () => {
+  const bed = { id: 'bed', measure: 'bedtime', kind: 'do', goal: -30 }
+  const night = (b: number) => ({ bed: b, wake: 460, bedHow: 'exact', wakeHow: 'exact' })
+
+  it('у челленджа «Время» — отбой ночи после вечера дня; у остальных — то, что хранится', async () => {
+    repo.listChallenges.mockImplementationOnce(async () => [bed, { id: 'read', measure: 'binary', kind: 'do', goal: 1 }] as never[])
+    repo.listEntries.mockImplementationOnce(async () => ({ read: { '2026-09-22': 1 }, bed: { '2026-09-01': 1 } }))
+    repo.listDayStarts.mockImplementationOnce(async () => [
+      { day: '2026-09-23', morning: { sleep: 7, wellbeing: 6, mood: 6, night: night(-40) }, startedAt: '2026-09-23T08:00:00' },
+      { day: '2026-09-24', morning: null, startedAt: '2026-09-24T12:00:00' },
+    ])
+    const { result } = renderHook(() => useEntries(), { wrapper })
+    await waitFor(() => expect(result.current.data).toBeDefined())
+    expect(result.current.data).toEqual({ read: { '2026-09-22': 1 }, bed: { '2026-09-22': -40, '2026-09-23': NaN } })
+  })
+
+  it('пока не пришли челленджи или утра — данных нет, а не отметки без «Ложусь раньше»', async () => {
+    let release = () => {}
+    repo.listDayStarts.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve([]))))
+    const { result } = renderHook(() => useEntries(), { wrapper })
+    await waitFor(() => expect(repo.listEntries).toHaveBeenCalled())
+    /* сами отметки уже пришли — а без утр отдавать их рано */
+    await new Promise((r) => setTimeout(r, 30))
+    expect(result.current.data).toBeUndefined()
+    expect(result.current.isPending).toBe(true)
+    act(() => release())
+    await waitFor(() => expect(result.current.data).toEqual({}))
+  })
+
+  it('не загрузились утра — ошибка, а не пустые отметки', async () => {
+    repo.listDayStarts.mockImplementationOnce(async () => {
+      throw new Error('нет сети')
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useEntries(), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.data).toBeUndefined()
   })
 })
