@@ -63,29 +63,32 @@ describe('утро не меняет вечер в демо', () => {
 
 /**
  * Охрана утра. Ночь (лёг, встал) берёт числа из своей последовательности (`nightStream`): утренние оценки и
- * время начала дня остаются прежними. Отпечатки сняты на коде до появления ночи (25.09).
+ * время начала дня остаются прежними. Отпечатки совпадали с кодом до появления ночи (24.09); начало дня в них —
+ * местные часы и минуты, чтобы не зависеть от пояса машины.
  */
+const minutesAt = (iso: string) => new Date(iso).getHours() * 60 + new Date(iso).getMinutes()
+
 async function mornings(scenario: DemoScenario, seed: number) {
   return createDemoRepo({ today: TODAY, seed, storage: null, scenario }).listDayStarts()
 }
 
 describe('ночь не меняет утро в демо', () => {
   it.each([
-    ['full', 20260921, 'a2db4084'],
-    ['full', 20266840, 'e5311590'],
-    ['full', 424242, '1aafd19f'],
-    ['burnout', 20260921, '37d9fb83'],
-    ['burnout', 20266840, 'cccd8495'],
-    ['burnout', 424242, 'a1b273c1'],
+    ['full', 20260921, '01ae6cb6'],
+    ['full', 20266840, '4b8b5e21'],
+    ['full', 424242, '1a041b3a'],
+    ['burnout', 20260921, '73849931'],
+    ['burnout', 20266840, 'd4faa0f0'],
+    ['burnout', 424242, '7b3b4f04'],
   ] as const)('%s, зерно %s — утренние оценки и начало дня те же', async (scenario, seed, expected) => {
     const starts = await mornings(scenario, seed)
-    const text = JSON.stringify(starts.map((s) => [s.day, s.startedAt, s.morning && [s.morning.sleep, s.morning.wellbeing, s.morning.mood]]))
+    /* начало дня — местные часы и минуты: сид строит его из местного времени, а ISO зависит от пояса машины (CI — UTC) */
+    const text = JSON.stringify(starts.map((s) => [s.day, minutesAt(s.startedAt), s.morning && [s.morning.sleep, s.morning.wellbeing, s.morning.mood]]))
     expect(fingerprint(text)).toBe(expected)
   })
 })
 
 const SEEDS = [20260921, 20266840, 424242]
-const minutesAt = (iso: string) => new Date(iso).getHours() * 60 + new Date(iso).getMinutes()
 const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length
 
 describe('ночь в демо', () => {
