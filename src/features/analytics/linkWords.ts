@@ -1,4 +1,4 @@
-import { LINK_MIN, type Link, type Level } from '@/domain/links'
+import { LINK_MIN, type Case, type Link, type Level } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { HARMFUL_TAGS } from '@/domain/timeline'
 import { plural } from '@/lib/plural'
@@ -88,6 +88,26 @@ export function otherwiseText(l: Link): string | null {
     return `${lead} ${was}. Без таких вечеров разницы почти нет — возможно, дело в ${other}.`
   }
   return `${lead} ${was}. Без таких вечеров разница ${num1(Math.abs(o.diff))}.`
+}
+
+const CASE_NOUN: Record<Goal, string> = {
+  all: 'самочувствие и настроение',
+  sleep: 'сон',
+  wellbeing: 'самочувствие',
+  mood: 'настроение',
+  productivity: 'продуктивность',
+}
+/** Целое — без запятой: сон 3, а не 3,0. */
+const plain = (v: number) => (Number.isInteger(v) ? String(v) : num1(v))
+const listOf = (v: string[]) => (v.length < 2 ? v.join('') : `${v.slice(0, -1).join(', ')} и ${v[v.length - 1]}`)
+
+/** Случаи без обобщения: каждое число отдельно и своё обычное рядом. */
+export function caseLine(c: Case, goal: Goal): string {
+  const day = goal === 'productivity'
+  const n = c.values.length
+  const lead =
+    n === 1 ? (day ? 'Единственный день' : 'Единственное утро') : n === 2 ? (day ? 'Оба дня' : 'Оба утра') : `Все ${n} ${day ? 'дня' : 'утра'}`
+  return `${lead} после «${c.tag}» ${CASE_NOUN[goal]} — ${listOf(c.values.map(plain))}. Твоё обычное — около ${plain(c.usual)}.`
 }
 
 /** Под прогрессом «пока рано»: вредное не зовём, остальному — сколько не хватает. */

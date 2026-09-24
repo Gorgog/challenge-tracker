@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
-import { links as linksOf, type Link as LinkData } from '@/domain/links'
+import { cases as casesOf, explains as explainsOf, links as linksOf, type Link as LinkData } from '@/domain/links'
 import { morningOpen } from '@/domain/dayStart'
 import { changes as changesOf, dayShift, eventRows, GOALS, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
@@ -11,6 +11,7 @@ import { timeline } from '@/domain/timeline'
 import { DEFAULT_SETTINGS, type Challenge } from '@/domain/types'
 import { useClock } from '@/features/day/useClock'
 import { plural } from '@/lib/plural'
+import { CasesCard, ExplainsCard } from './CasesCard'
 import { ChangesCard } from './ChangesCard'
 import { DaySheet } from './DaySheet'
 import { LinkSheet } from './LinkSheet'
@@ -77,6 +78,8 @@ export function AnalyticsPage() {
       rows: { main: rows.main.map(short), more: rows.more.map(short) },
       changes: changesOf(history, history.length - 1, len, live, entriesById, today, open),
       links: linksOf(history, goal),
+      cases: casesOf(history, goal),
+      explains: explainsOf(history, windowStart, band, goal),
     }
   }, [history, len, goal, live, entriesById, todayK, open])
 
@@ -171,6 +174,8 @@ export function AnalyticsPage() {
 
           <ChangesCard changes={view.changes} len={len} />
 
+          <CasesCard list={view.cases} goal={goal} onShow={showDays} />
+
           <LinksCard
             data={view.links}
             goal={goal}
@@ -183,6 +188,8 @@ export function AnalyticsPage() {
           <Link to="/challenges" className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
+
+          <ExplainsCard list={view.explains} />
 
           <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />

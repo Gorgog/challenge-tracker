@@ -1,5 +1,5 @@
 import { isoDow, parseDay } from './date'
-import type { Goal } from './overview'
+import { goalValue, isComplete, pointClass, type Band, type Goal } from './overview'
 import { DAY_TAGS } from './tags'
 import { BAD_SLEEP, HARMFUL_TAGS, round1, stateOf, type TimelineDay } from './timeline'
 
@@ -241,6 +241,68 @@ function gateOf(window: TimelineDay[]): Gate {
 }
 
 const score = (l: Link) => Math.abs(l.shrunk ?? 0) * (l.level === 'notable' ? 2 : 1)
+
+/* ---------- случаи и «объясняет плохие дни» ---------- */
+
+/** Случай — утро (день) после редкого тега; ниже обычного — от балла. Показываем не больше двух. */
+export const CASE_GAP = 1
+const CASES_SHOWN = 2
+
+export type Case = { tag: string; values: number[]; days: string[]; usual: number }
+
+const median = (v: number[]) => {
+  const s = [...v].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
+}
+
+/**
+ * «Случаи · обобщать пока рано»: тег в моих силах был 1–4 раза, и каждый раз результат после него ниже
+ * обычного (медиана «без») на `CASE_GAP` и больше. Не связь — просто перечень, без среднего.
+ */
+export function cases(history: TimelineDay[], goal: Goal): Case[] {
+  const window = history.slice(-LINK_DAYS)
+  return DAY_TAGS.filter((t) => !CONTEXT_TAGS.includes(t))
+    .flatMap((tag) => {
+      const { withTag, without } = tagPoints(window, goal, tag)
+      if (!withTag.length || withTag.length >= LINK_MIN || without.length < LINK_MIN) return []
+      const usual = median(values(without))
+      if (!withTag.every((p) => p.value <= usual - CASE_GAP)) return []
+      return [{ tag, values: values(withTag), days: withTag.map((p) => p.day), usual }]
+    })
+    .sort((a, b) => mean(a.values)! - a.usual - (mean(b.values)! - b.usual))
+    .slice(0, CASES_SHOWN)
+}
+
+/** «Объясняет» — от стольких плохих дней с тегом и в стольких разах чаще, чем в остальные полные. */
+export const EXPLAIN_MIN = 2
+export const EXPLAIN_RATIO = 1.5
+
+export type Explain = { tag: string; count: number; bad: number; days: string[] }
+
+/**
+ * «Объясняет плохие дни · это не совет»: плохой день — полный день окна графика ниже полосы «обычно».
+ * Тег «не в моих силах» в вечер этого дня или накануне — в `EXPLAIN_MIN` плохих днях и больше и среди них
+ * в `EXPLAIN_RATIO` раза чаще, чем среди остальных полных дней окна.
+ */
+export function explains(history: TimelineDay[], windowStart: number, band: Band, goal: Goal): Explain[] {
+  if (band.kind === 'none') return []
+  const full = history.flatMap((d, i) => {
+    if (i < windowStart || !isComplete(d, goal)) return []
+    const v = goalValue(d, goal)
+    return v === null ? [] : [{ i, bad: pointClass(v, band) === 'below' }]
+  })
+  const bad = full.filter((d) => d.bad)
+  const rest = full.filter((d) => !d.bad)
+  const has = (i: number, tag: string) => history[i]!.tags.includes(tag) || (i > 0 && history[i - 1]!.tags.includes(tag))
+  return CONTEXT_TAGS.flatMap((tag) => {
+    const hit = bad.filter((d) => has(d.i, tag))
+    const restHit = rest.filter((d) => has(d.i, tag)).length
+    if (hit.length < EXPLAIN_MIN) return []
+    if (rest.length && hit.length / bad.length < (EXPLAIN_RATIO * restHit) / rest.length) return []
+    return [{ tag, count: hit.length, bad: bad.length, days: hit.map((d) => history[d.i]!.day) }]
+  }).sort((a, b) => b.count - a.count)
+}
 
 /** Связи по последним `LINK_DAYS` дням истории для цели. */
 export function links(history: TimelineDay[], goal: Goal): Links {
