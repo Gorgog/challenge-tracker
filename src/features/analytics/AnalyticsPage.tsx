@@ -46,6 +46,7 @@ export function AnalyticsPage() {
   /* открытый день — датой: после полуночи окно сдвигается, а день остаётся */
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [openLink, setOpenLink] = useState<LinkData | null>(null)
+  const [linkOpen, setLinkOpen] = useState(false)
   /* дни из карточки связи — ключами: окно могут переключить, а дни остаются */
   const [highlight, setHighlight] = useState<string[] | null>(null)
   const chartRef = useRef<HTMLElement>(null)
@@ -94,7 +95,7 @@ export function AnalyticsPage() {
 
   /* показать дни связи: окно — 30 дней, если в 14 они не влезают; цель та же, что у карточки */
   const showDays = (days: string[]) => {
-    setOpenLink(null)
+    setLinkOpen(false)
     setHighlight(days)
     if (history && days.some((d) => d < history[history.length - 14]!.day)) setLen(30)
     chartRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
@@ -170,13 +171,20 @@ export function AnalyticsPage() {
 
           <ChangesCard changes={view.changes} len={len} />
 
-          <LinksCard data={view.links} goal={goal} onOpen={setOpenLink} />
+          <LinksCard
+            data={view.links}
+            goal={goal}
+            onOpen={(l) => {
+              setOpenLink(l)
+              setLinkOpen(true)
+            }}
+          />
 
           <Link to="/challenges" className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
 
-          <LinkSheet link={openLink} goal={goal} onShow={showDays} onClose={() => setOpenLink(null)} />
+          <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
         </>
       )}

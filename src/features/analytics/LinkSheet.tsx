@@ -23,13 +23,26 @@ function Bar({ label, value, tone }: { label: string; value: number; tone: 'mute
  * Карточка связи (макет: «Выпивка и сон»): заголовок со временем, два числа на одной шкале, каждый случай
  * кружком, на чём держится, «а может быть иначе» и дни на графике. Причин не утверждает.
  */
-export function LinkSheet({ link, goal, onShow, onClose }: { link: Link | null; goal: Goal; onShow: (days: string[]) => void; onClose: () => void }) {
+export function LinkSheet({
+  link,
+  open,
+  goal,
+  onShow,
+  onClose,
+}: {
+  /** Последняя открытая связь: остаётся и пока окно закрывается, иначе в анимации мелькает пустая рамка. */
+  link: Link | null
+  open: boolean
+  goal: Goal
+  onShow: (days: string[]) => void
+  onClose: () => void
+}) {
   const level = link && link.level !== 'early' && link.level !== 'none' ? LEVEL[link.level] : null
   const other = link ? otherwiseText(link) : null
   const [without, withF] =
     link?.factor.kind === 'badSleep' ? ['после обычной ночи', 'после плохой ночи'] : link ? [`без ${factorName(link)}`, `после ${factorName(link)}`] : ['', '']
   return (
-    <Dialog open={link !== null} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open && link !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="gap-4 sm:max-w-md">
         {link && level && (
           <>
