@@ -1,5 +1,6 @@
 import { parseDay, todayKey } from '@/domain/date'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
+import { validNight } from '@/domain/night'
 import {
   DEFAULT_DAY_GROUPS,
   DEFAULT_SETTINGS,
@@ -8,6 +9,7 @@ import {
   type DayLog,
   type DayStart,
   type EntryMap,
+  type Morning,
   type Settings,
   type Tag,
 } from '@/domain/types'
@@ -34,7 +36,10 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 8
+const STORAGE_VERSION = 9
+
+/** Копия утра с ночью; утро без ночи — ночь null, как читает база. */
+const copyMorning = (m: Morning | null): Morning | null => (m ? { ...m, night: m.night ? { ...m.night } : null } : null)
 
 type Snapshot = {
   version: number
@@ -253,12 +258,15 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     },
     async listDayStarts() {
       return [...starts.values()]
-        .map((s) => ({ ...s, morning: s.morning ? { ...s.morning } : null }))
+        .map((s) => ({ ...s, morning: copyMorning(s.morning) }))
         .sort((a, b) => a.day.localeCompare(b.day))
     },
     async startDay(start) {
       if (starts.has(start.day)) throw new Error(`День ${start.day} уже начат: утро не правится`)
-      starts.set(start.day, { ...start, morning: start.morning ? { ...start.morning } : null })
+      /* те же правила, что держит база (day_starts_night_*) */
+      const night = start.morning?.night
+      if (night && !validNight(night)) throw new Error(`Ночь ${start.day} записана неверно: отбой должен быть раньше подъёма`)
+      starts.set(start.day, { ...start, morning: copyMorning(start.morning) })
       persist()
     },
     async getSettings() {

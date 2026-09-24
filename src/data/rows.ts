@@ -1,4 +1,4 @@
-import type { Challenge, DayLog, DayStart, EntryMap, Pause } from '@/domain/types'
+import type { Challenge, DayLog, DayStart, EntryMap, NightHow, Pause } from '@/domain/types'
 
 /*
  * Строки таблиц Supabase (supabase/migrations) ↔ доменные типы. Дни — строки YYYY-MM-DD как есть, без
@@ -41,6 +41,11 @@ export type DayStartRow = {
   morning_sleep: number | null
   morning_wellbeing: number | null
   morning_mood: number | null
+  /** Ночь — минуты от полуночи этого утра; все четыре есть или нет вместе, и только при утре. */
+  bed_min: number | null
+  wake_min: number | null
+  bed_how: NightHow | null
+  wake_how: NightHow | null
   started_at: string
 }
 
@@ -130,7 +135,17 @@ export function dayStartFromRow(r: DayStartRow): DayStart {
   const has = r.morning_sleep !== null && r.morning_wellbeing !== null && r.morning_mood !== null
   return {
     day: r.day,
-    morning: has ? { sleep: r.morning_sleep!, wellbeing: r.morning_wellbeing!, mood: r.morning_mood! } : null,
+    morning: has
+      ? {
+          sleep: r.morning_sleep!,
+          wellbeing: r.morning_wellbeing!,
+          mood: r.morning_mood!,
+          night:
+            r.bed_min !== null && r.wake_min !== null && r.bed_how !== null && r.wake_how !== null
+              ? { bed: r.bed_min, wake: r.wake_min, bedHow: r.bed_how, wakeHow: r.wake_how }
+              : null,
+        }
+      : null,
     startedAt: iso(r.started_at),
   }
 }
@@ -141,6 +156,10 @@ export function dayStartToRow(s: DayStart): DayStartRow {
     morning_sleep: s.morning?.sleep ?? null,
     morning_wellbeing: s.morning?.wellbeing ?? null,
     morning_mood: s.morning?.mood ?? null,
+    bed_min: s.morning?.night?.bed ?? null,
+    wake_min: s.morning?.night?.wake ?? null,
+    bed_how: s.morning?.night?.bedHow ?? null,
+    wake_how: s.morning?.night?.wakeHow ?? null,
     started_at: s.startedAt,
   }
 }

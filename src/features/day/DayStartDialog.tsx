@@ -12,7 +12,7 @@ import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
 import type { Morning } from '@/domain/types'
 import { ScoreScale, type Scale } from './ScoreScale'
 
-type MorningField = keyof Morning
+type MorningField = Exclude<keyof Morning, 'night'>
 
 /**
  * Утро — сон и те же шкалы самочувствия и настроения, что вечером, с теми же якорями:

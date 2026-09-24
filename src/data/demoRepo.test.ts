@@ -826,7 +826,8 @@ describe('утро в демо', () => {
     const { starts } = await load(scenario, 20260921)
     for (const s of starts) {
       expect(new Date(s.startedAt).getHours()).toBeLessThan(15)
-      for (const v of Object.values(s.morning ?? {})) {
+      const m = s.morning
+      for (const v of m ? [m.sleep, m.wellbeing, m.mood] : []) {
         expect(Number.isInteger(v)).toBe(true)
         expect(v).toBeGreaterThanOrEqual(SCORE_MIN)
         expect(v).toBeLessThanOrEqual(SCORE_MAX)
