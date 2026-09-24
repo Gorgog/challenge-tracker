@@ -195,7 +195,8 @@ export function AnalyticsPage() {
             data={view.links}
             goal={goal}
             tryEarlier={view.tryEarlier}
-            bedtimeRunning={live.some((c) => c.measure === 'bedtime')}
+            /* «уже идёт» — сегодня в челлендже: не на паузе и срок не кончился (ревью 4б) */
+            bedtimeRunning={live.some((c) => c.measure === 'bedtime' && outcomeOf(c, todayK) !== 'outside')}
             chain={view.chain}
             onOpenChain={() => setChainOpen(true)}
             onShow={showDays}
@@ -213,7 +214,7 @@ export function AnalyticsPage() {
 
           <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
           <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
-          <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} onClose={() => setOpenDay(null)} />
+          <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} valueOf={(c, day) => entriesById[c.id]?.[day]} onClose={() => setOpenDay(null)} />
         </>
       )}
     </div>

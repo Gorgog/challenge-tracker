@@ -4,13 +4,18 @@ import type { Challenge, Outcome } from '@/domain/types'
 import { clockText } from '@/domain/night'
 import { dayName, shiftText } from './words'
 
-/** У «Ложусь раньше» — время, а не галочка: лёг до цели, позже, ночь не записана или ещё узнается утром. */
-const bedtimeText = (c: Challenge, o: Outcome) =>
-  o === 'unknown' ? 'ночь не записана' : o === 'pending' ? 'посчитается утром' : `${o === 'hit' ? 'лёг до' : 'позже'} ${clockText(c.goal)}`
+/**
+ * У «Ложусь раньше» — своё время со словом «вечером»: это ночь после вечера дня, а строка «лёг» выше — ночь перед
+ * ним (ревью 4б, решение Georgy). Ночь не записана или ещё узнается утром — так и сказано.
+ */
+const bedtimeText = (c: Challenge, o: Outcome, bed: number | undefined) =>
+  o === 'unknown' || bed === undefined || Number.isNaN(bed)
+    ? o === 'pending' ? 'посчитается утром' : 'ночь не записана'
+    : `вечером лёг в ${clockText(bed)}${o === 'hit' ? ' ✓' : ` — позже ${clockText(c.goal)}`}`
 
-const outcomeText = (c: Challenge, o: Outcome) =>
+const outcomeText = (c: Challenge, o: Outcome, bed: number | undefined) =>
   c.measure === 'bedtime'
-    ? bedtimeText(c, o)
+    ? bedtimeText(c, o, bed)
     : o === 'pending'
       ? 'день ещё идёт'
       : c.kind === 'quit'
@@ -24,6 +29,7 @@ export function DaySheet({
   shift,
   challenges,
   outcomeOf,
+  valueOf,
   onClose,
 }: {
   day: TimelineDay | null
@@ -32,6 +38,8 @@ export function DaySheet({
   shift: Shift
   challenges: Challenge[]
   outcomeOf: (c: Challenge, day: string) => Outcome
+  /** Значение отметки дня — у «Ложусь раньше» это отбой ночи после вечера. */
+  valueOf: (c: Challenge, day: string) => number | undefined
   onClose: () => void
 }) {
   const m = day?.morning ?? null
@@ -96,7 +104,7 @@ export function DaySheet({
                 {marks.map(([c, o]) => (
                   <li key={c.id} className="flex justify-between gap-3">
                     <span>{c.name}</span>
-                    <span className={o === 'hit' ? 'text-better' : o === 'miss' ? 'text-worse' : 'text-muted-foreground'}>{outcomeText(c, o)}</span>
+                    <span className={o === 'hit' ? 'text-better' : o === 'miss' ? 'text-worse' : 'text-muted-foreground'}>{outcomeText(c, o, day ? valueOf(c, day.day) : undefined)}</span>
                   </li>
                 ))}
               </ul>

@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { addDays, dayKey, parseDay, todayKey } from '@/domain/date'
 import type { Challenge, DayStart } from '@/domain/types'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
 import { ChallengesPage } from './ChallengesPage'
 
 const mocked = vi.hoisted(() => ({
@@ -127,9 +127,14 @@ describe('«Попробовать: ложусь раньше» из анали�
       startedAt: `${day}T08:00:00`,
     }))
     const user = userEvent.setup()
+    /* что лежит в состоянии навигации: после закрытия формы черновика там быть не должно — обновление её не откроет */
+    function State() {
+      return <output aria-label="состояние">{JSON.stringify(useLocation().state)}</output>
+    }
     render(
       <MemoryRouter initialEntries={[{ pathname: '/challenges', state: { draft: 'bedtime' } }]}>
         <ChallengesPage />
+        <State />
       </MemoryRouter>,
     )
     const dialog = screen.getByRole('dialog', { name: 'Новый челлендж' })
@@ -138,6 +143,7 @@ describe('«Попробовать: ложусь раньше» из анали�
     expect(within(dialog).getByLabelText('Лечь не позже')).toHaveValue('23:30')
     await user.click(within(dialog).getByRole('button', { name: 'Отмена' }))
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('status', { name: 'состояние' })).toHaveTextContent('null')
     // черновик отработал: следующий «Новый челлендж» — пустая форма (ревью 4б)
     await user.click(screen.getByRole('button', { name: /Новый челлендж/ }))
     const next = screen.getByRole('dialog', { name: 'Новый челлендж' })

@@ -63,7 +63,10 @@ export function ChallengeForm({
   const [measure, setMeasure] = useState<ChallengeMeasure>(challenge?.measure ?? initial?.measure ?? 'binary')
   const [goalText, setGoalText] = useState(String(challenge?.measure === 'bedtime' ? 1 : (challenge?.goal ?? 1)))
   /* время отбоя: у правки — как записано, у нового — обычный отбой минус полчаса, своего нет — пусто */
-  const suggestedBed = usualBed === null ? null : usualBed - EARLIER
+  /* раньше полудня не бывает: отбой с полудня — это вчера, и −30 минут от 12:05 дали бы самое позднее время */
+  const suggestedBed = usualBed === null ? null : Math.max(-720, usualBed - EARLIER)
+  /* у заведённого на «Время» и обратно не переходят (решение Georgy по ревью 4б) — и тип у «Ложусь раньше» тоже */
+  const wasBedtime = challenge?.measure === 'bedtime'
   const [bedText, setBedText] = useState(
     challenge?.measure === 'bedtime' ? inputOf(challenge.goal) : suggestedBed === null ? '' : inputOf(suggestedBed),
   )
@@ -153,7 +156,7 @@ export function ChallengeForm({
             <Choice active={kind === 'do'} disabled={rulesFrozen} onClick={() => setKind('do')}>
               Привычка
             </Choice>
-            <Choice active={kind === 'quit'} disabled={rulesFrozen} onClick={() => setKind('quit')}>
+            <Choice active={kind === 'quit'} disabled={rulesFrozen || wasBedtime} onClick={() => setKind('quit')}>
               Отказ
             </Choice>
           </div>
@@ -170,21 +173,21 @@ export function ChallengeForm({
             <div className="flex gap-2">
               <Choice
                 active={measure === 'binary'}
-                disabled={rulesFrozen}
+                disabled={rulesFrozen || wasBedtime}
                 onClick={() => setMeasure('binary')}
               >
                 Галочка
               </Choice>
               <Choice
                 active={measure === 'count'}
-                disabled={rulesFrozen}
+                disabled={rulesFrozen || wasBedtime}
                 onClick={() => setMeasure('count')}
               >
                 Число
               </Choice>
               <Choice
                 active={measure === 'bedtime'}
-                disabled={rulesFrozen}
+                disabled={rulesFrozen || (editing && !wasBedtime)}
                 onClick={() => setMeasure('bedtime')}
               >
                 Время

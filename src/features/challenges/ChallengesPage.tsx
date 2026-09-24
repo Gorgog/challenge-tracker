@@ -50,14 +50,18 @@ export function ChallengesPage() {
   /* пришли из аналитики с «Попробовать: ложусь раньше» — форма сразу открыта с черновиком */
   const location = useLocation()
   const navigate = useNavigate()
-  const [draft] = useState(() => ((location.state as { draft?: string } | null)?.draft === 'bedtime' ? BEDTIME_DRAFT : undefined))
+  const [draft, setDraft] = useState(() => ((location.state as { draft?: string } | null)?.draft === 'bedtime' ? BEDTIME_DRAFT : undefined))
   const [formOpen, setFormOpen] = useState(draft !== undefined)
   const starts = useDayStarts()
   const usualBed = starts.data ? usualNight(starts.data, todayKey()).bed : null
   /* закрыл форму — черновик из аналитики своё отработал: обновление страницы её снова не откроет */
   const closeForm = () => {
     setFormOpen(false)
-    if (draft) void navigate('.', { replace: true, state: null })
+    /* черновик — один раз: следующий «Новый челлендж» открывается пустым (ревью 4б) */
+    if (draft) {
+      setDraft(undefined)
+      void navigate('.', { replace: true, state: null })
+    }
   }
   const [tagsOpen, setTagsOpen] = useState(false)
   const [editing, setEditing] = useState<Challenge | null>(null)

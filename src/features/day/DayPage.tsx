@@ -128,17 +128,16 @@ export function DayPage() {
   }, [fetched, rowOrder])
 
   const active = allChallenges.filter(onDay)
-  const tasks = active.filter((c) => c.kind === 'do')
-  const holds = active.filter((c) => c.kind === 'quit')
+  /* «Ложусь раньше» не отмечают руками — он «идёт сам», как отказы (ревью 4б, решение Georgy) */
+  const tasks = active.filter((c) => c.kind === 'do' && c.measure !== 'bedtime')
+  const holds = active.filter((c) => c.kind === 'quit' || c.measure === 'bedtime')
 
   const entriesOf = (c: Challenge): EntryMap => entries[c.id] ?? {}
   const isDone = (c: Challenge) => dayOutcome(c, entriesOf(c), today, today) === 'hit'
   const streakOf = (c: Challenge) => currentStreak(c, entriesOf(c), today)
 
-  /* «Ложусь раньше» сегодня не закрыть — он узнаётся завтра утром: в счёт задач не идёт */
-  const marked = tasks.filter((c) => c.measure !== 'bedtime')
-  const doneCount = marked.filter(isDone).length
-  const pendingCount = marked.length - doneCount
+  const doneCount = tasks.filter(isDone).length
+  const pendingCount = tasks.length - doneCount
   const starts = startsQuery.data ?? []
   /* первый день пользования: самое раннее из стартов челленджей, начал дней и итогов */
   const since = [...fetched.map((c) => c.startDate), ...starts.map((s) => s.day), ...logs.map((l) => l.day)].reduce<
@@ -317,8 +316,8 @@ export function DayPage() {
       <div className="pt-1 text-center">
         <h1 className="text-3xl font-bold tracking-tight">Сегодня</h1>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          {DOW_FULL[isoDow(today)]}, {formatHuman(today)} · {doneCount} из {marked.length}{' '}
-          {plural(marked.length, 'задачи', 'задач', 'задач')} закрыто
+          {DOW_FULL[isoDow(today)]}, {formatHuman(today)} · {doneCount} из {tasks.length}{' '}
+          {plural(tasks.length, 'задачи', 'задач', 'задач')} закрыто
         </p>
         {todayStart && (
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">
@@ -360,13 +359,6 @@ export function DayPage() {
                       <div className="flex flex-col gap-2">
                         {tasks.map((c, i) => (
                           <SortableRow key={c.id} id={c.id} label={`Переставить: ${c.name}`}>
-                            {c.measure === 'bedtime' ? (
-                              <BedtimeRow
-                                challenge={c}
-                                yesterday={entriesOf(c)[dayKey(addDays(today, -1))]}
-                                yesterdayCounts={dayOutcome(c, entriesOf(c), addDays(today, -1), today) !== 'outside'}
-                              />
-                            ) : (
                             <TaskRow
                               challenge={c}
                               value={entriesOf(c)[todayK]}
@@ -379,7 +371,6 @@ export function DayPage() {
                                 setEntry.mutate({ challengeId: c.id, day: todayK, value })
                               }
                             />
-                            )}
                           </SortableRow>
                         ))}
                       </div>
@@ -398,13 +389,21 @@ export function DayPage() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         {holds.map((c) => (
                           <SortableRow key={c.id} id={c.id} label={`Переставить: ${c.name}`}>
-                            <HoldCard
-                              challenge={c}
-                              failed={entriesOf(c)[todayK] === 0}
-                              streak={streakOf(c)}
-                              frozen={locked}
-                              onToggleRelapse={() => toggleRelapse(c)}
-                            />
+                            {c.measure === 'bedtime' ? (
+                              <BedtimeRow
+                                challenge={c}
+                                yesterday={entriesOf(c)[dayKey(addDays(today, -1))]}
+                                yesterdayCounts={dayOutcome(c, entriesOf(c), addDays(today, -1), today) !== 'outside'}
+                              />
+                            ) : (
+                              <HoldCard
+                                challenge={c}
+                                failed={entriesOf(c)[todayK] === 0}
+                                streak={streakOf(c)}
+                                frozen={locked}
+                                onToggleRelapse={() => toggleRelapse(c)}
+                              />
+                            )}
                           </SortableRow>
                         ))}
                       </div>
