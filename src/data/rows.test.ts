@@ -103,6 +103,12 @@ describe('строки базы ↔ домен', () => {
     expect(dayStartFromRow({ ...skippedRow, started_at: '2026-09-20T16:00:00+00:00' })).toEqual(skipped)
   })
 
+  it('ночь не целиком — не ночь: база держит все четыре вместе, но читаем осторожно', () => {
+    const start: DayStart = { day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 6 }, startedAt: '2026-09-21T07:30:00.000Z' }
+    const row = { ...dayStartToRow(start), bed_min: -30, bed_how: 'exact' as const }
+    expect(dayStartFromRow(row).morning?.night).toBeNull()
+  })
+
   it('утро без ночи (до 25.09) — ночь null', () => {
     const start: DayStart = { day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 6 }, startedAt: '2026-09-21T07:30:00.000Z' }
     expect(dayStartFromRow(dayStartToRow(start)).morning).toEqual({ sleep: 7, wellbeing: 6, mood: 6, night: null })

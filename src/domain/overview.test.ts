@@ -329,6 +329,10 @@ describe('changes — поздний отбой', () => {
     const h = days(28, (i) => (i >= 21 ? { bed: 90 } : {}))
     const c = changes(h, 27, 14, [], {}, TODAY, false, 30)
     expect(c.status === 'ok' && c.lines).toEqual([])
+    /* прошлые 14: записаны 3 ночи, все ранние — без правила «наполовину» вышло бы «было 0 из 3» */
+    const prevFew = days(28, (i) => (i >= 11 ? { bed: i >= 14 ? 90 : -30 } : {}))
+    const f = changes(prevFew, 27, 14, [], {}, TODAY, false, 30)
+    expect(f.status === 'ok' && f.lines).toEqual([])
     const prevHalf = days(28, (i) => (i >= 7 ? { bed: i >= 14 ? 90 : -30 } : {}))
     const d = changes(prevHalf, 27, 14, [], {}, TODAY, false, 30)
     expect(d.status === 'ok' && d.lines).toEqual([{ kind: 'lateBed', from: 30, now: 14, of: 14, was: 0, wasOf: 7, good: false }])
