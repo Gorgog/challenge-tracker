@@ -27,3 +27,17 @@ end $$;
 
 create trigger entries_no_bedtime before insert or update on public.entries
   for each row execute function public.entries_no_bedtime();
+
+-- На «Время» и обратно не переходят (решение Georgy по ревью): прошлые дни задним числом получили бы исходы из ночей,
+-- а старые отметки остались бы лишними. Домен (applyPatch) такие правки не отправляет — здесь страховка базы.
+create function public.challenges_keep_bedtime() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if (old.measure = 'bedtime') <> (new.measure = 'bedtime') then
+    raise exception 'Измерение «Время» у заведённого челленджа не меняется' using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+
+create trigger challenges_keep_bedtime before update on public.challenges
+  for each row execute function public.challenges_keep_bedtime();
