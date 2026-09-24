@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
-import { cases, chain, CONTEXT_TAGS, explains, LINK_DAYS, LINK_MIN, links, shrink, type Link } from './links'
+import { cases, chain, CONTEXT_TAGS, explains, LINK_DAYS, LINK_MIN, links, NOT_MORE, shrink, type Link } from './links'
 import type { TimelineDay } from './timeline'
 import type { Challenge, EntryMap } from './types'
 
@@ -184,6 +184,63 @@ describe('links — ступени', () => {
     expect(l.level).toBe('none')
   })
 
+  it('ровно 2/3 дней «с» по ту же сторону — ещё связь; 5 из 8 — уже нет', () => {
+    let n = 0
+    // 6 утр после: четыре 2 и два 7 (выше обычных 6)
+    const h = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? ['алкоголь'] : [], m: (i - 1) % 9 === 2 ? (n++ < 4 ? 2 : 7) : 6 }))
+    expect(tagLink(links(h, 'all').pairs, 'алкоголь')).toMatchObject({ withN: 6, sameSide: 4, level: 'maybe' })
+    let k = 0
+    // 8 утр после: пять 2 и три 6,5
+    const h2 = hist(LINK_DAYS, (i) => ({ tags: i % 7 === 2 ? ['алкоголь'] : [], m: (i - 1) % 7 === 2 ? (k++ < 5 ? 2 : 6.5) : 6 }))
+    expect(tagLink(links(h2, 'all').pairs, 'алкоголь')).toMatchObject({ withN: 8, sameSide: 5, level: 'none' })
+  })
+
+  it('●●○ — только если в обеих половинах разница в ту же сторону и дней 3 + 3', () => {
+    // 9 утр после алкоголя. Первая половина окна: обычно 6, после — 3 (хуже). Вторая: обычно 4,5,
+    // после — 5 (лучше своей половины), но в целом ниже общего обычного (5,2) — связь ●○○ есть
+    const firstEv = [2, 6, 10, 14, 18, 22]
+    const secondEv = [30, 38, 46]
+    const opposite = hist(LINK_DAYS, (i) => ({
+      tags: [...firstEv, ...secondEv].includes(i) ? ['алкоголь'] : [],
+      m: firstEv.includes(i - 1) ? 3 : secondEv.includes(i - 1) ? 5 : i < 28 ? 6 : 4.5,
+    }))
+    const o = tagLink(links(opposite, 'all').pairs, 'алкоголь')
+    expect(o.withN).toBe(9)
+    expect(o.level).toBe('maybe')
+    // 9 утр после: в первой половине только 2
+    const few = hist(LINK_DAYS, (i) => ({
+      tags: (i < 28 ? [9, 20] : [30, 33, 36, 39, 42, 45, 48]).includes(i) ? ['алкоголь'] : [],
+      m: [10, 21, 31, 34, 37, 40, 43, 46, 49].includes(i) ? 3 : 6,
+    }))
+    const l = tagLink(links(few, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(9)
+    expect(l.level).toBe('maybe')
+  })
+
+  it('слой выходных с двумя днями «без» — уже мерка', () => {
+    // все вечера пт и сб с тегом, кроме двух пятниц; утра выходных после тега 3, без него — 6; будни 7
+    const tagged = (i: number, dow: number) => (dow === 4 || dow === 5) && i !== 8 && i !== 15
+    const h = hist(LINK_DAYS, (i, dow) => ({
+      tags: tagged(i, dow) ? ['алкоголь'] : [],
+      m: dow >= 5 ? (i === 9 || i === 16 ? 6 : 3) : 7,
+    }))
+    // 14 вечеров с тегом — ступень может быть и ●●○; главное — связь есть
+    expect(tagLink(links(h, 'all').pairs, 'алкоголь').level).not.toBe('none')
+  })
+
+  it('разница с поправкой на выходные тоже сжимается: 1,1 при большом разбросе — не связь', () => {
+    // тег — пт и сб через неделю; утра выходных без тега 5, после тега то 2,1, то 5,7 (в среднем 3,9); будни 7
+    let n = 0
+    const tagged = (i: number, dow: number) => Math.floor(i / 7) % 2 === 0 && (dow === 4 || dow === 5)
+    const h = hist(LINK_DAYS, (i, dow) => ({
+      tags: tagged(i, dow) ? ['алкоголь'] : [],
+      m: tagged(i - 1, (dow + 6) % 7) ? (n++ % 2 ? 5.7 : 2.1) : dow >= 5 ? 5 : 7,
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(Math.abs(l.shrunk!)).toBeGreaterThan(1)
+    expect(l.level).toBe('none')
+  })
+
   it('разброс «с» велик — сжатая разница меньше балла, связи нет', () => {
     // утра после: 5,8 четыре раза и 0 один раз — сырая разница 1,36, сжатая около 0,85
     let n = 0
@@ -216,6 +273,15 @@ describe('links — вёдра', () => {
     expect(tagLink(links(odd, 'all').pairs, 'ссора')).toMatchObject({ direction: 'better', bucket: null })
   })
 
+  it('«дедлайн» и «встречи» — только «Меньше»: если после них лучше, не советуем', () => {
+    for (const tag of NOT_MORE) {
+      const better = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? [tag] : [], m: (i - 1) % 9 === 2 ? 9 : 6 }))
+      expect(tagLink(links(better, 'all').pairs, tag)).toMatchObject({ level: 'maybe', direction: 'better', bucket: null })
+      const worse = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? [tag] : [], m: (i - 1) % 9 === 2 ? 3 : 6 }))
+      expect(tagLink(links(worse, 'all').pairs, tag)).toMatchObject({ direction: 'worse', bucket: 'less' })
+    }
+  })
+
   it('карточки — по одной на ведро, сильнейшая первой; счёт проверенных и заметных', () => {
     const h = hist(LINK_DAYS, (i) => {
       const tags = [...(i % 9 === 2 ? ['алкоголь'] : []), ...(i % 9 === 5 ? ['ссора'] : []), ...(i % 9 === 7 ? ['отдых'] : [])]
@@ -228,7 +294,8 @@ describe('links — вёдра', () => {
       ['алкоголь', 'less'],
       ['отдых', 'more'],
     ])
-    expect(r.found).toBe(3)
+    // заметных — только то, что видно: две карточки («ссора» тоже ●○○, но её ведро занято алкоголем)
+    expect(r.found).toBe(2)
     // 5 + 5 прошли алкоголь, ссора, отдых; у остальных тегов дней «с» нет, плохих ночей нет
     expect(r.checked).toBe(3)
   })
@@ -240,7 +307,17 @@ describe('links — плохая ночь → вечер того же дня', 
     const l = badSleepLink(links(h, 'all').pairs)!
     expect(l).toMatchObject({ withN: 7, withMean: 3, withoutMean: 7, level: 'maybe', bucket: null })
     expect(badSleepLink(links(h, 'sleep').pairs)).toBeUndefined()
-    expect(links(h, 'all').cards).toEqual([])
+    const r = links(h, 'all')
+    expect(r.cards).toEqual([])
+    // видна отдельной строкой и считается в «заметных»
+    expect(r.night).toEqual(l)
+    expect(r.found).toBe(1)
+    expect(links(h, 'sleep').night).toBeNull()
+  })
+
+  it('плохая ночь без связи — строки нет', () => {
+    const h = hist(LINK_DAYS, (i) => ({ sleep: i % 8 === 1 ? 4 : 8 }))
+    expect(links(h, 'all')).toMatchObject({ night: null, found: 0 })
   })
 
   it('утро без вечера не считается', () => {
@@ -321,6 +398,17 @@ describe('links — записей мало', () => {
     expect(links(h, 'all').gate.ok).toBe(false)
   })
 
+  it('75 % закрытых вечеров — уже можно', () => {
+    const h = drinking(9).map((d, i) => (i % 4 === 0 ? { ...d, evening: null, tags: [] } : d))
+    expect(links(h, 'all').gate).toMatchObject({ ok: true, closedShare: 0.75 })
+  })
+
+  it('сегодняшний незакрытый вечер — ещё не пропуск: доля — от прошедших дней', () => {
+    // записи с 21 дня назад; из 20 прошедших вечеров закрыто 14, сегодня вечер ещё не закрыт
+    const h = hist(LINK_DAYS, (i) => (i < 35 ? { m: null, e: null } : { e: i === 55 || [36, 39, 42, 45, 48, 51].includes(i) ? null : 6 }))
+    expect(links(h, 'all').gate).toMatchObject({ ok: true, closedShare: 0.7 })
+  })
+
   it('дни до первой записи не портят долю: новый пользователь с 20 днями', () => {
     const h = hist(LINK_DAYS, (i) => (i < 36 ? { m: null, e: null } : {}))
     expect(links(h, 'all').gate).toMatchObject({ ok: true, recorded: 20 })
@@ -330,7 +418,28 @@ describe('links — записей мало', () => {
 describe('cases — редкие сильные случаи', () => {
   it('тег 1–4 раза, все утра после ниже обычного на балл и больше — перечисляются', () => {
     const h = hist(LINK_DAYS, (i) => ({ tags: i === 20 || i === 40 ? ['ссора'] : [], m: i === 21 ? 3 : i === 41 ? 4 : 6 }))
-    expect(cases(h, 'all')).toEqual([{ tag: 'ссора', values: [3, 4], days: [h[21]!.day, h[41]!.day], usual: 6 }])
+    expect(cases(h, 'all')).toEqual([{ tag: 'ссора', values: [3, 4], days: [h[21]!.day, h[41]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('считаются вечера с тегом, а не записанные утра: 6 вечеров — не случай', () => {
+    const tagged = [2, 11, 20, 29, 38, 47]
+    const h = hist(LINK_DAYS, (i) => ({ tags: tagged.includes(i) ? ['ссора'] : [], m: i === 3 || i === 12 ? 2 : tagged.includes(i - 1) ? null : 6 }))
+    expect(cases(h, 'all')).toEqual([])
+  })
+
+  it('утро после не отмечено — случай остаётся, пропуск назван', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: [10, 20, 30].includes(i) ? ['ссора'] : [], m: i === 11 || i === 21 ? 2 : i === 31 ? null : 6 }))
+    expect(cases(h, 'all')).toEqual([{ tag: 'ссора', values: [2, 2], days: [h[11]!.day, h[21]!.day], usual: 6, missing: 1 }])
+  })
+
+  it('сегодняшнее утро, которое ещё не отмечено, — не пропуск', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: i === 20 || i === 54 ? ['ссора'] : [], m: i === 21 ? 2 : i === 55 ? null : 6, e: i === 55 ? null : 6 }))
+    expect(cases(h, 'all')).toMatchObject([{ tag: 'ссора', values: [2], missing: 0 }])
+  })
+
+  it('вечера закрыты реже чем в 70 % дней — случаев нет', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: i === 20 ? ['ссора'] : [], m: i === 21 ? 2 : 6, e: i !== 20 && i % 3 === 0 ? null : 6 }))
+    expect(cases(h, 'all')).toEqual([])
   })
 
   it('хоть одно утро не ниже обычного на балл — не случай', () => {
@@ -385,6 +494,15 @@ describe('explains — что объясняет плохие дни', () => {
     expect(explains(often, start, band, 'all')).toEqual([])
   })
 
+  it('неполный день (сегодня только утро) не считается плохим', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      m: [44, 46, 55].includes(i) ? 3 : 6.5,
+      e: i === 55 ? null : [44, 46].includes(i) ? 3 : 6.5,
+      tags: i === 44 || i === 45 || i === 54 ? ['болел'] : [],
+    }))
+    expect(explains(h, start, band, 'all')).toEqual([{ tag: 'болел', count: 2, bad: 2, days: [h[44]!.day, h[46]!.day] }])
+  })
+
   it('плохие дни до окна графика не в счёт', () => {
     const h = hist(LINK_DAYS, (i) => ({ m: [20, 22].includes(i) ? 3 : 6.5, e: [20, 22].includes(i) ? 3 : 6.5, tags: [20, 22].includes(i) ? ['болел'] : [] }))
     expect(explains(h, start, band, 'all')).toEqual([])
@@ -431,10 +549,11 @@ describe('chain — что обычно шло следом', () => {
     const c = chain(h, top(h), [], {}, TODAY)!
     expect(c).toMatchObject({ tag: 'алкоголь', episodes: 6, noMorning: 0, level: 'maybe' })
     expect(c.days).toEqual(top(h).withDays)
+    // вечер — тот же, что проверил порог: самочувствие и настроение
     expect(c.rows).toEqual([
       { kind: 'scale', part: 'morning', label: 'сон', n: 6, mean: 3, usual: 7, side: 'worse', count: 6 },
-      { kind: 'scale', part: 'morning', label: 'самочувствие', n: 6, mean: 3, usual: 6, side: 'worse', count: 6 },
-      { kind: 'scale', part: 'evening', label: 'настроение', n: 6, mean: 3, usual: 6, side: 'worse', count: 6 },
+      { kind: 'scale', part: 'morning', label: 'самочувствие и настроение', n: 6, mean: 3, usual: 6, side: 'worse', count: 6 },
+      { kind: 'scale', part: 'evening', label: 'самочувствие и настроение', n: 6, mean: 3, usual: 6, side: 'worse', count: 6 },
       { kind: 'scale', part: 'evening', label: 'продуктивность', n: 6, mean: 6, usual: 6, side: 'same', count: 0 },
     ])
   })
@@ -450,7 +569,7 @@ describe('chain — что обычно шло следом', () => {
     const c = chain(h, top(h), [sport, quit], { sport: entries }, TODAY)!
     const day = c.rows.filter((r) => r.part === 'day')
     expect(day).toHaveLength(1)
-    expect(day[0]).toMatchObject({ kind: 'habit', label: 'Спорт', hits: 1, known: 6, same: false })
+    expect(day[0]).toMatchObject({ kind: 'habit', label: 'Спорт', hits: 1, known: 6, side: 'worse' })
     expect((day[0] as { usualShare: number }).usualShare).toBeGreaterThan(0.75)
   })
 
@@ -516,7 +635,51 @@ describe('chain — что обычно шло следом', () => {
     const late = { ...sport, startDate: h[10]!.day }
     const all: EntryMap = Object.fromEntries(h.slice(0, -1).map((d) => [d.day, 1]))
     const row = chain(h, top(h), [late], { sport: all }, TODAY)!.rows.find((r) => r.part === 'day')!
-    expect(row).toMatchObject({ hits: 5, known: 5, usualShare: 1, same: true })
+    expect(row).toMatchObject({ hits: 5, known: 5, usualShare: 1, side: 'same' })
+  })
+
+  it('привычка: разница долей 0,2 — как обычно, 0,3 — уже нет', () => {
+    const h = bad()
+    const after6 = h.flatMap((d, i) => (after(i) ? [d.day] : []))
+    // обычно — всегда; после алкоголя — 5 из 6 (0,83: разница 0,17) и 4 из 6 (0,67: разница 0,33)
+    const marks = (skip: number) => Object.fromEntries(h.slice(0, -1).filter((d) => !after6.slice(0, skip).includes(d.day)).map((d) => [d.day, 1]))
+    const row = (skip: number) => chain(h, top(h), [sport], { sport: marks(skip) }, TODAY)!.rows.find((r) => r.part === 'day')!
+    expect(row(1)).toMatchObject({ hits: 5, side: 'same' })
+    expect(row(2)).toMatchObject({ hits: 4, side: 'worse' })
+  })
+
+  it('строки меньше чем по 3 дням — «мало дней», а не отличие', () => {
+    // связь по продуктивности; утра после записаны только дважды; привычка начата к последнему эпизоду
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? ['алкоголь'] : [],
+      prod: after(i) ? 2 : 6,
+      e: after(i) ? 3 : 6,
+      m: after(i) ? (i === 3 || i === 12 ? 2 : null) : 6,
+    }))
+    const t = links(h, 'productivity').cards[0]!
+    const fresh = { ...sport, startDate: h[47]!.day }
+    const c = chain(h, t, [fresh], { sport: { [h[48]!.day]: 1 } }, TODAY)!
+    expect(c.rows.filter((r) => r.part === 'morning').every((r) => r.kind === 'scale' && r.side === 'few')).toBe(true)
+    expect(c.rows.find((r) => r.part === 'day')).toMatchObject({ side: 'few' })
+  })
+
+  it('сегодняшний день, который ещё идёт, — не эпизод и не «утро не отмечено»', () => {
+    // вчера вечером алкоголь, сегодня ни утра, ни вечера
+    const h = bad().map((d, i) => (i === 54 ? { ...d, tags: ['алкоголь'] } : i === 55 ? { ...d, morning: null, started: false, evening: null, tags: [] } : d))
+    const c = chain(h, top(h), [], {}, TODAY)!
+    expect(c).toMatchObject({ episodes: 6, noMorning: 0 })
+    expect(c.days).not.toContain(h[55]!.day)
+  })
+
+  it('сравнение: сон 4 — плохая ночь; после незакрытого вечера — не в счёт', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 9 === 2 ? ['алкоголь'] : [],
+      sleep: after(i) ? 3 : i % 9 === 6 ? 4 : 7,
+      m: after(i) ? 3 : 6,
+      e: after(i) ? 3 : i === 14 ? null : i % 9 === 6 ? 5 : 6,
+    }))
+    // плохие ночи без алкоголя: 6, 15, 24, 33, 42, 51 — у 15 вечер накануне не закрыт
+    expect(chain(h, top(h), [], {}, TODAY)!.compare).toEqual({ n: 5, evening: 5 })
   })
 
   it('плохих ночей без фактора меньше трёх — сравнения нет', () => {
@@ -533,5 +696,21 @@ describe('chain — что обычно шло следом', () => {
     const h = hist(LINK_DAYS, (i) => ({ tags: i % 7 === 2 ? ['алкоголь'] : [], m: after(i, 7) ? 3 : 6, e: after(i, 7) ? 3 : 6 }))
     expect(top(h).level).toBe('notable')
     expect(chain(h, top(h), [], {}, TODAY)!.level).toBe('notable')
+  })
+
+  it('уверенность — по самому слабому звену: связь ●●○, а вечер после известен 6 раз — ●○○', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: i % 7 === 2 ? ['алкоголь'] : [],
+      m: after(i, 7) ? 3 : 6,
+      e: i === 10 || i === 17 ? null : after(i, 7) ? 3 : 6,
+    }))
+    expect(top(h).level).toBe('notable')
+    expect(chain(h, top(h), [], {}, TODAY)!.level).toBe('maybe')
+  })
+
+  it('вечер после хуже только у половины эпизодов — это не связь, цепочки нет', () => {
+    let n = 0
+    const h = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? ['алкоголь'] : [], m: after(i) ? 3 : 6, e: after(i) ? (n++ % 2 ? 6.5 : 1) : 6 }))
+    expect(chain(h, top(h), [], {}, TODAY)).toBeNull()
   })
 })

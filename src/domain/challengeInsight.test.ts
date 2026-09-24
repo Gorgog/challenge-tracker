@@ -60,13 +60,28 @@ describe('challengeInsight — прогресс', () => {
     const done = { ...sport, startDate: '2026-08-01', lengthDays: 10 }
     expect(challengeInsight(done, {}, hist(), TODAY)).toMatchObject({ day: 10, of: 10, ended: true })
   })
+
+  it('сегодня — последний день срока: ещё не закончен', () => {
+    const last = { ...sport, startDate: dayKey(addDays(TODAY, -9)), lengthDays: 10 }
+    expect(challengeInsight(last, {}, hist(), TODAY)).toMatchObject({ day: 10, of: 10, ended: false })
+  })
 })
 
 describe('challengeInsight — привычка: тест плохого утра', () => {
   it('пропуски — в тяжёлые утра: сравнение нечестное, числа утр', () => {
     const h = hist((i) => ({ m: i % 4 === 0 ? 3 : 7 }))
     const r = challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY)
-    expect(r.habit).toMatchObject({ misses: 14, done: 41, enough: true, unfair: true, mornings: { miss: 3, hit: 7 } })
+    expect(r.habit).toMatchObject({ misses: 14, done: 41, enough: true, morningsWorse: true, unfair: true, mornings: { miss: 3, hit: 7 } })
+  })
+
+  it('разница утр ровно 0,7 на экране — уже нечестно (сравниваются видимые числа)', () => {
+    const h = hist((i) => ({ m: i % 4 === 0 ? 4.4 : 5.1 }))
+    expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit).toMatchObject({ mornings: { miss: 4.4, hit: 5.1 }, morningsWorse: true, unfair: true })
+  })
+
+  it('пропусков много, а выполнений 4 — ещё рано', () => {
+    const done4 = (i: number) => ![11, 21, 31, 41].includes(i)
+    expect(challengeInsight(sport, marks(done4), hist(), TODAY).habit).toMatchObject({ done: 4, enough: false })
   })
 
   it('сравнение — только за последние 56 дней', () => {
@@ -82,7 +97,7 @@ describe('challengeInsight — привычка: тест плохого утр�
 
   it('утра в дни пропусков такие же — честно', () => {
     const r = challengeInsight(sport, marks((i) => i % 4 === 0), hist(), TODAY)
-    expect(r.habit).toMatchObject({ enough: true, unfair: false, mornings: { miss: 6, hit: 6 } })
+    expect(r.habit).toMatchObject({ enough: true, morningsWorse: false, unfair: false, mornings: { miss: 6, hit: 6 } })
   })
 
   it('разница утр меньше 0,7 — ещё честно', () => {
@@ -92,7 +107,7 @@ describe('challengeInsight — привычка: тест плохого утр�
 
   it('утр в дни пропусков меньше трёх — проверить нельзя', () => {
     const h = hist((i) => ({ m: i % 4 === 0 && i > 4 ? null : 6 }))
-    expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit).toMatchObject({ unfair: null, mornings: null })
+    expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit).toMatchObject({ morningsWorse: null, unfair: null, mornings: null })
   })
 
   it('«чаще пропуск после»: тег прошлого вечера в дни пропуска — от 3 раз и вдвое чаще', () => {
@@ -105,7 +120,18 @@ describe('challengeInsight — привычка: тест плохого утр�
         'встречи',
       ],
     }))
-    expect(challengeInsight(sport, marks(miss), h, TODAY).habit!.after).toEqual([{ tag: 'алкоголь', count: 4 }])
+    const r = challengeInsight(sport, marks(miss), h, TODAY).habit!
+    expect(r.after).toEqual([{ tag: 'алкоголь', count: 4 }])
+    // утра те же, но пропуски шли после алкоголя — сравнивать «с / без» тоже нечестно (методика §4.2)
+    expect(r).toMatchObject({ morningsWorse: false, unfair: true })
+  })
+
+  it('«чаще пропуск после» — чаще встречавшиеся первыми', () => {
+    const h = hist((i) => ({ tags: [...([3, 7, 11].includes(i) ? ['дедлайн'] : []), ...([15, 19, 23, 27].includes(i) ? ['алкоголь'] : [])] }))
+    expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit!.after).toEqual([
+      { tag: 'алкоголь', count: 4 },
+      { tag: 'дедлайн', count: 3 },
+    ])
   })
 
   it('«чаще пропуск после» — только после закрытых вечеров', () => {
@@ -139,8 +165,13 @@ describe('startedTogether — одновременный старт', () => {
     const third = { ...sport, id: 'third', name: 'Третий день', startDate: '2026-01-04' }
     expect(startedTogether([sport, read, walk]).map((g) => g.map((c) => c.id))).toEqual([['sport', 'read']])
     expect(startedTogether([sport, third]).map((g) => g.map((c) => c.id))).toEqual([['sport', 'third']])
-    // цепочка 1 → 3 → 5: всё, что не дальше трёх дней от соседа, — вместе
-    expect(startedTogether([sport, read, far]).map((g) => g.map((c) => c.id))).toEqual([['sport', 'read', 'far']])
+    // «в пределах трёх дней» — от первого в группе, а не цепочкой соседей: 1, 3 и 5 января — не одна группа
+    expect(startedTogether([sport, read, far]).map((g) => g.map((c) => c.id))).toEqual([['sport', 'read']])
+    const every3 = [1, 4, 7, 10, 13].map((d) => ({ ...sport, id: `d${d}`, startDate: `2026-01-${String(d).padStart(2, '0')}` }))
+    expect(startedTogether(every3).map((g) => g.map((c) => c.id))).toEqual([
+      ['d1', 'd4'],
+      ['d7', 'd10'],
+    ])
     expect(startedTogether([sport, walk])).toEqual([])
   })
 })

@@ -8,6 +8,9 @@ import type { TimelineDay } from './timeline'
  * Приёмка связей по многим мирам (правило проекта: частоты, пороги заданы до прогона — план среза 2,
  * одобрен Georgy 24.09). Миры — 56 дней с фоном тегов, как в сиде `full`, пропусками утр (случайными и
  * в плохие дни) и незакрытыми вечерами. Порог не подбирается под зерно: упало — выяснять причину.
+ * После ревью (24.09): в нулевых мирах — и «любая показанная связь не больше 10 % просмотров» (решение
+ * Georgy), и карточка алкоголя в мире «через выходные» — он тоже нулевой: без поправки на выходные карточка
+ * там была в 67 % миров, а метрика «без оговорки» этого не видела.
  */
 
 const WORLDS = 500
@@ -72,7 +75,7 @@ const isDrink = (l: Link) => l.factor.kind === 'tag' && l.factor.tag === 'алк
 function run(offset: number, s: Scenario) {
   let card = 0
   let cardPlain = 0
-  let anyCard = 0
+  let anyShown = 0
   let shown = 0
   let eligible = 0
   for (let k = 0; k < WORLDS; k++) {
@@ -81,26 +84,28 @@ function run(offset: number, s: Scenario) {
     const c = r.cards.find(isDrink)
     if (c) card++
     if (c && !c.otherwise) cardPlain++
-    if (r.cards.length) anyCard++
+    if (r.cards.length || r.night) anyShown++
     if (drink.withN >= 8) {
       eligible++
       if (drink.level === 'maybe' || drink.level === 'notable') shown++
     }
   }
-  return { card: card / WORLDS, cardPlain: cardPlain / WORLDS, anyCard: anyCard / WORLDS, shown: eligible ? shown / eligible : 0, eligible }
+  return { card: card / WORLDS, cardPlain: cardPlain / WORLDS, anyShown: anyShown / WORLDS, shown: eligible ? shown / eligible : 0, eligible }
 }
 
 describe('связи — приёмка по мирам', () => {
-  it('нулевой мир, будничный тег при лучших выходных: карточка алкоголя — не больше 10 % миров', () => {
+  it('нулевой мир, будничный тег при лучших выходных: карточка алкоголя и любая связь — не больше 10 % миров', () => {
     const r = run(100_000, { drink: { weekday: 0.25, friSat: 0, sun: 0 }, effect: 0, weekendShift: 1 })
     console.log('нулевой, будни:', r)
     expect(r.card).toBeLessThanOrEqual(0.1)
+    expect(r.anyShown).toBeLessThanOrEqual(0.1)
   })
 
-  it('нулевой мир, тег выходных: карточка алкоголя — не больше 10 % миров', () => {
-    const r = run(200_000, { drink: { weekday: 0.1, friSat: 0.35, sun: 0.1 }, effect: 0, weekendShift: 0 })
+  it('нулевой мир, тег выходных при худших выходных: карточка алкоголя и любая связь — не больше 10 % миров', () => {
+    const r = run(500_000, { drink: { weekday: 0.1, friSat: 0.35, sun: 0.1 }, effect: 0, weekendShift: -1.5 })
     console.log('нулевой, выходные:', r)
     expect(r.card).toBeLessThanOrEqual(0.1)
+    expect(r.anyShown).toBeLessThanOrEqual(0.1)
   })
 
   it('эффект −2 к утру, 8+ эпизодов: ●○○ и выше — не меньше 70 % миров', () => {
@@ -110,9 +115,11 @@ describe('связи — приёмка по мирам', () => {
     expect(r.shown).toBeGreaterThanOrEqual(0.7)
   })
 
-  it('«эффект» −2 только через выходные: карточка без «может быть иначе» — не больше 10 % миров', () => {
+  it('«эффект» −2 только через выходные: карточка алкоголя, с оговоркой или без, и любая связь — не больше 10 % миров', () => {
     const r = run(400_000, { drink: { weekday: 0, friSat: 0.6, sun: 0 }, effect: 0, weekendShift: -2 })
     console.log('через выходные:', r)
     expect(r.cardPlain).toBeLessThanOrEqual(0.1)
+    expect(r.card).toBeLessThanOrEqual(0.1)
+    expect(r.anyShown).toBeLessThanOrEqual(0.1)
   })
 })

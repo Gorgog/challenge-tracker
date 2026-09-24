@@ -95,18 +95,20 @@ describe('ChallengesInsight — прогресс, потом честность 
     Object.assign(mocked, { entries: { sport: marks(29, miss) }, ...world(miss) })
     show()
     expect(
-      within(card('Спорт')).getByText('Сравнивать пока рано: пропусков 4, нужно 5. И смотри: пропуски пришлись на утра хуже (3,0 против 7,0) — простое «с ним лучше» будет нечестным.'),
+      within(card('Спорт')).getByText(
+        'Сравнивать пока рано: за 8 недель пропусков 4, нужно 5. И смотри: пропуски пришлись на утра хуже (3,0 против 7,0) — простое «с ним лучше» будет нечестным.',
+      ),
     ).toBeInTheDocument()
   })
 
   it('пропусков нет или выполнений нет — сравнить не с чем', () => {
     Object.assign(mocked, { entries: { sport: marks(29, () => false) }, ...world(() => false) })
     const { unmount } = show()
-    expect(within(card('Спорт')).getByText('Пропусков нет — сравнить не с чем.')).toBeInTheDocument()
+    expect(within(card('Спорт')).getByText('За 8 недель пропусков нет — сравнить не с чем.')).toBeInTheDocument()
     unmount()
     mocked.entries = { sport: {} }
     show()
-    expect(within(card('Спорт')).getByText('Выполнений пока нет — сравнить не с чем.')).toBeInTheDocument()
+    expect(within(card('Спорт')).getByText('За 8 недель выполнений нет — сравнить не с чем.')).toBeInTheDocument()
   })
 
   it('честно — так и сказано, числа влияния — позже', () => {
@@ -114,14 +116,33 @@ describe('ChallengesInsight — прогресс, потом честность 
     Object.assign(mocked, world(() => false))
     mocked.entries = { sport: marks(29, miss) }
     show()
-    expect(within(card('Спорт')).getByText(/Пропуски не совпадают с тяжёлыми утрами — сравнение будет честным/)).toBeInTheDocument()
+    expect(
+      within(card('Спорт')).getByText(/Пропуски не совпадают ни с тяжёлыми утрами, ни с вечерами накануне — сравнение будет честным/),
+    ).toBeInTheDocument()
   })
 
   it('«чаще пропуск после» — теги прошлого вечера', () => {
     const miss = (b: number) => b % 4 === 0
     Object.assign(mocked, world(() => false, (b) => (miss(b - 1) && b < 20 ? ['алкоголь'] : [])))
     show()
-    expect(within(card('Спорт')).getByText('Чаще пропуск после: «алкоголь» (4).')).toBeInTheDocument()
+    const c = card('Спорт')
+    expect(within(c).getByText('Чаще пропуск после: «алкоголь» (4).')).toBeInTheDocument()
+    // утра те же, но пропуски шли после алкоголя — «честным» не пишем
+    expect(within(c).getByText('Сравнить честно пока нельзя: пропуски чаще шли после некоторых вечеров.')).toBeInTheDocument()
+    expect(within(c).queryByText(/будет честным/)).not.toBeInTheDocument()
+  })
+
+  it('утр записано мало — так и сказано', () => {
+    mocked.starts = mocked.starts.map((s) => ({ ...s, morning: null }))
+    show()
+    expect(within(card('Спорт')).getByText('Утр записано мало — проверить, честно ли сравнение, пока нельзя.')).toBeInTheDocument()
+  })
+
+  it('срок вышел — «срок … ✓»', () => {
+    mocked.challenges = [{ ...base, startDate: key(40), lengthDays: 10 }]
+    mocked.entries = {}
+    show()
+    expect(within(card('Спорт')).getByText('срок 10 дней ✓')).toBeInTheDocument()
   })
 
   it('на паузе — так и сказано, день — без дней паузы', () => {
