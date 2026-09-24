@@ -26,7 +26,11 @@ function progressText(c: Challenge, r: Insight): string {
 function habitText(h: HabitInsight): string[] {
   const out: string[] = []
   const m = h.mornings
-  if (!h.enough) {
+  if (h.misses === 0) {
+    out.push('Пропусков нет — сравнить не с чем.')
+  } else if (h.done === 0) {
+    out.push('Выполнений пока нет — сравнить не с чем.')
+  } else if (!h.enough) {
     const lack = h.misses < LINK_MIN ? `пропусков ${h.misses}` : `выполнений ${h.done}`
     let s = `Сравнивать пока рано: ${lack}, нужно ${LINK_MIN}.`
     if (h.unfair && m) s += ` И смотри: пропуски пришлись на утра хуже (${num1(m.miss)} против ${num1(m.hit)}) — простое «с ним лучше» будет нечестным.`

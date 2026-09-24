@@ -67,7 +67,8 @@ function habitInsight(c: Challenge, entries: EntryMap, history: TimelineDay[], t
       count: missPrev.filter((x) => x.prev!.tags.includes(tag)).length,
       rest: hitPrev.filter((x) => x.prev!.tags.includes(tag)).length,
     }))
-    .filter((t) => t.count >= AFTER_MIN && (!hitPrev.length || t.count / missPrev.length >= (AFTER_RATIO * t.rest) / hitPrev.length))
+    /* выполнений мало — «чаще» не с чем сравнить: без них в список попал бы любой частый тег */
+    .filter((t) => hitPrev.length >= LINK_MIN && t.count >= AFTER_MIN && t.count / missPrev.length >= (AFTER_RATIO * t.rest) / hitPrev.length)
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'ru'))
     .map(({ tag, count }) => ({ tag, count }))
 

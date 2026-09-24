@@ -49,7 +49,7 @@ export function ChainSheet({
                     <tr key={`${r.part}:${r.label}`} className={c.same ? 'text-muted-foreground' : ''}>
                       <td className="w-[4.5em] py-1 align-top text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">{first ? PART[r.part] : ''}</td>
                       <td className="py-1 align-top">{r.label}</td>
-                      <td className="py-1 text-right align-top font-mono">{c.value}</td>
+                      <td className="py-1 text-right align-top font-mono whitespace-nowrap">{c.value}</td>
                       <td className="py-1 pl-2 align-top text-[12px] text-muted-foreground">{c.note}</td>
                     </tr>
                   )
