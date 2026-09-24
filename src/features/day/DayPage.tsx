@@ -34,6 +34,7 @@ import {
 import { DOW_FULL, dayKey, formatHuman, isoDow, parseDay, todayKey } from '@/domain/date'
 import { onDay } from '@/domain/challenges'
 import { dayStage, morningOpen } from '@/domain/dayStart'
+import { clockText, usualNight } from '@/domain/night'
 import { unratedDays } from '@/domain/stats'
 import { currentStreak, dayOutcome } from '@/domain/streaks'
 import {
@@ -322,6 +323,11 @@ export function DayPage() {
               : 'Утро без оценок'}
           </p>
         )}
+        {todayStart?.morning?.night && (
+          <p className="text-[12.5px] text-muted-foreground">
+            {`Ночь: лёг ${clockText(todayStart.morning.night.bed)} · встал ${clockText(todayStart.morning.night.wake)}`}
+          </p>
+        )}
       </div>
 
       <div className="relative">
@@ -485,6 +491,8 @@ export function DayPage() {
         <DayStartDialog
           open
           day={todayK}
+          usual={usualNight(starts, todayK)}
+          now={now}
           onStart={(morning) => start(morning)}
           onSkip={() => start(null)}
           onCancel={() => setStartOpen(false)}

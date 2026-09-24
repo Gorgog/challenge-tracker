@@ -9,7 +9,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
+import { clockText, minutesOf, nightProblem, type UsualNight } from '@/domain/night'
 import type { Morning } from '@/domain/types'
+import { NightTime, type NightAnswer } from './NightTime'
 import { ScoreScale, type Scale } from './ScoreScale'
 
 type MorningField = Exclude<keyof Morning, 'night'>
@@ -26,10 +28,16 @@ const SCALES: (Scale & { field: MorningField })[] = [
 
 type Draft = Record<MorningField, number | null>
 
+const NONE: NightAnswer = { value: null, how: null }
+
 export type DayStartDialogProps = {
   open: boolean
   /** Ключ дня `YYYY-MM-DD`. */
   day: string
+  /** Обычный отбой и подъём (`usualNight`); null — ответов пока мало, только точное время. */
+  usual: UsualNight
+  /** Часы страницы: подъём позже этого времени не записать. */
+  now: Date
   onStart: (morning: Morning) => void
   /** Пропустить утро: день начнётся без оценок. */
   onSkip: () => void
@@ -38,17 +46,27 @@ export type DayStartDialogProps = {
 }
 
 /**
- * Начало дня: сон, самочувствие и настроение до дел дня — база, с которой сравнится вечер.
- * Утро записывается один раз: поправить его нельзя (решение Georgy от 21.09).
+ * Начало дня: ночь (лёг, встал), сон, самочувствие и настроение до дел дня — база, с которой сравнится
+ * вечер. Ночь — над оценками, по порядку событий. Утро записывается один раз: поправить его нельзя
+ * (решение Georgy от 21.09).
  */
-export function DayStartDialog({ open, day, onStart, onSkip, onCancel }: DayStartDialogProps) {
+export function DayStartDialog({ open, day, usual, now, onStart, onSkip, onCancel }: DayStartDialogProps) {
   const [scores, setScores] = useState<Draft>({ sleep: null, wellbeing: null, mood: null })
-  const ready = SCALES.every((s) => scores[s.field] !== null)
+  const [bed, setBed] = useState<NightAnswer>(NONE)
+  const [wake, setWake] = useState<NightAnswer>(NONE)
+  const nowMin = minutesOf(now)
+  const problem = nightProblem({ bed: bed.value, wake: wake.value }, nowMin)
+  const ready = SCALES.every((s) => scores[s.field] !== null) && bed.how !== null && wake.how !== null && problem === null
   const date = parseDay(day)
 
   const start = () => {
     if (!ready) return
-    onStart({ sleep: scores.sleep!, wellbeing: scores.wellbeing!, mood: scores.mood! })
+    onStart({
+      sleep: scores.sleep!,
+      wellbeing: scores.wellbeing!,
+      mood: scores.mood!,
+      night: { bed: bed.value!, wake: wake.value!, bedHow: bed.how!, wakeHow: wake.how! },
+    })
   }
 
   return (
@@ -66,6 +84,23 @@ export function DayStartDialog({ open, day, onStart, onSkip, onCancel }: DayStar
           </DialogDescription>
         </DialogHeader>
 
+        <NightTime label="Лёг" kind="bed" answer={bed} usual={usual.bed} nowMin={nowMin} onChange={setBed} />
+        <NightTime label="Встал" kind="wake" answer={wake} usual={usual.wake} nowMin={nowMin} onChange={setWake} />
+        {usual.bed === null && usual.wake === null && (
+          <span className="-mt-2 text-[11.5px] text-muted-foreground">
+            Кнопка «как обычно» появится после трёх утр с этими ответами.
+          </span>
+        )}
+        {problem && (
+          <p role="alert" className="-mt-2 text-[12.5px] text-worse">
+            {problem === 'future'
+              ? `Встал в ${clockText(wake.value!)} — это время ещё не наступило.`
+              : 'Лёг позже, чем встал, — проверь время.'}
+          </p>
+        )}
+
+        <hr className="border-border" />
+
         {SCALES.map((scale) => (
           <ScoreScale
             key={scale.field}
@@ -77,7 +112,7 @@ export function DayStartDialog({ open, day, onStart, onSkip, onCancel }: DayStar
 
         <DialogFooter className="items-center sm:justify-between">
           <span className="max-w-[250px] text-[11.5px] text-muted-foreground">
-            Оценки нужны все три — или пропусти утро: день начнётся без них.
+            Нужны все пять ответов — или пропусти утро: день начнётся без них.
           </span>
 
           <span className="flex gap-2">

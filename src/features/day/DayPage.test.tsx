@@ -87,10 +87,10 @@ const markButton = () => screen.getByRole('button', { name: /отметить/i 
 const pageStart = () => screen.getAllByRole('button', { name: 'Начать день' })[0]!
 
 /** Ночь полями (лёг 23:30, встал 7:40), три утренние оценки с клавиатуры (с пятёрки на шестёрку) — и начать день. */
-async function fillMorning(user: ReturnType<typeof userEvent.setup>) {
+async function fillMorning(user: ReturnType<typeof userEvent.setup>, night = { bed: '23:30', wake: '07:40' }) {
   const dialog = screen.getByRole('dialog')
-  fireEvent.change(within(dialog).getByLabelText('Лёг, точное время'), { target: { value: '23:30' } })
-  fireEvent.change(within(dialog).getByLabelText('Встал, точное время'), { target: { value: '07:40' } })
+  fireEvent.change(within(dialog).getByLabelText('Лёг, точное время'), { target: { value: night.bed } })
+  fireEvent.change(within(dialog).getByLabelText('Встал, точное время'), { target: { value: night.wake } })
   for (const name of [/сон/i, /самочувствие/i, /настроение/i]) {
     within(dialog).getByRole('slider', { name }).focus()
     await user.keyboard('{ArrowRight}')
@@ -408,7 +408,8 @@ describe('экран дня — начало дня без ловушек', () =
     await user.click(pageStart())
     // страница может сначала догнать новый день — тогда окно открывается вторым нажатием
     if (!screen.queryByRole('dialog')) await user.click(pageStart())
-    await fillMorning(user)
+    /* в 0:10 подъём в 7:40 ещё не наступил — ночь, какая бывает после полуночи */
+    await fillMorning(user, { bed: '23:00', wake: '00:05' })
 
     expect(mocked.startDay).toHaveBeenCalledWith(expect.objectContaining({ day: '2026-09-22' }), expect.anything())
     expect(mocked.startDay).not.toHaveBeenCalledWith(expect.objectContaining({ day: TODAY }), expect.anything())
