@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -86,9 +86,11 @@ const at = (hour: number, minute = 0) => vi.setSystemTime(new Date(2026, 8, 21, 
 const markButton = () => screen.getByRole('button', { name: /отметить/i })
 const pageStart = () => screen.getAllByRole('button', { name: 'Начать день' })[0]!
 
-/** Выставить три утренние оценки с клавиатуры (с пятёрки на шестёрку) и начать день в окне. */
+/** Ночь полями (лёг 23:30, встал 7:40), три утренние оценки с клавиатуры (с пятёрки на шестёрку) — и начать день. */
 async function fillMorning(user: ReturnType<typeof userEvent.setup>) {
   const dialog = screen.getByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Лёг, точное время'), { target: { value: '23:30' } })
+  fireEvent.change(within(dialog).getByLabelText('Встал, точное время'), { target: { value: '07:40' } })
   for (const name of [/сон/i, /самочувствие/i, /настроение/i]) {
     within(dialog).getByRole('slider', { name }).focus()
     await user.keyboard('{ArrowRight}')
@@ -285,9 +287,28 @@ describe('экран дня — пока день не начат', () => {
     await fillMorning(user)
 
     expect(mocked.startDay).toHaveBeenCalledWith(
-      { day: TODAY, morning: { sleep: 6, wellbeing: 6, mood: 6 }, startedAt: expect.any(String) },
+      {
+        day: TODAY,
+        morning: { sleep: 6, wellbeing: 6, mood: 6, night: { bed: -30, wake: 460, bedHow: 'exact', wakeHow: 'exact' } },
+        startedAt: expect.any(String),
+      },
       expect.anything(),
     )
+  })
+
+  it('«как обычно» — из своих прошлых утр: середина ответов за 14 дней', async () => {
+    const night = (bed: number, wake: number) => ({ bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const })
+    mocked.starts = [
+      { day: '2026-09-18', morning: { sleep: 7, wellbeing: 6, mood: 6, night: night(-40, 450) }, startedAt: '2026-09-18T05:00:00.000Z' },
+      { day: '2026-09-19', morning: { sleep: 7, wellbeing: 6, mood: 6, night: night(-30, 460) }, startedAt: '2026-09-19T05:00:00.000Z' },
+      { day: '2026-09-20', morning: { sleep: 7, wellbeing: 6, mood: 6, night: night(20, 500) }, startedAt: '2026-09-20T05:00:00.000Z' },
+    ]
+    const user = userEvent.setup()
+    render(<DayPage />)
+    await user.click(pageStart())
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /лёг как обычно/i })).toHaveTextContent('23:30')
+    expect(within(dialog).getByRole('button', { name: /встал как обычно/i })).toHaveTextContent('7:40')
   })
 
   it('«Пропустить утро» начинает день без оценок', async () => {
@@ -482,6 +503,18 @@ describe('экран дня — день начат', () => {
     mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 5 })]
     render(<DayPage />)
     expect(screen.getByText('Утро: сон 7 · самочувствие 6 · настроение 5')).toBeInTheDocument()
+  })
+
+  it('под утром — ночь, если записана', () => {
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 5, night: { bed: 30, wake: 460, bedHow: 'exact', wakeHow: 'usual' } })]
+    render(<DayPage />)
+    expect(screen.getByText('Ночь: лёг 00:30 · встал 7:40')).toBeInTheDocument()
+  })
+
+  it('утро без ночи — строки ночи нет', () => {
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 5 })]
+    render(<DayPage />)
+    expect(screen.queryByText(/Ночь:/)).toBeNull()
   })
 
   it('утро пропущено — так и сказано', () => {
