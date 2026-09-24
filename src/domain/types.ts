@@ -69,8 +69,20 @@ export type DayLog = {
   closedAt: string | null
 }
 
-/** Утренние оценки 0–10 — сон, самочувствие и настроение до дел дня. */
-export type Morning = { sleep: number; wellbeing: number; mood: number }
+/** Как дан ответ о ночи: кнопкой «как обычно» или точным временем. */
+export type NightHow = 'usual' | 'exact'
+
+/**
+ * Ночь перед утром — минуты от полуночи этого дня: лёг в 23:30 = −30, в 01:20 = 80; встал в 7:40 = 460.
+ * Одна ось для обоих: длина ночи — `wake − bed`, середина ответов считается без перехода через полночь.
+ */
+export type Night = { bed: number; wake: number; bedHow: NightHow; wakeHow: NightHow }
+
+/**
+ * Утренние оценки 0–10 — сон, самочувствие и настроение до дел дня. `night` нет или null — время сна
+ * не записано (утра до 25.09 и сиды без него).
+ */
+export type Morning = { sleep: number; wellbeing: number; mood: number; night?: Night | null }
 
 /**
  * Начало дня — отдельная запись: утро измерено до сегодняшних дел и служит базой дня.
