@@ -188,8 +188,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
         .sort((a, b) => a.day.localeCompare(b.day))
     },
     async createChallenge(draft) {
-      /* то же правило, что держит база: цель «Время» — целые минуты в границах ночи */
-      if (draft.measure === 'bedtime' && !validBedtimeGoal(draft.goal)) throw new Error('Время отбоя записано неверно')
+      /* то же правило, что держит база: «Время» — только у привычки, цель — целые минуты в границах ночи */
+      if (draft.measure === 'bedtime' && (!validBedtimeGoal(draft.goal) || draft.kind !== 'do')) throw new Error('Время отбоя записано неверно')
       const created: Challenge = { ...draft, tagIds: [...draft.tagIds], id: `ch-${++lastId}` }
       challenges.push(created)
       entries[created.id] = {}
@@ -200,7 +200,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       const index = challenges.findIndex((c) => c.id === id)
       if (index < 0) return
       const next = applyPatch(challenges[index]!, patch)
-      if (next.measure === 'bedtime' && !validBedtimeGoal(next.goal)) throw new Error('Время отбоя записано неверно')
+      if (next.measure === 'bedtime' && (!validBedtimeGoal(next.goal) || next.kind !== 'do')) throw new Error('Время отбоя записано неверно')
       challenges[index] = next
       persist()
     },

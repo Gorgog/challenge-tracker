@@ -203,6 +203,8 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         for (const goal of [-721, 720, 10.5]) {
           await expect(r.createChallenge(draft({ measure: 'bedtime', goal, unit: '' }))).rejects.toThrow()
         }
+        // время отбоя — только у привычки
+        await expect(r.createChallenge(draft({ kind: 'quit', measure: 'bedtime', goal: -30, unit: '' }))).rejects.toThrow()
         expect(await r.listChallenges()).toEqual([])
       }, t)
 
