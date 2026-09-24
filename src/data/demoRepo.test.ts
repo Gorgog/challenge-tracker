@@ -29,9 +29,9 @@ function fakeStorage(): Storage {
 }
 
 describe('демо-репозиторий: челленджи', () => {
-  it('отдаёт шесть челленджей прототипа', async () => {
+  it('отдаёт шесть челленджей прототипа и «Ложусь раньше» (срез 4б)', async () => {
     const codes = (await repo().listChallenges()).map((c) => c.code)
-    expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ'])
+    expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ', 'ЛЖР'])
   })
 
   it('среди них есть и привычки, и отказы — это разные сущности', async () => {
@@ -198,7 +198,7 @@ describe('createChallenge', () => {
     expect(created.id).toBeTruthy()
 
     const list = await r.listChallenges()
-    expect(list).toHaveLength(7)
+    expect(list).toHaveLength(8)
     expect(list.find((c) => c.id === created.id)?.name).toBe('Без кофе')
   })
 
@@ -340,7 +340,7 @@ describe('хранение между перезагрузками', () => {
     storage.setItem('tabel-demo', '{это не json')
 
     const list = await withStorage(storage).listChallenges()
-    expect(list).toHaveLength(6)
+    expect(list).toHaveLength(7)
   })
 
   it('недоступное хранилище не мешает работать в памяти', async () => {
@@ -664,7 +664,7 @@ describe('демо «Выход из выгорания» — 30 дней', () =
 
   it('без выбора сценария — полное демо, как раньше', async () => {
     const codes = (await repo().listChallenges()).map((c) => c.code)
-    expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ'])
+    expect(codes).toEqual(['ОТЖ', 'БСГ', 'ЧТН', 'ШАГ', 'БСХ', 'АНГ', 'ЛЖР'])
   })
 })
 

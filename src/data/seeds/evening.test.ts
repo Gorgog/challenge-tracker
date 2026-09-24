@@ -24,7 +24,10 @@ function fingerprint(text: string): string {
 
 async function evening(scenario: DemoScenario, seed: number): Promise<string> {
   const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario })
-  const [challenges, entries, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
+  const [all, stored, logs] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayLogs()])
+  /* «Ложусь раньше» (срез 4б) — без своих отметок и случайных чисел: отпечаток — по остальным, он прежний */
+  const challenges = all.filter((c) => c.measure !== 'bedtime')
+  const entries = Object.fromEntries(Object.entries(stored).filter(([id]) => challenges.some((c) => c.id === id)))
   const past = Object.fromEntries(
     Object.entries(entries).map(([id, map]) => [
       id,
@@ -136,5 +139,19 @@ describe('ночь в демо', () => {
       const beds = (await mornings('burnout', seed)).flatMap((s) => (s.morning?.night ? [s.morning.night.bed] : []))
       expect(avg(beds.slice(0, 8)) - avg(beds.slice(-8)), String(seed)).toBeGreaterThanOrEqual(30)
     }
+  })
+})
+
+describe('«Ложусь раньше» в демо (срез 4б)', () => {
+  it.each(SEEDS)('full, зерно %s: челлендж «Время» есть, своих отметок у него нет — только ночи в утрах', async (seed) => {
+    const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'full' })
+    const [challenges, entries, starts] = await Promise.all([r.listChallenges(), r.listEntries(), r.listDayStarts()])
+    const bed = challenges.find((c) => c.measure === 'bedtime')!
+    expect(bed).toMatchObject({ name: 'Ложусь раньше', kind: 'do', goal: -30 })
+    expect(entries[bed.id] ?? {}).toEqual({})
+    // ночей хватает, чтобы было и «до 23:30», и «позже»
+    const beds = starts.filter((s) => s.day >= bed.startDate && s.morning?.night).map((s) => s.morning!.night!.bed)
+    expect(beds.some((b) => b <= bed.goal)).toBe(true)
+    expect(beds.some((b) => b > bed.goal)).toBe(true)
   })
 })

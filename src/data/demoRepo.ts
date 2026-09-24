@@ -37,7 +37,7 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 10
+const STORAGE_VERSION = 11
 
 /** Копия утра с ночью; утро без ночи — ночь null, как читает база. */
 const copyMorning = (m: Morning | null): Morning | null => (m ? { ...m, night: m.night ? { ...m.night } : null } : null)

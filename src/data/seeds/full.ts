@@ -41,6 +41,8 @@ const BLUEPRINT: Blueprint[] = [
   { id: 'step', code: 'ШАГ', name: '10 000 шагов', kind: 'do', measure: 'count', goal: 10000, unit: 'шагов', color: 'var(--chart-4)', tag: 'тело', lengthDays: null, sortOrder: 3, startsAgo: 81 },
   { id: 'sugar', code: 'БСХ', name: 'Без сахара', kind: 'quit', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-5)', tag: 'еда', lengthDays: null, sortOrder: 4, startsAgo: 42 },
   { id: 'eng', code: 'АНГ', name: 'Английский 30 минут', kind: 'do', measure: 'binary', goal: 1, unit: null, color: 'var(--chart-6)', tag: 'ум', lengthDays: null, sortOrder: 5, startsAgo: 112, pausedAgo: 25 },
+  /* «Ложусь раньше» (срез 4б): отметок нет — считается из ночей сида, случайных чисел не берёт, поток не сдвигается */
+  { id: 'bed', code: 'ЛЖР', name: 'Ложусь раньше', kind: 'do', measure: 'bedtime', goal: -30, unit: null, color: 'var(--chart-2)', tag: 'здоровье', lengthDays: null, sortOrder: 6, startsAgo: 28 },
 ]
 
 
