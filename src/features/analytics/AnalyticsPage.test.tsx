@@ -547,6 +547,48 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(screen.queryByText(/Отбой с/)).not.toBeInTheDocument()
   })
 
+  /** Ровный мир без тегов; поздние ночи (лёг в 1:00) — перед утрами 5, 13, 21 … 53 дней назад, сон после — 3. */
+  function lateWorld() {
+    const w = drinkWorld()
+    const late = (back: number) => back % 8 === 5
+    mocked.logs = w.logs.map((l) => ({ ...l, tags: [] }))
+    mocked.starts = w.starts.map((s) => {
+      const back = [...Array(60).keys()].find((b) => key(b) === s.day)!
+      return { ...s, morning: { sleep: late(back) ? 3 : 7, wellbeing: 6, mood: 6, night: late(back) ? night(60, 460) : night(-30, 460) } }
+    })
+  }
+
+  it('связь «поздний отбой → сон»: «Меньше», порог — тот же, что у ряда «лёг 00:30+»; карточка — с порогом', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    show()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    const box = links()
+    expect(within(box).getByText('Меньше')).toBeInTheDocument()
+    expect(within(box).getByText('Поздний отбой (с 00:30)')).toBeInTheDocument()
+    expect(within(box).getByText('Сон утром после позднего отбоя — 3,0, без — 7,0. Хуже в 7 из 7 раз.')).toBeInTheDocument()
+    expect(within(box).getByText('Смотрели 1 связь, заметных 1.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /ещё ряды/ }))
+    expect(within(chart()).getByText('лёг 00:30+')).toBeInTheDocument()
+    await user.click(within(box).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog', { name: 'После отбоя с 00:30 и позже сон обычно хуже' })
+    expect(within(dialog).getByText('после отбоя раньше 00:30 (48)')).toBeInTheDocument()
+    expect(within(dialog).getByText('после отбоя с 00:30 (7)')).toBeInTheDocument()
+  })
+
+  it('«Сон · Плохая ночь» — «Показать эти дни на графике» прямо в строке', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, drinkWorld())
+    const nights = [1, 9, 17, 25, 33, 41, 49].map(key)
+    mocked.logs = mocked.logs.map((l) => ({ ...l, tags: [], ...(nights.includes(l.day) ? { mood: 3, wellbeing: 3 } : {}) }))
+    mocked.starts = mocked.starts.map((s) => ({ ...s, morning: { sleep: nights.includes(s.day) ? 2 : 7, wellbeing: 6, mood: 6 } }))
+    show()
+    await user.click(within(links()).getByRole('button', { name: 'Показать эти дни на графике' }))
+    expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(4)
+    expect(screen.getByRole('status')).toHaveTextContent('Подсвечено 4 дня из 7 — остальные раньше')
+  })
+
   it('«Что обычно шло следом»: ночью — лёг, утром — встал, против обычного', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const w = drinkWorld()

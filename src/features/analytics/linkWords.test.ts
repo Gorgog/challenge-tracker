@@ -78,6 +78,30 @@ describe('linkWords — связь словами', () => {
   })
 })
 
+describe('linkWords — поздний отбой (срез 4)', () => {
+  const late: Link = { ...drink, factor: { kind: 'lateBed', from: 30 }, withN: 9, sameSide: 7, withMean: 5.2, withoutMean: 6.8 }
+
+  it('заголовок — с порогом, как ряд «лёг 00:30+»; строка — утро после поздней ночи', () => {
+    expect(linkTitle(late)).toBe('Поздний отбой (с 00:30)')
+    expect(linkTitle({ ...late, factor: { kind: 'lateBed', from: -15 } })).toBe('Поздний отбой (с 23:45)')
+    expect(linkLine(late, 'sleep')).toBe('Сон утром после позднего отбоя — 5,2, без — 6,8. Хуже в 7 из 9 раз.')
+    expect(linkLine(late, 'productivity')).toBe('Продуктивность на следующий день после позднего отбоя — 5,2, без — 6,8. Хуже в 7 из 9 раз.')
+  })
+
+  it('карточка связи: заголовок словами «Что изменилось» — «с 00:30 и позже»', () => {
+    expect(sheetTitle(late, 'sleep')).toBe('После отбоя с 00:30 и позже сон обычно хуже')
+    expect(sheetTitle(late, 'all')).toBe('После отбоя с 00:30 и позже самочувствие и настроение утром обычно хуже')
+    expect(sheetTitle(late, 'productivity')).toBe('После отбоя с 00:30 и позже продуктивность на следующий день обычно хуже')
+  })
+
+  it('«а может быть иначе» — вечер перед поздней ночью; «пока рано» — не зовём, это счётчик', () => {
+    expect(otherwiseText({ ...late, otherwise: { kind: 'tag', tag: 'алкоголь', together: 6, of: 9, diff: -0.9 } })).toBe(
+      'А может быть иначе: 6 из 9 раз это был ещё и вечер с «алкоголь». Без таких вечеров разница 0,9.',
+    )
+    expect(earlyNote({ ...late, level: 'early', withN: 2 })).toBe('Поздний отбой звать не будем — это просто счётчик.')
+  })
+})
+
 describe('caseLine — случаи без обобщения', () => {
   it('один, два и несколько случаев; целые — без запятой; сравнение — с другими вечерами, а не с полосой', () => {
     expect(caseLine({ tag: 'ссора', values: [3], days: [], usual: 7, missing: 0 }, 'sleep')).toBe(

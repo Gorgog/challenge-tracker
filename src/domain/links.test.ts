@@ -328,6 +328,78 @@ describe('links — плохая ночь → вечер того же дня', 
   })
 })
 
+describe('links — поздний отбой → утро (срез 4)', () => {
+  const lateLink = (list: Link[]) => list.find((l) => l.factor.kind === 'lateBed')
+  /** Каждые 7 дней с дня 3 — лёг в 1:00 (60), утро и сон 3; иначе 23:30 (−30), утро 6, сон 8. */
+  const lateNights = (len = LINK_DAYS) =>
+    hist(len, (i) => (i % 7 === 3 ? { bed: 60, sleep: 3, m: 3 } : { bed: -30, sleep: 8 }))
+
+  it('ночь с порога и позже → сон того же утра; «Меньше», как у вредного тега', () => {
+    const l = lateLink(links(lateNights(), 'sleep', 30).pairs)!
+    expect(l).toMatchObject({
+      factor: { kind: 'lateBed', from: 30 },
+      withN: 8,
+      withMean: 3,
+      withoutMean: 8,
+      level: 'notable',
+      direction: 'worse',
+      bucket: 'less',
+    })
+    // дни результата — утра после поздней ночи: их подсвечивает график
+    expect(l.withDays[0]).toBe(dayKey(addDays(TODAY, 3 - LINK_DAYS + 1)))
+  })
+
+  it('ровно порог — уже поздно, минутой раньше — ещё нет', () => {
+    const h = hist(LINK_DAYS, (i) => (i % 7 === 3 ? { bed: i < 30 ? 30 : 29, sleep: 3 } : { bed: -30, sleep: 8 }))
+    expect(lateLink(links(h, 'sleep', 30).pairs)!.withN).toBe(4)
+  })
+
+  it('порога нет (своего обычного ещё нет) — пары нет', () => {
+    expect(lateLink(links(lateNights(), 'sleep').pairs)).toBeUndefined()
+    expect(lateLink(links(lateNights(), 'sleep', null).pairs)).toBeUndefined()
+  })
+
+  it('по цели: утро (самочувствие, настроение), продуктивность — вечер того же дня', () => {
+    const h = hist(LINK_DAYS, (i) => (i % 7 === 3 ? { bed: 60, m: 3, prod: 2 } : { bed: -30, prod: 7 }))
+    expect(lateLink(links(h, 'mood', 30).pairs)).toMatchObject({ withMean: 3, withoutMean: 6 })
+    expect(lateLink(links(h, 'productivity', 30).pairs)).toMatchObject({ withMean: 2, withoutMean: 7 })
+  })
+
+  it('незаписанная ночь — ни «с», ни «без»; сегодняшнее утро, которого ещё нет, — тоже', () => {
+    const h = lateNights().map((d, i) => (i === 10 ? { ...d, morning: { ...d.morning!, night: null } } : d))
+    h[h.length - 1] = { ...h[h.length - 1]!, morning: null, started: false }
+    const l = lateLink(links(h, 'sleep', 30).pairs)!
+    // 55 ночей после вечеров окна (ночь перед первым утром — после вечера до окна), без двух незаписанных
+    expect(l.withN + l.withoutN).toBe(LINK_DAYS - 1 - 2)
+    expect(l.withN).toBe(7)
+  })
+
+  it('вечер накануне не закрыт — ночь всё равно считается: она записана утром', () => {
+    const h = lateNights().map((d, i) => (i === 2 ? { ...d, evening: null, tags: [] } : d))
+    expect(lateLink(links(h, 'sleep', 30).pairs)!.withN).toBe(8)
+  })
+
+  it('лучше после позднего — ведра нет: «ложись позже» не советуем', () => {
+    const h = hist(LINK_DAYS, (i) => (i % 7 === 3 ? { bed: 60, sleep: 9 } : { bed: -30, sleep: 5 }))
+    expect(lateLink(links(h, 'sleep', 30).pairs)).toMatchObject({ direction: 'better', bucket: null })
+  })
+
+  it('«а может быть иначе»: в 2/3 поздних ночей накануне был алкоголь', () => {
+    const h = hist(LINK_DAYS, (i) => ({
+      ...(i % 7 === 3 ? { bed: 60, sleep: 3 } : { bed: -30, sleep: 8 }),
+      tags: (i + 1) % 7 === 3 && i < 40 ? ['алкоголь'] : [],
+    }))
+    expect(lateLink(links(h, 'sleep', 30).pairs)!.otherwise).toMatchObject({ kind: 'tag', tag: 'алкоголь', together: 6, of: 8 })
+  })
+
+  it('в «Что попробовать» — наравне с тегами: одно «Меньше», сильнейшее; заметных — видимые', () => {
+    const r = links(lateNights(), 'sleep', 30)
+    expect(r.cards.map((c) => c.factor.kind)).toEqual(['lateBed'])
+    expect(r.found).toBe(1)
+    expect(r.checked).toBe(1)
+  })
+})
+
 describe('links — «а может быть иначе»', () => {
   it('другой тег в 2/3 вечеров с фактором — называется, разница без этих вечеров', () => {
     // дедлайн с алкоголем в 4 из 6 вечеров
