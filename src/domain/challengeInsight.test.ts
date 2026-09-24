@@ -117,6 +117,12 @@ describe('challengeInsight — привычка: тест плохого утр�
     expect(challengeInsight(sport, marks((i) => i % 4 === 0), h, TODAY).habit!.after).toEqual([{ tag: 'алкоголь', count: 4 }])
   })
 
+  it('выполнений меньше 5 — «чаще пропуск после» не с чем сравнить', () => {
+    const h = hist((i) => ({ tags: i % 2 ? ['алкоголь'] : [] }))
+    const few = (i: number) => ![10, 20, 30, 40].includes(i)
+    expect(challengeInsight(sport, marks(few), h, TODAY).habit).toMatchObject({ done: 4, after: [] })
+  })
+
   it('отказ — без сравнений', () => {
     const quit = { ...sport, kind: 'quit' as const }
     expect(challengeInsight(quit, {}, hist(), TODAY).habit).toBeNull()

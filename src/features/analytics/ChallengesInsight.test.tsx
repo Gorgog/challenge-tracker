@@ -99,6 +99,16 @@ describe('ChallengesInsight — прогресс, потом честность 
     ).toBeInTheDocument()
   })
 
+  it('пропусков нет или выполнений нет — сравнить не с чем', () => {
+    Object.assign(mocked, { entries: { sport: marks(29, () => false) }, ...world(() => false) })
+    const { unmount } = show()
+    expect(within(card('Спорт')).getByText('Пропусков нет — сравнить не с чем.')).toBeInTheDocument()
+    unmount()
+    mocked.entries = { sport: {} }
+    show()
+    expect(within(card('Спорт')).getByText('Выполнений пока нет — сравнить не с чем.')).toBeInTheDocument()
+  })
+
   it('честно — так и сказано, числа влияния — позже', () => {
     const miss = (b: number) => b % 4 === 0
     Object.assign(mocked, world(() => false))
