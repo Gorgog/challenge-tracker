@@ -192,11 +192,11 @@ export function AnalyticsPage() {
             }}
           />
 
+          <ExplainsCard list={view.explains} />
+
           <Link to={live.length ? '/analytics/challenges' : '/challenges'} className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}
           </Link>
-
-          <ExplainsCard list={view.explains} />
 
           <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
           <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
