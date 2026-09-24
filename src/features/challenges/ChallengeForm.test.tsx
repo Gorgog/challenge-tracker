@@ -365,6 +365,17 @@ describe('«Время» — правки по ревью 4б', () => {
   const edit = (c: Challenge) =>
     render(<ChallengeForm open existing={[c]} tags={TAGS} challenge={c} onSave={vi.fn()} onCancel={vi.fn()} usualBed={0} />)
 
+  it('тип у челленджа с отметками не меняется, без отметок — меняется (ревью 5а, решение Georgy)', () => {
+    render(<ChallengeForm open existing={[base]} tags={TAGS} challenge={base} marked onSave={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Отказ' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Привычка' })).toBeDisabled()
+    expect(screen.getByText(/Тип не меняется: уже есть отметки/)).toBeInTheDocument()
+    cleanup()
+    edit(base)
+    expect(screen.getByRole('button', { name: 'Отказ' })).toBeEnabled()
+    expect(screen.queryByText(/Тип не меняется/)).toBeNull()
+  })
+
   it('у заведённого измерение на «Время» и обратно не меняется (решение Georgy)', () => {
     edit(base)
     expect(screen.getByRole('button', { name: 'Время' })).toBeDisabled()

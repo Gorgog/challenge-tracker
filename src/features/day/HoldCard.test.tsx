@@ -22,13 +22,13 @@ const challenge: Challenge = {
   sortOrder: 1,
 }
 
-const setup = (over: { failed?: boolean; answered?: boolean; streak?: number; frozen?: boolean } = {}) => {
+const setup = (over: { failed?: boolean; awaiting?: 'evening' | 'edit' | null; streak?: number; frozen?: boolean } = {}) => {
   const onToggleRelapse = vi.fn()
   render(
     <HoldCard
       challenge={challenge}
       failed={over.failed ?? false}
-      answered={over.answered ?? false}
+      awaiting={over.awaiting === undefined ? 'evening' : over.awaiting}
       streak={over.streak ?? 40}
       frozen={over.frozen ?? false}
       onToggleRelapse={onToggleRelapse}
@@ -79,14 +79,20 @@ describe('карточка отказа', () => {
     expect(screen.getByText(/ответ — вечером/i)).toBeInTheDocument()
   })
 
-  it('ответ «Да, без» уже есть — напоминания нет', () => {
-    setup({ answered: true, frozen: true })
-    expect(screen.queryByText(/ответ — вечером/i)).toBeNull()
+  it('ответ уже есть или сегодня отказ вне челленджа — напоминания нет', () => {
+    setup({ awaiting: null, frozen: true })
+    expect(screen.queryByText(/ответ — вечером|ответь/i)).toBeNull()
     expect(screen.getByText(/дней без срыва/i)).toBeInTheDocument()
   })
 
+  it('день закрыт без ответа (ревью 5а) — «ответь в оценке дня», а не «вечером»', () => {
+    setup({ awaiting: 'edit', frozen: true })
+    expect(screen.getByText(/ответь в оценке дня/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ответ — вечером/i)).toBeNull()
+  })
+
   it('при срыве напоминания нет', () => {
-    setup({ failed: true, streak: 0 })
+    setup({ failed: true, streak: 0, awaiting: null })
     expect(screen.queryByText(/ответ — вечером/i)).toBeNull()
   })
 })

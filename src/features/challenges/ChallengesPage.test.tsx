@@ -31,6 +31,7 @@ const mocked = vi.hoisted(() => ({
   failed: false,
   list: [] as Challenge[],
   starts: [] as DayStart[],
+  entries: {} as Record<string, Record<string, number>>,
   idle: () => ({ mutate: () => {}, mutateAsync: async () => {} }),
 }))
 
@@ -38,7 +39,7 @@ vi.mock('@/data/queries', () => ({
   useChallenges: () =>
     mocked.failed ? { data: undefined, isPending: false, isError: true } : { data: mocked.list, isPending: false, isError: false },
   useTags: () => ({ data: [], isPending: false }),
-  useEntries: () => ({ data: {}, isPending: false }),
+  useEntries: () => ({ data: mocked.entries, isPending: false }),
   useDayLogs: () => ({ data: [], isPending: false }),
   useDayStarts: () => ({ data: mocked.starts, isPending: false }),
   useCreateChallenge: mocked.idle,
@@ -73,6 +74,7 @@ const gone: Challenge = {
 beforeEach(() => {
   mocked.list = [gone]
   mocked.failed = false
+  mocked.entries = {}
   mocked.purge.mockReset()
   vi.mocked(toast).mockReset()
 })
@@ -149,5 +151,31 @@ describe('«Попробовать: ложусь раньше» из анали�
     const next = screen.getByRole('dialog', { name: 'Новый челлендж' })
     expect(within(next).getByLabelText(/название/i)).toHaveValue('')
     expect(within(next).getByRole('button', { name: 'Время' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+describe('экран челленджей — тип запирается первой отметкой (ревью 5а)', () => {
+  const live: Challenge = { ...gone, id: 'live', name: 'Читать 20 страниц', deletedAt: null }
+  const edit = async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ChallengesPage />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getAllByRole('button', { name: 'Изменить' })[0]!)
+    return within(screen.getByRole('dialog'))
+  }
+
+  it('есть отметки — «Отказ» в форме выключен', async () => {
+    mocked.list = [live]
+    mocked.entries = { live: { '2026-09-20': 1 } }
+    expect((await edit()).getByRole('button', { name: 'Отказ' })).toBeDisabled()
+  })
+
+  it('отметок нет — тип можно поправить', async () => {
+    mocked.list = [live]
+    mocked.entries = { live: {} }
+    expect((await edit()).getByRole('button', { name: 'Отказ' })).toBeEnabled()
   })
 })

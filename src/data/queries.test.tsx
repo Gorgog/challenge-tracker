@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
@@ -299,5 +299,30 @@ describe('закрытие дня с ответами отказов (срез 5
     expect(repo.pending.map((p) => p.name)).toEqual(['entry smoke 1'])
     expect(client.getQueryData(['entries'])).toEqual({ smoke: { '2026-09-23': 1 } })
     expect(client.getQueryData(['dayLogs'])).toEqual([])
+  })
+
+  it('шедшее чтение отметок не затирает ответы, а после записи отметки перечитываются (ревью 5а)', async () => {
+    repo.pending.length = 0
+    let release: (v: unknown) => void = () => {}
+    repo.listEntries.mockImplementationOnce(() => new Promise((r) => (release = r as (v: unknown) => void)))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['dayLogs'], [])
+    const { result } = renderHook(
+      () => ({ close: useCloseDay(), entries: useQuery({ queryKey: ['entries'], queryFn: () => repo.listEntries() }) }),
+      { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> },
+    )
+    await waitFor(() => expect(repo.listEntries).toHaveBeenCalled())
+    const reads = repo.listEntries.mock.calls.length
+    act(() => result.current.close.mutate({ log, answers: { smoke: 1 } }))
+    await waitFor(() => expect(repo.pending).toHaveLength(1))
+    /* старое чтение отвечает посреди записи — без отметки за день */
+    await act(async () => release({ smoke: {} }))
+    expect(client.getQueryData(['entries'])).toEqual({ smoke: { '2026-09-24': 1 } })
+
+    act(() => repo.pending[0]!.resolve())
+    await waitFor(() => expect(repo.pending).toHaveLength(2))
+    act(() => repo.pending[1]!.resolve())
+    await waitFor(() => expect(result.current.close.isSuccess).toBe(true))
+    await waitFor(() => expect(repo.listEntries.mock.calls.length).toBeGreaterThan(reads))
   })
 })

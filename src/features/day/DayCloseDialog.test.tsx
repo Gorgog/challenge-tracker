@@ -218,7 +218,15 @@ describe('окно итога дня — отказы отвечают «Да, �
     expect(onSave.mock.calls[0]![1]).toEqual({})
   })
 
-  it('правка закрытого дня: ответ виден, но заперт и заново не отправляется; без ответа — «не записано»', async () => {
+  it('отметка не 0 и не 1 (старые данные) — не ответ: ничего не выбрано, ответить нужно', async () => {
+    const { user } = setup({ quits: [{ challenge: smoke, value: 30 }] })
+    expect(row('Без сигарет').getByRole('button', { name: 'Да, без' })).toHaveAttribute('aria-pressed', 'false')
+    expect(row('Без сигарет').getByRole('button', { name: 'Сорвался' })).toHaveAttribute('aria-pressed', 'false')
+    await scores(user)
+    expect(saveButton()).toBeDisabled()
+  })
+
+  it('правка закрытого дня: ответ виден, заперт и заново не отправляется; неотвеченный можно ответить (ревью 5а)', async () => {
     const existing: DayLog = {
       day: '2026-09-21',
       mood: 7,
@@ -232,11 +240,26 @@ describe('окно итога дня — отказы отвечают «Да, �
     const yes = row('Без сигарет').getByRole('button', { name: 'Да, без' })
     expect(yes).toHaveAttribute('aria-pressed', 'true')
     expect(yes).toBeDisabled()
-    expect(row('Без сахара').getByText('не записано')).toBeInTheDocument()
-    expect(row('Без сахара').queryByRole('button')).toBeNull()
-
+    /* неотвеченный — не обязателен: сохранить можно и так */
+    expect(row('Без сахара').getByRole('button', { name: 'Да, без' })).toBeEnabled()
     expect(saveButton()).toBeEnabled()
     await user.click(saveButton())
     expect(onSave.mock.calls[0]![1]).toEqual({})
+  })
+
+  it('правка закрытого дня: ответ на неотвеченный отказ уходит, запертый — нет', async () => {
+    const existing: DayLog = {
+      day: '2026-09-21',
+      mood: 7,
+      wellbeing: 6,
+      productivity: 8,
+      tags: [],
+      note: '',
+      closedAt: '2026-09-21T21:00:00.000Z',
+    }
+    const { user, onSave } = setup({ existing, onCancel: vi.fn(), quits: [{ challenge: smoke, value: 0 }, { challenge: sugar }] })
+    await user.click(row('Без сахара').getByRole('button', { name: 'Да, без' }))
+    await user.click(saveButton())
+    expect(onSave.mock.calls[0]![1]).toEqual({ sugar: 1 })
   })
 })

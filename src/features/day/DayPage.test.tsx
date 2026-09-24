@@ -326,11 +326,61 @@ describe('экран дня — отказ отвечает вечером «Д�
     expect(within(dialog).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Без сигарет'])
   })
 
-  it('карточка отказа днём напоминает: ответ — вечером', () => {
+  it('карточка отказа днём напоминает: ответ — вечером; под «Завершить день» — что спросят', () => {
     at(12)
     mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
     render(<DayPage />)
     expect(screen.getByText(/ответ — вечером/i)).toBeInTheDocument()
+    expect(screen.getByText(/и ответ по отказам/i)).toBeInTheDocument()
+  })
+
+  it('день закрыт с ответом — напоминания нет (ревью 5а)', () => {
+    at(21)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.logs = [closed]
+    mocked.entries = { smoke: { [TODAY]: 1 } }
+    render(<DayPage />)
+    expect(screen.queryByText(/ответ — вечером|ответь в оценке дня/i)).toBeNull()
+  })
+
+  it('день закрыт, а отказ без ответа (заведён после) — «ответь в оценке дня», и «Изменить оценку» даёт ответить', async () => {
+    at(21)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.logs = [closed]
+    const user = userEvent.setup()
+    render(<DayPage />)
+    expect(screen.getByText(/ответь в оценке дня/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Изменить оценку' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(within(dialog).getByRole('group', { name: 'Без сигарет' })).getByRole('button', { name: 'Да, без' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+    expect(mocked.closeDay.mock.calls[0]![0]).toMatchObject({ log: { day: TODAY }, answers: { smoke: 1 } })
+  })
+
+  it('отказ сегодня вне челленджа (пауза до сегодня) — напоминания нет', () => {
+    at(12)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    mocked.challenges = [read, { ...smoke, pauses: [{ from: '2026-09-10', to: TODAY }] }]
+    render(<DayPage />)
+    expect(screen.getByText('Без сигарет')).toBeInTheDocument()
+    expect(screen.queryByText(/ответ — вечером|ответь в оценке дня/i)).toBeNull()
+  })
+
+  it('«Отменить» в тосте срыва после закрытия дня не трогает закрытый день (ревью 5а)', async () => {
+    at(20)
+    mocked.starts = [started({ sleep: 7, wellbeing: 6, mood: 6 })]
+    const user = userEvent.setup()
+    const { rerender } = render(<DayPage />)
+    await user.click(screen.getByRole('button', { name: 'сорвался' }))
+    expect(mocked.setEntry).toHaveBeenCalledTimes(1)
+    const undo = vi.mocked(toast).mock.calls.at(-1)![1] as { action: { onClick: () => void } }
+    /* день закрыли, пока тост ещё висит */
+    mocked.entries = { smoke: { [TODAY]: 0 } }
+    mocked.logs = [closed]
+    rerender(<DayPage />)
+    act(() => undo.action.onClick())
+    expect(mocked.setEntry).toHaveBeenCalledTimes(1)
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/День уже закрыт/))
   })
 })
 

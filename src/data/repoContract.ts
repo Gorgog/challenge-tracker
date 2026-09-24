@@ -62,6 +62,21 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         expect((await r.listEntries())[created.id]).toEqual({})
       }, t)
 
+      it('тип меняется, пока нет отметок; с первой отметкой — прежний (ревью 5а)', async () => {
+        const r = await makeRepo()
+        const fresh = await r.createChallenge(draft())
+        await r.updateChallenge(fresh.id, { kind: 'quit' })
+        expect(await byId(r, fresh.id)).toMatchObject({ kind: 'quit' })
+        const read = await r.createChallenge(draft({ measure: 'count', goal: 20, unit: 'стр.' }))
+        await r.setEntry(read.id, '2026-09-20', 30)
+        await r.updateChallenge(read.id, { kind: 'quit', name: 'Не читать' })
+        expect(await byId(r, read.id)).toMatchObject({ kind: 'do', name: 'Не читать' })
+        const quit = await r.createChallenge(draft({ kind: 'quit' }))
+        await r.setEntry(quit.id, '2026-09-20', 1)
+        await r.updateChallenge(quit.id, { kind: 'do' })
+        expect(await byId(r, quit.id)).toMatchObject({ kind: 'quit' })
+      }, t)
+
       it('правка меняет имя; под замком правила не меняются, а замок не снимается', async () => {
         const r = await makeRepo()
         const c = await r.createChallenge(draft({ measure: 'count', goal: 20, unit: 'стр.' }))

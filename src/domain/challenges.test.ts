@@ -48,6 +48,13 @@ describe('onDay', () => {
 })
 
 describe('applyPatch', () => {
+  it('тип меняется, пока у челленджа нет отметок; с отметками — прежний (ревью 5а, решение Georgy)', () => {
+    expect(applyPatch(make(), { kind: 'quit' }).kind).toBe('quit')
+    expect(applyPatch(make(), { kind: 'quit' }, true).kind).toBe('do')
+    /* остальные правила при этом правятся как обычно */
+    expect(applyPatch(make(), { kind: 'quit', lengthDays: 30 }, true)).toMatchObject({ kind: 'do', lengthDays: 30 })
+  })
+
   it('меняет название, код, цвет и теги', () => {
     const next = applyPatch(make(), {
       name: 'Читать 30 страниц',
