@@ -81,6 +81,13 @@ describe('usualBand — полоса «обычно»', () => {
     const h = days(20, (i) => (i < 6 ? { m: null, e: null } : { m: 4 + (i % 3), e: 4 + (i % 3) }))
     expect(usualBand(h, 6, 'all')).toMatchObject({ kind: 'band', short: true, days: 14 })
   })
+  it('границы: 10 полных дней до окна — своя полоса, 9 — «пока»; 5 полных дней всего — полоса есть', () => {
+    const before = (full: number) => days(42, (i) => (i < 28 - full ? { m: null, e: null } : {}))
+    expect(usualBand(before(10), 28, 'all')).toMatchObject({ short: false, days: 10 })
+    expect(usualBand(before(9), 28, 'all')).toMatchObject({ short: true })
+    const five = days(14, (i) => (i < 9 ? { m: null, e: null } : {}))
+    expect(usualBand(five, 0, 'all')).toMatchObject({ kind: 'band', days: 5 })
+  })
   it('записей меньше 5 — полосы нет, сколько ещё нужно', () => {
     const h = days(14, (i) => (i < 11 ? { m: null, e: null } : {}))
     expect(usualBand(h, 0, 'all')).toEqual({ kind: 'none', need: 2 })
@@ -105,6 +112,11 @@ describe('verdict — фраза сверху', () => {
     expect(verdict(w, short, 'all')).toEqual({ kind: 'halves', tone: 'worse', first: 7, second: 6.5 })
     const same = days(14, (i) => (i < 7 ? { m: 7, e: 7 } : { m: 6.6, e: 6.6 }))
     expect(verdict(same, short, 'all')).toMatchObject({ tone: 'usual' })
+  })
+  it('половины сравниваются по округлённым средним, как на экране: 7,0 и 6,5 — «хуже», хотя разница 0,42', () => {
+    const short = { ...band, short: true }
+    const w = days(14, (i) => (i === 6 ? { m: 6.72, e: 6.72 } : i < 7 ? { m: 7, e: 7 } : i === 13 ? { m: 6.78, e: 6.78 } : { m: 6.5, e: 6.5 }))
+    expect(verdict(w, short, 'all')).toEqual({ kind: 'halves', tone: 'worse', first: 7, second: 6.5 })
   })
   it('полосы нет — фразы нет, только сколько ждать', () => {
     expect(verdict(win(3), { kind: 'none', need: 2 }, 'all')).toEqual({ kind: 'none', need: 2 })

@@ -155,7 +155,8 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
   it('шторка прошедшего дня: «Вечер не закрыт», отказ — «без срыва» и «срыв»', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     mocked.challenges = [push, quit]
-    mocked.entries = { quit: { [key(3)]: 1 } }
+    /* у отказа срыв — отметка 0 (domain/streaks.ts) */
+    mocked.entries = { quit: { [key(3)]: 0 } }
     mocked.logs = mocked.logs.filter((l) => l.day !== key(3))
     show()
     await user.click(dayButton(/^вс, 20 сентября/))
