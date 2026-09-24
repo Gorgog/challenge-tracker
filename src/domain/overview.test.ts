@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { changes, eventRows, goalValue, usualBand, verdict } from './overview'
+import { changes, dayShift, eventRows, goalValue, isComplete, pointClass, usualBand, verdict } from './overview'
 import type { TimelineDay } from './timeline'
 import type { Challenge, EntryMap } from './types'
 
@@ -135,20 +135,58 @@ describe('eventRows — ряды под графиком', () => {
 })
 
 describe('changes — «Что изменилось»', () => {
-  it('теги и плохие ночи против прошлого периода — от двух дней у 14 дней', () => {
+  it('теги и плохие ночи — долей закрытых вечеров и записанных утр, от двух дней у 14 дней', () => {
     /* 28 дней: алкоголь в прошлые 14 — 1 раз, в эти — 3; дедлайн 2 и 3 — не изменение */
     const h = days(28, (i) => ({
       tags: [...([3, 16, 20, 24].includes(i) ? ['алкоголь'] : []), ...([1, 5, 15, 17, 19].includes(i) ? ['дедлайн'] : [])],
       ...(i === 21 || i === 25 ? { sleep: 3 } : {}),
     }))
-    const r = changes(h, 27, 14, [], {}, TODAY)
-    expect(r).toEqual({
-      hasPrev: true,
+    expect(changes(h, 27, 14, [], {}, TODAY)).toEqual({
+      status: 'ok',
       lines: [
-        { kind: 'tag', tag: 'алкоголь', now: 3, was: 1, good: false },
-        { kind: 'badSleep', now: 2, was: 0, good: false },
+        { kind: 'tag', tag: 'алкоголь', now: 3, of: 14, was: 1, wasOf: 14, good: false },
+        { kind: 'badSleep', now: 2, of: 14, was: 0, wasOf: 14, good: false },
       ],
     })
+  })
+  it('«не записывал» не выдаётся за «не делал»: доля та же при меньшем числе вечеров — не изменение (ревью 24.09)', () => {
+    /* прошлые 14 закрыты все, алкоголь 5; эти — закрыто 7 вечеров, алкоголь 2: 29 % против 36 % */
+    const h = days(28, (i) => ({
+      ...(i >= 14 && i % 2 ? { e: null } : {}),
+      tags: [1, 3, 5, 7, 9, 16, 18].includes(i) ? ['алкоголь'] : [],
+    }))
+    const r = changes(h, 27, 14, [], {}, TODAY)
+    expect(r).toMatchObject({ status: 'ok' })
+    expect(r.status === 'ok' && r.lines.filter((l) => l.kind === 'tag')).toEqual([])
+  })
+  it('невредный тег — строка без оценки; сон 4 — ещё плохая ночь', () => {
+    const h = days(28, (i) => ({ tags: [15, 17, 19].includes(i) ? ['встречи'] : [], ...([20, 22].includes(i) ? { sleep: 4 } : {}) }))
+    const r = changes(h, 27, 14, [], {}, TODAY)
+    expect(r.status === 'ok' && r.lines).toEqual([
+      { kind: 'tag', tag: 'встречи', now: 3, of: 14, was: 0, wasOf: 14, good: null },
+      { kind: 'badSleep', now: 2, of: 14, was: 0, wasOf: 14, good: false },
+    ])
+  })
+  it('пропущенные утра — строкой; сегодняшнее, которое ещё можно записать, не пропущено', () => {
+    const h = days(28, (i) => (i === 18 || i === 21 ? { m: null } : i === 27 ? { m: null, e: null } : {}))
+    const pending = h.map((d, i) => (i === 27 ? { ...d, started: false } : d))
+    const open = changes(pending, 27, 14, [], {}, TODAY, true)
+    expect(open.status === 'ok' && open.lines).toEqual([{ kind: 'skippedMornings', now: 2, of: 13, was: 0, wasOf: 14, good: false }])
+    const closed = changes(pending, 27, 14, [], {}, TODAY, false)
+    expect(closed.status === 'ok' && closed.lines).toEqual([{ kind: 'skippedMornings', now: 3, of: 14, was: 0, wasOf: 14, good: false }])
+  })
+  it('у 30 дней изменение — от четырёх дней', () => {
+    const three = days(60, (i) => ({ tags: [31, 35, 40].includes(i) ? ['алкоголь'] : [] }))
+    expect(changes(three, 59, 30, [], {}, TODAY)).toEqual({ status: 'ok', lines: [] })
+    const four = days(60, (i) => ({ tags: [31, 35, 40, 45].includes(i) ? ['алкоголь'] : [] }))
+    expect(changes(four, 59, 30, [], {}, TODAY)).toMatchObject({ lines: [{ tag: 'алкоголь', now: 4 }] })
+  })
+  it('не больше пяти строк, первыми — самые большие сдвиги', () => {
+    const tags = ['а', 'б', 'в', 'г', 'д', 'е']
+    /* тег k в эти 14 дней — (k + 2) раза, в прошлые — ни разу */
+    const h = days(28, (i) => ({ tags: i >= 14 ? tags.filter((_, k) => i - 14 < k + 2) : [] }))
+    const r = changes(h, 27, 14, [], {}, TODAY)
+    expect(r.status === 'ok' && r.lines.map((l) => (l.kind === 'tag' ? l.tag : l.kind))).toEqual(['е', 'д', 'г', 'в', 'б'])
   })
   it('челлендж — «X из N, было Y из M», только если шёл полпериода и там, и там', () => {
     const h = days(28)
@@ -158,7 +196,7 @@ describe('changes — «Что изменилось»', () => {
     const done = [...Array.from({ length: 12 }, (_, i) => i), 14, 16, 18, 20, 22]
     const entries: EntryMap = Object.fromEntries(done.map((i) => [key(i, 28), 1]))
     const r = changes(h, 27, 14, [all, young], { push: entries, new: {} }, TODAY)
-    expect(r.hasPrev && r.lines).toEqual([{ kind: 'challenge', challenge: all, hits: 5, known: 13, wasHits: 12, wasKnown: 14, good: false }])
+    expect(r.status === 'ok' && r.lines).toEqual([{ kind: 'challenge', challenge: all, hits: 5, known: 13, wasHits: 12, wasKnown: 14, good: false }])
   })
   it('челлендж сравнивается долей выполнения, а не числом пропусков (демо 24.09: «6 из 13, было 3 из 7»)', () => {
     const h = days(28)
@@ -166,12 +204,65 @@ describe('changes — «Что изменилось»', () => {
     const c = challenge({ startDate: key(7, 28) })
     const done = [7, 9, 11, 14, 16, 18, 20, 22, 24]
     const entries: EntryMap = Object.fromEntries(done.map((i) => [key(i, 28), 1]))
-    const r = changes(h, 27, 14, [c], { push: entries }, TODAY)
-    expect(r).toEqual({ hasPrev: true, lines: [] })
+    expect(changes(h, 27, 14, [c], { push: entries }, TODAY)).toEqual({ status: 'ok', lines: [] })
   })
+  it('прошлый период записан меньше чем наполовину — сравнивать не с чем; ровно наполовину — сравниваем', () => {
+    expect(changes(days(28, (i) => (i < 8 ? { m: null, e: null } : {})), 27, 14, [], {}, TODAY)).toEqual({ status: 'prevEmpty' })
+    expect(changes(days(28, (i) => (i < 7 ? { m: null, e: null } : {})), 27, 14, [], {}, TODAY)).toMatchObject({ status: 'ok' })
+  })
+  it('этот период записан меньше чем наполовину — тоже не сравниваем (ревью 24.09: «алкоголь 0, было 5»)', () => {
+    const h = days(28, (i) => (i >= 14 && i < 25 ? { m: null, e: null } : { tags: i < 14 && i % 3 === 0 ? ['алкоголь'] : [] }))
+    expect(changes(h, 27, 14, [], {}, TODAY)).toEqual({ status: 'curEmpty' })
+  })
+})
 
-  it('прошлый период записан меньше чем наполовину — сравнивать не с чем', () => {
-    const h = days(28, (i) => (i < 8 ? { m: null, e: null } : {}))
-    expect(changes(h, 27, 14, [], {}, TODAY)).toEqual({ hasPrev: false })
+describe('полные дни, мало записей, «то лучше, то хуже» (ревью 24.09)', () => {
+  const band = { kind: 'band' as const, low: 6, high: 8, days: 28, short: false }
+  it('полный день: для «Всё», самочувствия и настроения — утро и вечер; сон — утро; продуктивность — вечер', () => {
+    const [d] = days(1, () => ({ e: null }))
+    expect(isComplete(d!, 'all')).toBe(false)
+    expect(isComplete(d!, 'mood')).toBe(false)
+    expect(isComplete(d!, 'sleep')).toBe(true)
+    expect(isComplete(d!, 'productivity')).toBe(false)
+  })
+  it('неполный день не идёт во фразу: сегодняшнее низкое утро не делает неделю «хуже»', () => {
+    const w = days(14, (i) => (i < 6 ? { m: 4, e: 4 } : i === 13 ? { m: 3, e: null } : { m: 7, e: 7 }))
+    expect(verdict(w, band, 'all')).toMatchObject({ tone: 'usual', below: 6, recorded: 13 })
+  })
+  it('полоса — только по полным дням', () => {
+    const h = days(42, (i) => (i < 28 ? (i % 2 ? { m: 2, e: null } : { m: 7, e: 7 }) : {}))
+    expect(usualBand(h, 28, 'all')).toMatchObject({ low: 7, high: 7, days: 14 })
+  })
+  it('полных дней в окне меньше пяти — вывода нет; ни одного — тоже (а не «как обычно»)', () => {
+    const four = days(14, (i) => (i < 10 ? { m: null, e: null } : { m: 4, e: 4 }))
+    expect(verdict(four, band, 'all')).toEqual({ kind: 'few', recorded: 4, need: 5 })
+    expect(verdict(days(14, () => ({ m: null, e: null })), band, 'all')).toEqual({ kind: 'few', recorded: 0, need: 5 })
+  })
+  it('ниже и выше полосы поровну, по половине — «то лучше, то хуже»', () => {
+    const w = days(14, (i) => (i < 7 ? { m: 4, e: 4 } : { m: 9, e: 9 }))
+    expect(verdict(w, band, 'all')).toEqual({ kind: 'band', tone: 'mixed', below: 7, above: 7, recorded: 14 })
+  })
+  it('точка сравнивается с полосой так, как видна: 6,25 при полосе от 6,3 — «6,3», не ниже', () => {
+    const w = days(14, (i) => (i < 7 ? { m: 6, e: 6.5 } : { m: 7, e: 7 }))
+    expect(pointClass(6.25, { ...band, low: 6.3 })).toBe('usual')
+    expect(verdict(w, { ...band, low: 6.3 }, 'all')).toMatchObject({ below: 0 })
+  })
+  it('половины — по полным дням; пустая половина — вывода нет', () => {
+    const short = { ...band, short: true }
+    const w = days(14, (i) => (i < 7 ? { m: null, e: null } : { m: 7, e: 7 }))
+    expect(verdict(w, short, 'all')).toMatchObject({ kind: 'few' })
+    const better = days(14, (i) => (i < 7 ? { m: 6.5, e: 6.5 } : { m: 7, e: 7 }))
+    expect(verdict(better, short, 'all')).toMatchObject({ kind: 'halves', tone: 'better' })
+  })
+})
+
+describe('dayShift — ночь и день словами в шторке', () => {
+  it('просела ночь, день вытянул, утра нет, сегодняшнее утро ещё впереди', () => {
+    const h = days(3, (i) => (i === 0 ? { e: 8 } : i === 1 ? { m: 5, e: 8 } : { m: null, e: null }))
+    expect(dayShift(h, 1, TODAY, false)).toEqual({ kind: 'nightDown', by: 3 })
+    const up = days(2, (i) => (i === 0 ? { e: 6 } : { m: 5.5, e: 8 }))
+    expect(dayShift(up, 1, TODAY, false)).toEqual({ kind: 'dayUp', by: 2.5 })
+    expect(dayShift(h, 2, TODAY, false)).toEqual({ kind: 'noMorning' })
+    expect(dayShift(h.map((d, i) => (i === 2 ? { ...d, started: false } : d)), 2, TODAY, true)).toBeNull()
   })
 })
