@@ -434,8 +434,11 @@ export function chain(history: TimelineDay[], link: Link, challenges: Challenge[
   const habits: ChainRow[] = challenges
     .filter((c) => c.kind === 'do')
     .flatMap((c) => {
+      /* у «Ложусь раньше» — ночь после вечера с фактором (день вечера), как строка «лёг», а не ночь дня после */
       const known = (l: typeof next) =>
-        l.map(({ d }) => dayOutcome(c, entries[c.id] ?? {}, parseDay(d.day), today)).filter((o) => o === 'hit' || o === 'miss')
+        l
+          .map(({ d, i }) => dayOutcome(c, entries[c.id] ?? {}, parseDay(c.measure === 'bedtime' ? window[i - 1]!.day : d.day), today))
+          .filter((o) => o === 'hit' || o === 'miss')
       const w = known(withTag)
       const o = known(base)
       if (!w.length || !o.length) return []

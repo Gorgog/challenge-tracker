@@ -39,6 +39,11 @@ export function applyPatch(c: Challenge, patch: ChallengePatch): Challenge {
     for (const key of RULE_KEYS) {
       if (patch[key] !== undefined) Object.assign(next, { [key]: patch[key] })
     }
+    /*
+     * На «Время» и обратно не переходят (решение Georgy по ревью 4б): прошлые дни задним числом получили бы
+     * исходы из ночей, а хранимые отметки — остались бы лишними. Тогда правила остаются прежними целиком.
+     */
+    if ((next.measure === 'bedtime') !== (c.measure === 'bedtime')) for (const key of RULE_KEYS) Object.assign(next, { [key]: c[key] })
   }
 
   if (patch.rulesLocked === true) next.rulesLocked = true

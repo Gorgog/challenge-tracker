@@ -81,7 +81,7 @@ export function dayOutcome(c: Challenge, entries: EntryMap, day: Date, today: Da
  * Исход, который пока не решён: «не записано» (ночь «Ложусь раньше») или «ещё идёт» (вчерашний день отбоя до
  * сегодняшнего утра). Серия на таких днях замирает, как на паузе, а в доли они не идут.
  */
-const unsettled = (o: Outcome) => o === 'unknown' || o === 'pending'
+export const unsettled = (o: Outcome) => o === 'unknown' || o === 'pending'
 
 /**
  * Прошедшие дни, за которые челлендж отвечает. Сегодняшний не входит: он ещё не закончен.

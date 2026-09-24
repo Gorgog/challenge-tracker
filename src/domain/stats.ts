@@ -1,5 +1,5 @@
 import { addDays, dayKey, daysBetween, isoDow, parseDay } from './date'
-import { activeDays, dayOutcome, lastDay } from './streaks'
+import { activeDays, dayOutcome, lastDay, unsettled } from './streaks'
 import type { Challenge, DayLog, EntryMap } from './types'
 
 export type Forecast = {
@@ -16,8 +16,11 @@ export function forecast(c: Challenge, entries: EntryMap, today: Date): Forecast
   const end = lastDay(c)
   if (!c.lengthDays || !end) return null
 
+  /* «не записано» и «ещё идёт» — не в темп: их исход неизвестен */
   const passed = activeDays(c, today)
-  const done = passed.filter((k) => dayOutcome(c, entries, parseDay(k), today) === 'hit').length
+    .map((k) => dayOutcome(c, entries, parseDay(k), today))
+    .filter((o) => !unsettled(o))
+  const done = passed.filter((o) => o === 'hit').length
   const pace = passed.length ? done / passed.length : 0
   const daysLeft = Math.max(0, daysBetween(today, end) + 1)
   const projected = Math.round(done + pace * daysLeft)
@@ -37,7 +40,7 @@ export function weekProfile(
   for (const key of activeDays(c, today)) {
     const day = parseDay(key)
     const outcome = dayOutcome(c, entries, day, today)
-    if (outcome === 'outside') continue
+    if (outcome === 'outside' || unsettled(outcome)) continue
     const bucket = buckets[isoDow(day)]
     bucket.total++
     if (outcome === 'hit') bucket.hits++

@@ -62,15 +62,17 @@ function habitInsight(c: Challenge, entries: EntryMap, history: TimelineDay[], t
   const hm = morningsOf(hit)
   const mornings = mm.length >= MORNINGS_MIN && hm.length >= MORNINGS_MIN ? { miss: round1(mean(mm)), hit: round1(mean(hm)) } : null
 
-  const closedPrev = (l: typeof days) => l.filter((x) => x.prev?.evening)
+  /* вечер перед исходом: у привычки — накануне, у «Ложусь раньше» — тот же день: его ночь идёт после этого вечера */
+  const eveningOf = (x: (typeof days)[number]) => (c.measure === 'bedtime' ? x.d : x.prev)
+  const closedPrev = (l: typeof days) => l.filter((x) => eveningOf(x)?.evening)
   const missPrev = closedPrev(miss)
   const hitPrev = closedPrev(hit)
-  const tags = [...new Set(missPrev.flatMap((x) => x.prev!.tags))]
+  const tags = [...new Set(missPrev.flatMap((x) => eveningOf(x)!.tags))]
   const after = tags
     .map((tag) => ({
       tag,
-      count: missPrev.filter((x) => x.prev!.tags.includes(tag)).length,
-      rest: hitPrev.filter((x) => x.prev!.tags.includes(tag)).length,
+      count: missPrev.filter((x) => eveningOf(x)!.tags.includes(tag)).length,
+      rest: hitPrev.filter((x) => eveningOf(x)!.tags.includes(tag)).length,
     }))
     /* выполнений мало — «чаще» не с чем сравнить: без них в список попал бы любой частый тег */
     .filter((t) => hitPrev.length >= LINK_MIN && t.count >= AFTER_MIN && t.count / missPrev.length >= (AFTER_RATIO * t.rest) / hitPrev.length)

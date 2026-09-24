@@ -3,6 +3,7 @@ import { bedtimeEntries } from './bedtime'
 import { challengeInsight } from './challengeInsight'
 import { applyPatch } from './challenges'
 import { addDays, dayKey, parseDay } from './date'
+import { forecast, weekProfile } from './stats'
 import { bestStreak, completionRate, currentStreak, dayOutcome, fullDays } from './streaks'
 import type { Challenge, DayStart, EntryMap } from './types'
 
@@ -153,5 +154,16 @@ describe('«чаще пропуск после» у «Ложусь раньше�
     const entries: EntryMap = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [key(19 - i), drinks.includes(19 - i) ? 60 : -50]))
     const r = challengeInsight(c, entries, history, TODAY)
     expect(r.habit?.after).toEqual([{ tag: 'алкоголь', count: 4 }])
+  })
+})
+
+describe('профиль недели и прогноз — «не записано» не в долю (ревью 4б)', () => {
+  it('дни без ночи не считаются невыполненными', () => {
+    const entries = bedtimeEntries([start(3, -40), start(2, null), start(1, 30)])
+    // дни 4, 3, 2 назад: hit, unknown, miss — в профиле 2 известных дня, а не 3
+    const c = { ...early, startDate: key(4) }
+    const total = weekProfile(c, entries, TODAY).reduce((n, d) => n + (d?.total ?? 0), 0)
+    expect(total).toBe(2)
+    expect(forecast({ ...c, lengthDays: 30 }, entries, TODAY)?.pace).toBeCloseTo(1 / 2, 10)
   })
 })
