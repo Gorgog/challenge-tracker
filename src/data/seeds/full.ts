@@ -5,6 +5,7 @@ import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
 import {
   NOTES,
   SKIP_MORNING,
+  answerQuits,
   clamp,
   morningNoise,
   morningStream,
@@ -220,5 +221,6 @@ export function seedFull(today: Date, seed: number): Seed {
   for (const map of Object.values(entries)) delete map[dayKey(today)]
 
   const closedLogs = [...logs.values()]
+  answerQuits(challenges, entries, closedLogs, today)
   return { challenges, entries, logs: closedLogs, starts: withNights(starts, closedLogs, seed), tags }
 }

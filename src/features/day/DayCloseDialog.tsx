@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
 import { DAY_TAGS } from '@/domain/tags'
-import type { DayLog, ScoreField } from '@/domain/types'
+import type { Challenge, DayLog, ScoreField } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
 import { ScoreScale, type Scale } from './ScoreScale'
@@ -30,7 +30,13 @@ export type DayCloseDialogProps = {
   existing?: DayLog | null
   /** Сколько задач останется невыполненными, если закрыть день сейчас. */
   pendingCount?: number
-  onSave: (log: DayLog) => void
+  /**
+   * Отказы, которые в этот день в челлендже, и их отметка за день (срез 5а): 0 — срыв отмечен днём, 1 — «Да, без».
+   * Закрыть день можно, только ответив по каждому.
+   */
+  quits?: QuitQuestion[]
+  /** `answers` — ответы отказов для записи: при правке закрытого дня пусто, его отметки заморожены. */
+  onSave: (log: DayLog, answers: Record<string, 0 | 1>) => void
   /** Передаётся только там, где отказаться можно: при правке уже закрытого дня или после отказа базы. */
   onCancel?: () => void
   /** База ещё отвечает: кнопка выключена, выйти нельзя — иначе оценки потеряются на полпути. */
@@ -40,6 +46,13 @@ export type DayCloseDialogProps = {
 }
 
 type Draft = Record<ScoreField, number | null>
+
+export type QuitQuestion = { challenge: Challenge; value?: number }
+
+const NO_QUITS: QuitQuestion[] = []
+
+/** Ответ из отметки дня: только 0 и 1 — ответы, остальное (нет записи) — не отвечено. */
+const answerOf = (value: number | undefined): 0 | 1 | null => (value === 0 || value === 1 ? value : null)
 
 const emptyDraft: Draft = { mood: null, wellbeing: null, productivity: null }
 
@@ -51,6 +64,7 @@ export function DayCloseDialog({
   day,
   existing,
   pendingCount = 0,
+  quits = NO_QUITS,
   onSave,
   onCancel,
   saving = false,
@@ -60,10 +74,15 @@ export function DayCloseDialog({
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
   const [tags, setTags] = useState<string[]>(() => [...(existing?.tags ?? [])])
   const [note, setNote] = useState(() => existing?.note ?? '')
+  const [answers, setAnswers] = useState<Record<string, 0 | 1 | null>>(() =>
+    Object.fromEntries(quits.map((q) => [q.challenge.id, answerOf(q.value)])),
+  )
 
   const date = parseDay(day)
-  const ready = SCALES.every((s) => scores[s.field] !== null)
   const editing = Boolean(existing)
+  /* закрытый день отметки замораживает: при правке ответы видны, но не требуются и не меняются */
+  const unanswered = editing ? 0 : quits.filter((q) => answers[q.challenge.id] == null).length
+  const ready = SCALES.every((s) => scores[s.field] !== null) && unanswered === 0
   const canCancel = Boolean(onCancel) && !saving
 
   const toggleTag = (tag: string) =>
@@ -79,7 +98,7 @@ export function DayCloseDialog({
       tags,
       note: note.trim(),
       closedAt: existing?.closedAt ?? new Date().toISOString(),
-    })
+    }, editing ? {} : (answers as Record<string, 0 | 1>))
   }
 
   return (
@@ -118,6 +137,53 @@ export function DayCloseDialog({
             onChange={(value) => setScores((prev) => ({ ...prev, [scale.field]: value }))}
           />
         ))}
+
+        {quits.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <b className="text-[13.5px] font-semibold">Отказы</b>
+              {!editing && <em className="font-mono text-xs not-italic text-muted-foreground">ответ обязателен</em>}
+            </div>
+            {quits.map(({ challenge: c }) => {
+              const answer = answers[c.id] ?? null
+              return (
+                <div
+                  key={c.id}
+                  role="group"
+                  aria-label={c.name}
+                  style={{ '--c': c.color } as CSSProperties}
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] border px-2.5 py-2"
+                >
+                  <span aria-hidden className="size-2.5 rounded-full bg-[var(--c)]" />
+                  <span className="min-w-0 text-[14px] font-medium">{c.name}</span>
+                  {editing && answer === null ? (
+                    <span className="font-mono text-[11.5px] text-muted-foreground">не записано</span>
+                  ) : (
+                    <span className="flex gap-1">
+                      {([1, 0] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          aria-pressed={answer === v}
+                          disabled={editing}
+                          onClick={() => setAnswers((prev) => ({ ...prev, [c.id]: v }))}
+                          className={cn(
+                            'rounded-full border px-3 py-1 text-[12.5px] transition-colors disabled:cursor-default',
+                            answer !== v && 'border-input bg-secondary text-secondary-foreground enabled:hover:bg-muted',
+                            answer === v && v === 1 && 'border-foreground bg-foreground font-medium text-background',
+                            answer === v && v === 0 && 'border-destructive bg-destructive font-medium text-white',
+                          )}
+                        >
+                          {v === 1 ? 'Да, без' : 'Сорвался'}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <b className="text-[13.5px] font-semibold">Что было в этом дне</b>
@@ -159,7 +225,11 @@ export function DayCloseDialog({
 
         <DialogFooter className="items-center sm:justify-between">
           <span className="max-w-[290px] text-[11.5px] text-muted-foreground">
-            {pendingCount > 0 && !editing ? (
+            {unanswered > 0 ? (
+              <b>
+                Осталось ответить: {unanswered} {plural(unanswered, 'отказ', 'отказа', 'отказов')}
+              </b>
+            ) : pendingCount > 0 && !editing ? (
               <>
                 <b>
                   {pendingCount}{' '}

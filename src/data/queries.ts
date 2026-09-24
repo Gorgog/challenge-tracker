@@ -272,30 +272,58 @@ export function useSetEntry() {
   })
 }
 
-export function useSaveDayLog() {
+/** Итог дня и ответы отказов этого дня: id отказа → 1 «Да, без» или 0 «сорвался». */
+export type CloseDayArgs = { log: DayLog; answers: Record<string, 0 | 1> }
+
+/**
+ * Закрытие (или правка) итога дня. Ответы отказов пишутся раньше итога: закрытый день без ответа стал бы
+ * «не записано» навсегда — закрытый день отметки замораживает. Не записался ответ — итог не уходит, оба
+ * кэша откатываются; не записался итог — ответы остались, повтор их перезапишет теми же. Одна запись на
+ * всё закрытие: окно видит одно «ждём» и одну паузу без сети.
+ */
+export function useCloseDay() {
   const client = useQueryClient()
 
   return useMutation({
-    mutationFn: (log: DayLog) => repo.saveDayLog(log),
+    async mutationFn({ log, answers }: CloseDayArgs) {
+      for (const [id, value] of Object.entries(answers)) await repo.setEntry(id, log.day, value)
+      await repo.saveDayLog(log)
+    },
 
-    async onMutate(log) {
-      await client.cancelQueries({ queryKey: queryKeys.dayLogs })
-      const previous = client.getQueryData<DayLog[]>(queryKeys.dayLogs)
+    async onMutate({ log, answers }) {
+      await Promise.all([
+        client.cancelQueries({ queryKey: queryKeys.dayLogs }),
+        client.cancelQueries({ queryKey: queryKeys.entries }),
+      ])
+      const previous = {
+        logs: client.getQueryData<DayLog[]>(queryKeys.dayLogs),
+        entries: client.getQueryData<Record<string, EntryMap>>(queryKeys.entries),
+      }
 
       client.setQueryData<DayLog[]>(queryKeys.dayLogs, (old) => {
         const rest = (old ?? []).filter((l) => l.day !== log.day)
         return [...rest, log].sort((a, b) => a.day.localeCompare(b.day))
       })
+      if (Object.keys(answers).length) {
+        client.setQueryData<Record<string, EntryMap>>(queryKeys.entries, (old) => {
+          const next = { ...(old ?? {}) }
+          for (const [id, value] of Object.entries(answers)) next[id] = { ...(next[id] ?? {}), [log.day]: value }
+          return next
+        })
+      }
 
       return { previous, gen: generation(client) }
     },
 
-    onError(_error, _log, context) {
-      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.dayLogs, context.previous)
+    onError(_error, _args, context) {
+      if (!context || context.gen !== generation(client)) return
+      if (context.previous.logs) client.setQueryData(queryKeys.dayLogs, context.previous.logs)
+      if (context.previous.entries) client.setQueryData(queryKeys.entries, context.previous.entries)
     },
 
-    onSettled() {
+    onSettled(_data, _error, { answers }) {
       void client.invalidateQueries({ queryKey: queryKeys.dayLogs })
+      if (Object.keys(answers).length) void client.invalidateQueries({ queryKey: queryKeys.entries })
     },
   })
 }

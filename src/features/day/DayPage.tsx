@@ -26,13 +26,13 @@ import {
   useEntries,
   useReorderChallenges,
   useSaveDayGroups,
-  useSaveDayLog,
+  useCloseDay,
   useSetEntry,
   useSettings,
   useStartDay,
 } from '@/data/queries'
 import { DOW_FULL, addDays, dayKey, formatHuman, isoDow, parseDay, todayKey } from '@/domain/date'
-import { onDay } from '@/domain/challenges'
+import { isLive, onDay } from '@/domain/challenges'
 import { dayStage, morningOpen } from '@/domain/dayStart'
 import { clockText, usualNight } from '@/domain/night'
 import { unratedDays } from '@/domain/stats'
@@ -48,7 +48,7 @@ import {
 } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
-import { DayCloseDialog } from './DayCloseDialog'
+import { DayCloseDialog, type QuitQuestion } from './DayCloseDialog'
 import { DayStartDialog } from './DayStartDialog'
 import { SortableGroup, SortableRow } from './Sortable'
 import { groupId, groupOf } from './groups'
@@ -82,7 +82,7 @@ export function DayPage() {
   const logsQuery = useDayLogs()
   const dayGroupsQuery = useDayGroups()
   const setEntry = useSetEntry()
-  const saveDayLog = useSaveDayLog()
+  const closeDay = useCloseDay()
   const reorderChallenges = useReorderChallenges()
   const saveDayGroups = useSaveDayGroups()
   const startsQuery = useDayStarts()
@@ -98,11 +98,15 @@ export function DayPage() {
   /*
    * Окно итога помнит, каким открылось: прошлый итог и можно ли отказаться берутся в момент открытия, а не из
    * кэша — оптимистичная запись кладёт итог в кэш сразу, и окно посреди запроса менялось бы на «правку».
-   * `failed` — база отказала: оценки остаются в окне, но выйти уже можно.
+   * `failed` — база отказала: оценки остаются в окне, но выйти уже можно. Вопросы отказов — тоже на момент
+   * открытия: живые отказы, которые в этот день в челлендже, и их отметка за день (срез 5а).
    */
-  const [dialog, setDialog] = useState<{ day: string; existing: DayLog | null; failed: boolean } | null>(null)
-  const setDialogDay = (day: string) =>
-    setDialog({ day, existing: logsQuery.data?.find((l) => l.day === day) ?? null, failed: false })
+  const [dialog, setDialog] = useState<{
+    day: string
+    existing: DayLog | null
+    quits: QuitQuestion[]
+    failed: boolean
+  } | null>(null)
   const [startOpen, setStartOpen] = useState(false)
   /** Когда день начат на этой странице — для паузы у «Завершить день». */
   const [startedMs, setStartedMs] = useState(0)
@@ -133,6 +137,15 @@ export function DayPage() {
   const holds = active.filter((c) => c.kind === 'quit' || c.measure === 'bedtime')
 
   const entriesOf = (c: Challenge): EntryMap => entries[c.id] ?? {}
+  const setDialogDay = (day: string) =>
+    setDialog({
+      day,
+      existing: logsQuery.data?.find((l) => l.day === day) ?? null,
+      quits: allChallenges
+        .filter((c) => c.kind === 'quit' && isLive(c) && dayOutcome(c, entriesOf(c), parseDay(day), today) !== 'outside')
+        .map((c) => ({ challenge: c, value: entriesOf(c)[day] })),
+      failed: false,
+    })
   const isDone = (c: Challenge) => dayOutcome(c, entriesOf(c), today, today) === 'hit'
   const streakOf = (c: Challenge) => currentStreak(c, entriesOf(c), today)
 
@@ -399,6 +412,7 @@ export function DayPage() {
                               <HoldCard
                                 challenge={c}
                                 failed={entriesOf(c)[todayK] === 0}
+                                answered={entriesOf(c)[todayK] === 1}
                                 streak={streakOf(c)}
                                 frozen={locked}
                                 onToggleRelapse={() => toggleRelapse(c)}
@@ -517,12 +531,13 @@ export function DayPage() {
           day={dialog.day}
           existing={dialog.existing}
           pendingCount={dialog.day === todayK ? pendingCount : 0}
+          quits={dialog.quits}
           /* без сети запись на паузе (не ошибка и не ответ) — не запирать окно, а сказать и отпустить */
-          saving={saveDayLog.isPending && !saveDayLog.isPaused}
-          offline={saveDayLog.isPaused}
-          onSave={(log) => {
-            /* окно закрывается, когда база приняла итог: при отказе оценки, заметка и теги остаются в окне */
-            saveDayLog.mutate(log, {
+          saving={closeDay.isPending && !closeDay.isPaused}
+          offline={closeDay.isPaused}
+          onSave={(log, answers) => {
+            /* окно закрывается, когда база приняла итог: при отказе оценки, ответы, заметка и теги остаются в окне */
+            closeDay.mutate({ log, answers }, {
               onSuccess: () => {
                 setDialog(null)
                 toast(log.day === todayK ? 'День закрыт' : `День ${formatHuman(parseDay(log.day))} оценён`)
@@ -530,7 +545,7 @@ export function DayPage() {
               onError: () => setDialog((d) => d && { ...d, failed: true }),
             })
           }}
-          onCancel={dialog.existing || dialog.failed || saveDayLog.isPaused ? () => setDialog(null) : undefined}
+          onCancel={dialog.existing || dialog.failed || closeDay.isPaused ? () => setDialog(null) : undefined}
         />
       )}
     </div>

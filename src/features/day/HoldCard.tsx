@@ -8,6 +8,8 @@ export type HoldCardProps = {
   challenge: Challenge
   /** Срыв отмечен сегодня. */
   failed: boolean
+  /** Сегодня уже ответ «Да, без» (срез 5а): день отказа отвечают вечером в итоге дня. */
+  answered: boolean
   streak: number
   /** День закрыт: отметки больше не меняются. */
   frozen: boolean
@@ -15,10 +17,10 @@ export type HoldCardProps = {
 }
 
 /**
- * Отказ — не галочка, а счётчик непрерывности: день засчитывается сам,
- * нажимают только когда сорвались. Поэтому герой карточки — число, а не отметка.
+ * Отказ — не галочка, а счётчик непрерывности: днём нажимают только когда сорвались, а день
+ * отвечают вечером в итоге дня (срез 5а). Поэтому герой карточки — число, а не отметка.
  */
-export function HoldCard({ challenge, failed, streak, frozen, onToggleRelapse }: HoldCardProps) {
+export function HoldCard({ challenge, failed, answered, streak, frozen, onToggleRelapse }: HoldCardProps) {
   return (
     <div
       style={{ '--c': challenge.color } as CSSProperties}
@@ -43,7 +45,7 @@ export function HoldCard({ challenge, failed, streak, frozen, onToggleRelapse }:
         <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
           {failed
             ? 'срыв отмечен сегодня'
-            : `${plural(streak, 'день', 'дня', 'дней')} без срыва`}
+            : `${plural(streak, 'день', 'дня', 'дней')} без срыва${answered ? '' : ' · ответ — вечером'}`}
         </div>
       </div>
 

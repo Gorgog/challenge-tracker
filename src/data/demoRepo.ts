@@ -37,7 +37,7 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 12
+const STORAGE_VERSION = 13
 
 /** Копия утра с ночью; утро без ночи — ночь null, как читает база. */
 const copyMorning = (m: Morning | null): Morning | null => (m ? { ...m, night: m.night ? { ...m.night } : null } : null)
@@ -254,6 +254,9 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     async setEntry(challengeId, day, value) {
       /* как в базе: у «Времени» отметок нет, выполнение считается из утра */
       if (find(challengeId)?.measure === 'bedtime') throw new Error('Отбой отмечается утром, а не отметкой')
+      /* как в базе: у отказа отметка — только ответ дня, 1 «Да, без» или 0 «сорвался» (срез 5а) */
+      if (find(challengeId)?.kind === 'quit' && value !== undefined && value !== 0 && value !== 1)
+        throw new Error('У отказа отметка — только «Да, без» (1) или «сорвался» (0)')
       const map = (entries[challengeId] ??= {})
       if (value === undefined) delete map[day]
       else map[day] = value

@@ -4,6 +4,7 @@ import type { Challenge, DayLog, DayStart, EntryMap, Tag } from '@/domain/types'
 import {
   NOTES,
   SKIP_MORNING,
+  answerQuits,
   clamp,
   morningNoise,
   morningStream,
@@ -192,5 +193,7 @@ export function seedBurnout(today: Date, seed: number): Seed {
 
   /* выбираясь, начал иногда нормально спать: месяц назад ложился на полтора часа позже */
   const late = (day: string) => 90 * (daysBetween(parseDay(day), today) / (DAYS - 1))
+  /* отказов в этой истории нет, но правило то же, что в `full`: заведут — закрытые дни будут отвечены */
+  answerQuits(challenges, entries, logs, today)
   return { challenges, entries, logs, starts: withNights(starts, logs, seed, late), tags }
 }

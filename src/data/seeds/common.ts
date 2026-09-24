@@ -1,5 +1,6 @@
 import { addDays, dayKey, isoDow, parseDay } from '@/domain/date'
 import { usualNight } from '@/domain/night'
+import { dayOutcome } from '@/domain/streaks'
 import type { Challenge, DayLog, DayStart, EntryMap, Night, NightHow, Tag } from '@/domain/types'
 
 /** Что насыпает сценарий демо: челленджи, отметки, итоги и начала дней, теги. */
@@ -9,6 +10,19 @@ export type Seed = {
   logs: DayLog[]
   starts: DayStart[]
   tags: Tag[]
+}
+
+/**
+ * Отказ отвечают вечером (срез 5а): закрытый день без срыва — «Да, без» (1). Дни, которые не закрывали,
+ * остаются без ответа — «не записано». Случайных чисел не берёт: последовательности сида не сдвигаются.
+ */
+export function answerQuits(challenges: Challenge[], entries: Record<string, EntryMap>, logs: DayLog[], today: Date) {
+  for (const c of challenges.filter((x) => x.kind === 'quit')) {
+    const map = (entries[c.id] ??= {})
+    for (const { day } of logs) {
+      if (map[day] === undefined && dayOutcome(c, map, parseDay(day), today) !== 'outside') map[day] = 1
+    }
+  }
 }
 
 export const NOTES = {

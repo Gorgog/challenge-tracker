@@ -18,7 +18,9 @@ const outcomeText = (c: Challenge, o: Outcome, bed: number | undefined) =>
     ? bedtimeText(c, o, bed)
     : o === 'pending'
       ? 'день ещё идёт'
-      : c.kind === 'quit'
+      : o === 'unknown'
+        ? 'не записано'
+        : c.kind === 'quit'
         ? o === 'hit' ? 'без срыва' : 'срыв'
         : o === 'hit' ? 'выполнен' : 'пропущен'
 
