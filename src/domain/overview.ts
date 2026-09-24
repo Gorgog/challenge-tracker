@@ -1,6 +1,16 @@
-import { parseDay } from './date'
+import { dayKey, parseDay } from './date'
 import { dayOutcome } from './streaks'
-import { BAD_SLEEP, HARMFUL_TAGS, periodReport, round1, type TimelineDay } from './timeline'
+import {
+  BAD_SLEEP,
+  HARMFUL_TAGS,
+  morningPending,
+  periodReport,
+  round1,
+  shiftOfDay,
+  stateOf,
+  type Shift,
+  type TimelineDay,
+} from './timeline'
 import type { Challenge, EntryMap, Outcome } from './types'
 
 /*
@@ -17,7 +27,7 @@ const mean = (values: (number | null | undefined)[]) => {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
 }
 
-/** Значение цели за день. Нет записи — null, а не ноль. */
+/** Значение цели за день — среднее того, что записано. Нет записи — null, а не ноль. */
 export function goalValue(d: TimelineDay, goal: Goal): number | null {
   const m = d.morning
   const e = d.evening
@@ -35,12 +45,28 @@ export function goalValue(d: TimelineDay, goal: Goal): number | null {
   }
 }
 
+/**
+ * День записан по этой цели полностью. Утро обычно ниже вечера, поэтому день из одного утра (сегодня
+ * до вечера) или одного вечера — не на той же шкале: на графике он серый, в полосу и фразу не идёт
+ * (решение Georgy по ревью 24.09).
+ */
+export function isComplete(d: TimelineDay, goal: Goal): boolean {
+  if (goal === 'sleep') return d.morning !== null
+  if (goal === 'productivity') return d.evening !== null
+  return d.morning !== null && d.evening !== null
+}
+
+/** Значение полного дня; неполный и пустой — null. */
+const fullValue = (d: TimelineDay, goal: Goal) => (isComplete(d, goal) ? goalValue(d, goal) : null)
+
 /** Полоса «обычно» считается по стольким дням до окна. */
 export const BAND_DAYS = 28
-/** Меньше стольких записанных дней до окна — полоса «пока», по всей истории. */
+/** Меньше стольких полных дней до окна — полоса «пока», по всей истории. */
 export const BAND_MIN = 10
-/** Меньше стольких записанных дней вообще — полосы нет. */
+/** Меньше стольких полных дней вообще — полосы нет. */
 export const BAND_FLOOR = 5
+/** Меньше стольких полных дней в окне — фразы нет. */
+export const VERDICT_MIN = 5
 /** Половины окна различаются — от полубалла. */
 export const HALVES_DIFF = 0.5
 
@@ -53,16 +79,17 @@ function percentile(sorted: number[], p: number) {
   return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (i - lo)
 }
 
+const fullValues = (list: TimelineDay[], goal: Goal) => list.map((d) => fullValue(d, goal)).filter((v): v is number => v !== null)
+
 /**
- * Полоса «обычно» — 25–75 % своих дней за `BAND_DAYS` до окна: окно в неё не входит, иначе в плохой
- * месяц «обычное» опускается вместе с данными. Истории мало — по всем записанным дням, с пометкой.
+ * Полоса «обычно» — 25–75 % своих полных дней за `BAND_DAYS` до окна: окно в неё не входит, иначе в
+ * плохой месяц «обычное» опускается вместе с данными. Истории мало — по всем полным дням, с пометкой.
  */
 export function usualBand(history: TimelineDay[], windowStart: number, goal: Goal): Band {
-  const values = (list: TimelineDay[]) => list.map((d) => goalValue(d, goal)).filter((v): v is number => v !== null)
-  let base = values(history.slice(Math.max(0, windowStart - BAND_DAYS), windowStart))
+  let base = fullValues(history.slice(Math.max(0, windowStart - BAND_DAYS), windowStart), goal)
   let short = false
   if (base.length < BAND_MIN) {
-    base = values(history)
+    base = fullValues(history, goal)
     short = true
   }
   if (base.length < BAND_FLOOR) return { kind: 'none', need: BAND_FLOOR - base.length }
@@ -70,36 +97,52 @@ export function usualBand(history: TimelineDay[], windowStart: number, goal: Goa
   return { kind: 'band', low: round1(percentile(sorted, 0.25)), high: round1(percentile(sorted, 0.75)), days: base.length, short }
 }
 
-export type Tone = 'worse' | 'better' | 'usual'
+/** Где точка против полосы — по тому числу, что видно на экране (до десятых). */
+export function pointClass(v: number, band: Band): 'above' | 'below' | 'usual' {
+  if (band.kind === 'none') return 'usual'
+  const shown = round1(v)
+  return shown > band.high ? 'above' : shown < band.low ? 'below' : 'usual'
+}
+
+export type Tone = 'worse' | 'better' | 'usual' | 'mixed'
 export type Verdict =
   | { kind: 'band'; tone: Tone; below: number; above: number; recorded: number }
-  | { kind: 'halves'; tone: Tone; first: number; second: number }
+  | { kind: 'halves'; tone: Exclude<Tone, 'mixed'>; first: number; second: number }
+  | { kind: 'few'; recorded: number; need: number }
   | { kind: 'none'; need: number }
 
 /**
- * Фраза сверху. Ниже полосы половина дней с записью и больше — «хуже обычного», выше — «лучше».
- * Полоса «пока» (своей истории до окна мало) — вторая половина окна против первой.
+ * Фраза сверху — по полным дням окна. Ниже полосы половина и больше — «хуже обычного», выше — «лучше»,
+ * и то и другое — «то лучше, то хуже». Полных дней меньше `VERDICT_MIN` — вывода нет. Полоса «пока»
+ * (своей истории до окна мало) — вторая половина окна против первой.
  */
 export function verdict(window: TimelineDay[], band: Band, goal: Goal): Verdict {
   if (band.kind === 'none') return band
-  const values = window.map((d) => goalValue(d, goal))
+  const recorded = fullValues(window, goal)
+  if (recorded.length < VERDICT_MIN) return { kind: 'few', recorded: recorded.length, need: VERDICT_MIN }
   if (band.short) {
     const half = Math.floor(window.length / 2)
-    const first = mean(values.slice(0, half))
-    const second = mean(values.slice(half))
-    if (first === null || second === null) return { kind: 'none', need: 0 }
+    const first = mean(fullValues(window.slice(0, half), goal))
+    const second = mean(fullValues(window.slice(half), goal))
+    if (first === null || second === null) return { kind: 'few', recorded: recorded.length, need: VERDICT_MIN }
     const a = round1(first)
     const b = round1(second)
     const diff = round1(b - a)
     return { kind: 'halves', tone: diff <= -HALVES_DIFF ? 'worse' : diff >= HALVES_DIFF ? 'better' : 'usual', first: a, second: b }
   }
-  const recorded = values.filter((v): v is number => v !== null)
-  const below = recorded.filter((v) => v < band.low).length
-  const above = recorded.filter((v) => v > band.high).length
-  const worse = recorded.length > 0 && below * 2 >= recorded.length
-  const better = recorded.length > 0 && above * 2 >= recorded.length
-  const tone = worse && !better ? 'worse' : better && !worse ? 'better' : 'usual'
+  const below = recorded.filter((v) => pointClass(v, band) === 'below').length
+  const above = recorded.filter((v) => pointClass(v, band) === 'above').length
+  const worse = below * 2 >= recorded.length
+  const better = above * 2 >= recorded.length
+  const tone = worse && better ? 'mixed' : worse ? 'worse' : better ? 'better' : 'usual'
   return { kind: 'band', tone, below, above, recorded: recorded.length }
+}
+
+/** Ночь и день словами для шторки дня `history[index]`. */
+export function dayShift(history: TimelineDay[], index: number, today: Date, morningOpen: boolean): Shift {
+  const d = history[index]!
+  const prev = index > 0 ? history[index - 1]! : null
+  return shiftOfDay(stateOf(prev?.evening ?? null), stateOf(d.morning), stateOf(d.evening), morningPending(d, today, morningOpen))
 }
 
 /* ---------- ряды под графиком ---------- */
@@ -146,24 +189,29 @@ export function eventRows(
 
 /* ---------- что изменилось ---------- */
 
+/** `now` из `of` против `was` из `wasOf`: теги — из закрытых вечеров, плохие ночи — из записанных утр. */
+type Share = { now: number; of: number; was: number; wasOf: number }
 export type ChangeLine =
-  | { kind: 'tag'; tag: string; now: number; was: number; good: boolean | null }
-  | { kind: 'badSleep'; now: number; was: number; good: boolean }
+  | ({ kind: 'tag'; tag: string; good: boolean | null } & Share)
+  | ({ kind: 'badSleep'; good: boolean } & Share)
+  | ({ kind: 'skippedMornings'; good: boolean } & Share)
   | { kind: 'challenge'; challenge: Challenge; hits: number; known: number; wasHits: number; wasKnown: number; good: boolean }
 
-export type Changes = { hasPrev: false } | { hasPrev: true; lines: ChangeLine[] }
-
-/** Сдвиг доли выполнения челленджа в днях периода: «+3» — как три лишних выполненных дня из `len`. */
-const challengeShift = (l: Extract<ChangeLine, { kind: 'challenge' }>, len: number) =>
-  (l.hits / Math.max(1, l.known) - l.wasHits / Math.max(1, l.wasKnown)) * len
+export type Changes = { status: 'ok'; lines: ChangeLine[] } | { status: 'prevEmpty' } | { status: 'curEmpty' }
 
 /** Строк в «Что изменилось» — не больше. */
 export const CHANGES_SHOWN = 5
 
+/** Сдвиг доли в днях периода: «+3» — как три лишних дня из `len`. Доля — чтобы «не записывал» не читалось как «не было». */
+const shareShift = (now: number, of: number, was: number, wasOf: number, len: number) =>
+  of && wasOf ? (now / of - was / wasOf) * len : 0
+
 /**
- * `len` дней по `history[index]` включительно против `len` дней перед ними. Прошлый период, записанный
- * меньше чем наполовину, — не мерка. Изменение — от 2 дней у 14 и от 4 у 30 (как у `periodReport`);
- * челлендж — только если шёл хотя бы полпериода и сейчас, и тогда (`comparable`).
+ * `len` дней по `history[index]` включительно против `len` дней перед ними. Любой из периодов, записанный
+ * меньше чем наполовину, — не мерка. Всё сравнивается долей: теги — от закрытых вечеров, плохие ночи —
+ * от записанных утр, пропущенные утра — от дней (сегодняшнее, которое ещё можно записать, не в счёт),
+ * челлендж — от известных дней и только если шёл полпериода и сейчас, и тогда. Изменение — от 2 дней
+ * у 14 и от 4 у 30.
  */
 export function changes(
   history: TimelineDay[],
@@ -178,40 +226,48 @@ export function changes(
   const prevStart = index - 2 * len + 1
   const prev = prevStart >= 0 ? history.slice(prevStart, index - len + 1) : []
   const recorded = (list: TimelineDay[]) => list.filter((d) => d.morning || d.evening).length
-  if (prev.length !== len || recorded(prev) * 2 < len) return { hasPrev: false }
+  if (prev.length !== len || recorded(prev) * 2 < len) return { status: 'prevEmpty' }
+  if (recorded(cur) * 2 < len) return { status: 'curEmpty' }
 
   const minDiff = len >= 30 ? 4 : 2
-  const tagDays = (list: TimelineDay[], t: string) => list.filter((d) => d.tags.includes(t)).length
-  const badNights = (list: TimelineDay[]) => list.filter((d) => d.morning && d.morning.sleep <= BAD_SLEEP).length
+  const closed = (list: TimelineDay[]) => list.filter((d) => d.evening)
+  const mornings = (list: TimelineDay[]) => list.filter((d) => d.morning)
+  const share = (count: (l: TimelineDay[]) => number, base: (l: TimelineDay[]) => TimelineDay[]): Share => ({
+    now: count(base(cur)),
+    of: base(cur).length,
+    was: count(base(prev)),
+    wasOf: base(prev).length,
+  })
+  const shift = (s: Share) => shareShift(s.now, s.of, s.was, s.wasOf, len)
 
   const names = [...new Set([...cur, ...prev].flatMap((d) => d.tags))].sort((a, b) => a.localeCompare(b, 'ru'))
   const tagLines: ChangeLine[] = names.flatMap((tag) => {
-    const now = tagDays(cur, tag)
-    const was = tagDays(prev, tag)
-    if (Math.abs(now - was) < minDiff) return []
-    return [{ kind: 'tag' as const, tag, now, was, good: HARMFUL_TAGS.includes(tag) ? now < was : null }]
+    const s = share((l) => l.filter((d) => d.tags.includes(tag)).length, closed)
+    if (Math.abs(shift(s)) < minDiff) return []
+    return [{ kind: 'tag' as const, tag, ...s, good: HARMFUL_TAGS.includes(tag) ? shift(s) < 0 : null }]
   })
-  const sleepNow = badNights(cur)
-  const sleepWas = badNights(prev)
-  const sleepLines: ChangeLine[] =
-    Math.abs(sleepNow - sleepWas) >= minDiff ? [{ kind: 'badSleep', now: sleepNow, was: sleepWas, good: sleepNow < sleepWas }] : []
+  const sleep = share((l) => l.filter((d) => d.morning!.sleep <= BAD_SLEEP).length, mornings)
+  const sleepLines: ChangeLine[] = Math.abs(shift(sleep)) >= minDiff ? [{ kind: 'badSleep', ...sleep, good: shift(sleep) < 0 }] : []
+  const todayKey = dayKey(today)
+  const due = (l: TimelineDay[]) => l.filter((d) => !(d.day === todayKey && morningPending(d, today, morningOpen)))
+  const skipped = share((l) => l.filter((d) => !d.morning).length, due)
+  const skippedLines: ChangeLine[] = Math.abs(shift(skipped)) >= minDiff ? [{ kind: 'skippedMornings', ...skipped, good: shift(skipped) < 0 }] : []
 
   const window = history.slice(Math.max(0, index - 29), index + 1)
   const challengeLines: ChangeLine[] = challenges.flatMap((c) => {
     const r = periodReport(history, index, len, window, c, entries[c.id] ?? {}, today, morningOpen).challenge
     if (!r.comparable) return []
-    /* долей, а не числом пропусков: в периодах разное число известных дней, и «6 из 13 против 3 из 7»
-       выходило «пропусков больше» при той же доле (демо 24.09) */
-    const shift = challengeShift({ kind: 'challenge', challenge: c, ...r, good: false }, len)
-    if (Math.abs(shift) < minDiff) return []
-    return [{ kind: 'challenge' as const, challenge: c, hits: r.hits, known: r.known, wasHits: r.wasHits, wasKnown: r.wasKnown, good: shift > 0 }]
+    const s = shareShift(r.hits, r.known, r.wasHits, r.wasKnown, len)
+    if (Math.abs(s) < minDiff) return []
+    return [{ kind: 'challenge' as const, challenge: c, hits: r.hits, known: r.known, wasHits: r.wasHits, wasKnown: r.wasKnown, good: s > 0 }]
   })
 
-  const size = (l: ChangeLine) => (l.kind === 'challenge' ? Math.abs(challengeShift(l, len)) : Math.abs(l.now - l.was))
-  const lines = [...tagLines, ...sleepLines, ...challengeLines]
+  const size = (l: ChangeLine) =>
+    Math.abs(l.kind === 'challenge' ? shareShift(l.hits, l.known, l.wasHits, l.wasKnown, len) : shareShift(l.now, l.of, l.was, l.wasOf, len))
+  const lines = [...tagLines, ...sleepLines, ...skippedLines, ...challengeLines]
     .map((l, i) => ({ l, i }))
     .sort((a, b) => size(b.l) - size(a.l) || a.i - b.i)
     .slice(0, CHANGES_SHOWN)
     .map(({ l }) => l)
-  return { hasPrev: true, lines }
+  return { status: 'ok', lines }
 }

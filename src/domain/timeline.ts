@@ -153,7 +153,7 @@ const outcomeOf = (c: Challenge, entries: EntryMap, day: string, today: Date): O
  * Утро ещё можно записать: это сегодня, день не начат и час утра из настроек не прошёл (`morningOpen`
  * из `domain/dayStart.ts`). Такое утро не пропущено; начатый без утра день и прошедший час — пропущено.
  */
-const morningPending = (d: TimelineDay, today: Date, morningOpen: boolean) =>
+export const morningPending = (d: TimelineDay, today: Date, morningOpen: boolean) =>
   morningOpen && !d.started && d.day === dayKey(today)
 
 /* ---------- разбор дня ---------- */
@@ -162,6 +162,19 @@ export type Shift =
   | { kind: 'noMorning' }
   | { kind: 'nightDown' | 'dayDown' | 'dayUp' | 'nightUp'; by: number }
   | null
+
+/**
+ * Что сдвинуло сутки: ночь (вечер накануне → утро) или сам день (утро → вечер), от `SHIFT` баллов.
+ * Утра нет — «не видно», если его уже не записать (`pending` — ещё можно).
+ */
+export function shiftOfDay(prevEvening: number | null, morning: number | null, evening: number | null, pending: boolean): Shift {
+  if (morning === null) return pending ? null : { kind: 'noMorning' }
+  if (prevEvening !== null && morning - prevEvening <= -SHIFT) return { kind: 'nightDown', by: prevEvening - morning }
+  if (evening !== null && evening - morning <= -SHIFT) return { kind: 'dayDown', by: morning - evening }
+  if (evening !== null && evening - morning >= SHIFT) return { kind: 'dayUp', by: evening - morning }
+  if (prevEvening !== null && morning - prevEvening >= SHIFT) return { kind: 'nightUp', by: morning - prevEvening }
+  return null
+}
 
 export type Fact =
   | { kind: 'tagBefore'; tag: string }
@@ -219,12 +232,7 @@ export function dayReport(
   ])
   const verdict = delta === null ? 'empty' : delta <= -DAY_VS_NORM ? 'worse' : delta >= DAY_VS_NORM ? 'better' : 'usual'
 
-  let shift: Shift = null
-  if (morning === null) shift = morningPending(d, today, morningOpen) ? null : { kind: 'noMorning' }
-  else if (prevEvening !== null && morning - prevEvening <= -SHIFT) shift = { kind: 'nightDown', by: prevEvening - morning }
-  else if (evening !== null && evening - morning <= -SHIFT) shift = { kind: 'dayDown', by: morning - evening }
-  else if (evening !== null && evening - morning >= SHIFT) shift = { kind: 'dayUp', by: evening - morning }
-  else if (prevEvening !== null && morning - prevEvening >= SHIFT) shift = { kind: 'nightUp', by: morning - prevEvening }
+  const shift = shiftOfDay(prevEvening, morning, evening, morningPending(d, today, morningOpen))
 
   const facts: Fact[] = []
   for (const tag of prev?.tags ?? []) facts.push({ kind: 'tagBefore', tag })
