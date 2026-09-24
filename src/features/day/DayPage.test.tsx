@@ -373,7 +373,7 @@ describe('экран дня — отказ отвечает вечером «Д�
     const { rerender } = render(<DayPage />)
     await user.click(screen.getByRole('button', { name: 'сорвался' }))
     expect(mocked.setEntry).toHaveBeenCalledTimes(1)
-    const undo = vi.mocked(toast).mock.calls.at(-1)![1] as { action: { onClick: () => void } }
+    const undo = vi.mocked(toast).mock.calls.at(-1)![1] as unknown as { action: { onClick: () => void } }
     /* день закрыли, пока тост ещё висит */
     mocked.entries = { smoke: { [TODAY]: 0 } }
     mocked.logs = [closed]

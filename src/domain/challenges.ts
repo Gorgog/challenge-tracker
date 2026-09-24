@@ -26,8 +26,10 @@ const RULE_KEYS = ['kind', 'measure', 'goal', 'unit', 'lengthDays'] as const
  * Правка с учётом замка. У запертого челленджа правила молча остаются прежними:
  * интерфейс эти поля и так выключает, а здесь страховка на уровне данных.
  * Запереть можно, отпереть нельзя — иначе замок ничего не значит.
+ * `marked` — у челленджа уже есть отметки: тогда тип прежний (ревью 5а, решение Georgy) — иначе «прочитал»
+ * задним числом стал бы «Да, без», а число страниц — ответом отказа.
  */
-export function applyPatch(c: Challenge, patch: ChallengePatch): Challenge {
+export function applyPatch(c: Challenge, patch: ChallengePatch, marked = false): Challenge {
   const next: Challenge = { ...c, tagIds: [...c.tagIds] }
 
   if (patch.name !== undefined) next.name = patch.name.trim()
@@ -44,6 +46,7 @@ export function applyPatch(c: Challenge, patch: ChallengePatch): Challenge {
      * исходы из ночей, а хранимые отметки — остались бы лишними. Тогда правила остаются прежними целиком.
      */
     if ((next.measure === 'bedtime') !== (c.measure === 'bedtime')) for (const key of RULE_KEYS) Object.assign(next, { [key]: c[key] })
+    if (marked) next.kind = c.kind
   }
 
   if (patch.rulesLocked === true) next.rulesLocked = true
@@ -80,7 +83,7 @@ export function resume(c: Challenge, today: Date, closed = false): Challenge {
 
 /**
  * Возвращает из корзины. Дни, пока челлендж был удалён, становятся паузой — иначе они
- * «ожили» бы пропусками у привычки или «выдержан» у отказа. Как и со снятием паузы: закрытый
+ * «ожили» бы пропусками у привычки или «не записано» у отказа. Как и со снятием паузы: закрытый
  * итогом день тоже остаётся паузой, и челлендж идёт с завтра. Был на паузе, когда удалили, —
  * пауза и так идёт.
  */

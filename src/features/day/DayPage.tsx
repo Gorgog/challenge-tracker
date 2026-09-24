@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   DndContext,
@@ -160,6 +160,11 @@ export function DayPage() {
   const todayLog = logs.find((l) => l.day === todayK) ?? null
   /* Закрытый день не правится задним числом: иначе оценка перестаёт что-либо значить. */
   const frozen = Boolean(todayLog)
+  /* закрытые дни — для тостов, которые живут дольше рендера */
+  const closedDays = useRef(new Set<string>())
+  useEffect(() => {
+    closedDays.current = new Set((logsQuery.data ?? []).map((l) => l.day))
+  }, [logsQuery.data])
   const settings = settingsQuery.data ?? DEFAULT_SETTINGS
   const todayStart = starts.find((s) => s.day === todayK) ?? null
   /* Не начатый день тоже под блюром: отметки — только после начала, утро — до дел дня. */
@@ -213,16 +218,29 @@ export function DayPage() {
     setDialogDay(todayK)
   }
 
-  /** Отметка применяется сразу, тост даёт вернуть прежнее значение. */
+  /**
+   * Отметка применяется сразу, тост даёт вернуть прежнее значение — но не в закрытый за это время день: закрытый
+   * день отметки замораживает, а у отказа «Отменить» стёрло бы ответ дня (ревью 5а). Закрыт ли — на момент нажатия.
+   */
   const applyEntry = (c: Challenge, day: string, value: number | undefined, message: string) => {
     const previous = entriesOf(c)[day]
     setEntry.mutate({ challengeId: c.id, day, value })
     toast(message, {
       action: {
         label: 'Отменить',
-        onClick: () => setEntry.mutate({ challengeId: c.id, day, value: previous }),
+        onClick: () => {
+          if (closedDays.current.has(day)) toast('День уже закрыт — отметки не меняются')
+          else setEntry.mutate({ challengeId: c.id, day, value: previous })
+        },
       },
     })
+  }
+
+  /** Чего ждёт сегодняшний день отказа: ответа вечером, ответа в «Изменить оценку» или ничего (срез 5а). */
+  const awaitingOf = (c: Challenge): 'evening' | 'edit' | null => {
+    const value = entriesOf(c)[todayK]
+    if (value === 0 || value === 1 || dayOutcome(c, entriesOf(c), today, today) === 'outside') return null
+    return frozen ? 'edit' : 'evening'
   }
 
   const toggleTask = (c: Challenge) => {
@@ -412,7 +430,7 @@ export function DayPage() {
                               <HoldCard
                                 challenge={c}
                                 failed={entriesOf(c)[todayK] === 0}
-                                answered={entriesOf(c)[todayK] === 1}
+                                awaiting={awaitingOf(c)}
                                 streak={streakOf(c)}
                                 frozen={locked}
                                 onToggleRelapse={() => toggleRelapse(c)}
@@ -505,7 +523,9 @@ export function DayPage() {
             Завершить день
           </Button>
           <span className="text-center text-xs text-muted-foreground">
-            Спросит настроение, самочувствие и продуктивность.
+            {holds.some((c) => c.kind === 'quit')
+              ? 'Спросит настроение, самочувствие, продуктивность и ответ по отказам.'
+              : 'Спросит настроение, самочувствие и продуктивность.'}
             <br />
             Незакрытые задачи останутся пропусками.
           </span>

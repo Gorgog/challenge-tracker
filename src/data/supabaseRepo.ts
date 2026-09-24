@@ -122,7 +122,14 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
       const row = await challengeRow(id)
       if (!row) return
       const before = challengeFromRow(row)
-      const { id: _, ...next } = applyPatch(before, patch)
+      /* тип меняется, пока нет отметок: спросить базу, только когда тип и правда меняют */
+      let marked = false
+      if (patch.kind !== undefined && patch.kind !== before.kind) {
+        const { count, error } = await db.from('entries').select('day', { count: 'exact', head: true }).eq('challenge_id', id)
+        if (error) throw failure(error)
+        marked = (count ?? 0) > 0
+      }
+      const { id: _, ...next } = applyPatch(before, patch, marked)
       /* только изменённое: порядок, паузы и удаление могли поменяться другим запросом */
       const diff = changedFields(challengeToRow(before), challengeToRow(next))
       if (Object.keys(diff).length) await saveChallenge(id, diff)

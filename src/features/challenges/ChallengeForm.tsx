@@ -37,6 +37,8 @@ export type ChallengeFormProps = {
   usualBed?: number | null
   /** Черновик нового челленджа — например, «Ложусь раньше» из аналитики. */
   initial?: { name?: string; measure?: ChallengeMeasure }
+  /** У челленджа уже есть отметки: тип не меняется (ревью 5а, решение Georgy). */
+  marked?: boolean
 }
 
 /** «Лечь не позже» по умолчанию — на столько минут раньше обычного отбоя. */
@@ -53,6 +55,7 @@ export function ChallengeForm({
   onCancel,
   usualBed = null,
   initial,
+  marked = false,
 }: ChallengeFormProps) {
   const editing = Boolean(challenge)
   /* Замок, который стоял ещё до открытия формы. Здесь его не снять. */
@@ -153,10 +156,10 @@ export function ChallengeForm({
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-medium">Тип</span>
           <div className="flex gap-2">
-            <Choice active={kind === 'do'} disabled={rulesFrozen} onClick={() => setKind('do')}>
+            <Choice active={kind === 'do'} disabled={rulesFrozen || marked} onClick={() => setKind('do')}>
               Привычка
             </Choice>
-            <Choice active={kind === 'quit'} disabled={rulesFrozen || wasBedtime} onClick={() => setKind('quit')}>
+            <Choice active={kind === 'quit'} disabled={rulesFrozen || wasBedtime || marked} onClick={() => setKind('quit')}>
               Отказ
             </Choice>
           </div>
@@ -164,6 +167,7 @@ export function ChallengeForm({
             {kind === 'do'
               ? 'День пустой, отметка означает выполнено.'
               : 'Вечером в итоге дня — «Да, без» или «сорвался». Срыв можно отметить и сразу.'}
+            {marked && !rulesFrozen && ' Тип не меняется: уже есть отметки.'}
           </p>
         </div>
 

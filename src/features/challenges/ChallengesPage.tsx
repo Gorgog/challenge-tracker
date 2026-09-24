@@ -37,7 +37,7 @@ export function ChallengesPage() {
   const tags = useTags()
   /* Пауза считается и в кэше: ей нужны сегодняшняя отметка и итог дня. Без подписки
      кэш бывает пуст, и пауза в кэше разошлась бы с хранилищем. */
-  useEntries()
+  const entries = useEntries()
   useDayLogs()
   const createChallenge = useCreateChallenge()
   const setPaused = useSetPaused()
@@ -166,6 +166,7 @@ export function ChallengesPage() {
           existing={all}
           tags={tags.data ?? []}
           challenge={editing}
+          marked={Object.keys(entries.data?.[editing.id] ?? {}).length > 0}
           onCreateTag={(name) => createTag.mutateAsync(name)}
           onCancel={() => setEditing(null)}
           onSave={(patch) => {

@@ -26,3 +26,17 @@ from public.challenges c
 join public.day_logs l on l.user_id = c.user_id and l.day >= c.start_date
 where c.kind = 'quit'
 on conflict (challenge_id, day) do nothing;
+
+-- 3. Тип у челленджа с отметками не меняется (ревью 5а, решение Georgy): «прочитал» задним числом стал бы «Да, без»,
+-- а число страниц — ответом отказа. Домен (applyPatch с marked) такие правки не отправляет — здесь страховка базы.
+create function public.challenges_keep_kind() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if old.kind <> new.kind and exists (select 1 from public.entries e where e.challenge_id = old.id) then
+    raise exception 'Тип у челленджа с отметками не меняется' using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+
+create trigger challenges_keep_kind before update on public.challenges
+  for each row execute function public.challenges_keep_kind();

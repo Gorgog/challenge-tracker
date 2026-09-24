@@ -35,7 +35,10 @@ export type DayCloseDialogProps = {
    * Закрыть день можно, только ответив по каждому.
    */
   quits?: QuitQuestion[]
-  /** `answers` — ответы отказов для записи: при правке закрытого дня пусто, его отметки заморожены. */
+  /**
+   * `answers` — ответы отказов для записи. При правке закрытого дня прежние ответы заморожены и не уходят; ответить
+   * можно только на неотвеченный (отказ завели после закрытия) — ревью 5а, решение Georgy.
+   */
   onSave: (log: DayLog, answers: Record<string, 0 | 1>) => void
   /** Передаётся только там, где отказаться можно: при правке уже закрытого дня или после отказа базы. */
   onCancel?: () => void
@@ -80,7 +83,8 @@ export function DayCloseDialog({
 
   const date = parseDay(day)
   const editing = Boolean(existing)
-  /* закрытый день отметки замораживает: при правке ответы видны, но не требуются и не меняются */
+  /* закрытый день отметки замораживает: при правке прежние ответы видны и заперты, неотвеченный — по желанию */
+  const locked = (q: QuitQuestion) => editing && answerOf(q.value) !== null
   const unanswered = editing ? 0 : quits.filter((q) => answers[q.challenge.id] == null).length
   const ready = SCALES.every((s) => scores[s.field] !== null) && unanswered === 0
   const canCancel = Boolean(onCancel) && !saving
@@ -98,7 +102,12 @@ export function DayCloseDialog({
       tags,
       note: note.trim(),
       closedAt: existing?.closedAt ?? new Date().toISOString(),
-    }, editing ? {} : (answers as Record<string, 0 | 1>))
+    }, Object.fromEntries(
+      quits.flatMap((q) => {
+        const answer = answers[q.challenge.id]
+        return locked(q) || answer == null ? [] : [[q.challenge.id, answer]]
+      }),
+    ))
   }
 
   return (
@@ -144,7 +153,8 @@ export function DayCloseDialog({
               <b className="text-[13.5px] font-semibold">Отказы</b>
               {!editing && <em className="font-mono text-xs not-italic text-muted-foreground">ответ обязателен</em>}
             </div>
-            {quits.map(({ challenge: c }) => {
+            {quits.map((q) => {
+              const c = q.challenge
               const answer = answers[c.id] ?? null
               return (
                 <div
@@ -156,29 +166,25 @@ export function DayCloseDialog({
                 >
                   <span aria-hidden className="size-2.5 rounded-full bg-[var(--c)]" />
                   <span className="min-w-0 text-[14px] font-medium">{c.name}</span>
-                  {editing && answer === null ? (
-                    <span className="font-mono text-[11.5px] text-muted-foreground">не записано</span>
-                  ) : (
-                    <span className="flex gap-1">
-                      {([1, 0] as const).map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          aria-pressed={answer === v}
-                          disabled={editing}
-                          onClick={() => setAnswers((prev) => ({ ...prev, [c.id]: v }))}
-                          className={cn(
-                            'rounded-full border px-3 py-1 text-[12.5px] transition-colors disabled:cursor-default',
-                            answer !== v && 'border-input bg-secondary text-secondary-foreground enabled:hover:bg-muted',
-                            answer === v && v === 1 && 'border-foreground bg-foreground font-medium text-background',
-                            answer === v && v === 0 && 'border-destructive bg-destructive font-medium text-white',
-                          )}
-                        >
-                          {v === 1 ? 'Да, без' : 'Сорвался'}
-                        </button>
-                      ))}
-                    </span>
-                  )}
+                  <span className="flex gap-1">
+                    {([1, 0] as const).map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        aria-pressed={answer === v}
+                        disabled={locked(q)}
+                        onClick={() => setAnswers((prev) => ({ ...prev, [c.id]: v }))}
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-[12.5px] transition-colors disabled:cursor-default',
+                          answer !== v && 'border-input bg-secondary text-secondary-foreground enabled:hover:bg-muted',
+                          answer === v && v === 1 && 'border-foreground bg-foreground font-medium text-background',
+                          answer === v && v === 0 && 'border-destructive bg-destructive font-medium text-white',
+                        )}
+                      >
+                        {v === 1 ? 'Да, без' : 'Сорвался'}
+                      </button>
+                    ))}
+                  </span>
                 </div>
               )
             })}

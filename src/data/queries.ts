@@ -366,9 +366,12 @@ const patchOne = (list: Challenge[], id: string, change: (c: Challenge) => Chall
   list.map((c) => (c.id === id ? change(c) : c))
 
 export function useUpdateChallenge() {
+  const client = useQueryClient()
+  /* тип у челленджа с отметками не меняется — кэш решает так же, как хранилище */
+  const marked = (id: string) => Object.keys(client.getQueryData<Record<string, EntryMap>>(queryKeys.entries)?.[id] ?? {}).length > 0
   return useChallengeMutation(
     ({ id, patch }: { id: string; patch: ChallengePatch }) => repo.updateChallenge(id, patch),
-    (list, { id, patch }) => patchOne(list, id, (c) => applyPatch(c, patch)),
+    (list, { id, patch }) => patchOne(list, id, (c) => applyPatch(c, patch, marked(id))),
   )
 }
 

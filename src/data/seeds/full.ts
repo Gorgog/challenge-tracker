@@ -135,7 +135,7 @@ export function seedFull(today: Date, seed: number): Seed {
       /* Дни паузы — без отметок: в них челлендж не участвует. */
       if (pausedOn(c, key)) continue
 
-      /* Отказ: запись появляется ТОЛЬКО при срыве. Выдержанный день — пустота, а не единица. */
+      /* Отказ: здесь — только срыв (0). «Да, без» (1) ставит `answerQuits` в закрытые дни: случай его не решает. */
       if (c.kind === 'quit') {
         const relapse =
           c.id === 'smoke'

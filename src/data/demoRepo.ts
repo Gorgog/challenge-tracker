@@ -199,7 +199,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     async updateChallenge(id, patch) {
       const index = challenges.findIndex((c) => c.id === id)
       if (index < 0) return
-      const next = applyPatch(challenges[index]!, patch)
+      const next = applyPatch(challenges[index]!, patch, Object.keys(entries[id] ?? {}).length > 0)
       if (next.measure === 'bedtime' && (!validBedtimeGoal(next.goal) || next.kind !== 'do')) throw new Error('Время отбоя записано неверно')
       challenges[index] = next
       persist()
