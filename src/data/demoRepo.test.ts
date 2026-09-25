@@ -4,6 +4,7 @@ import { isPaused } from '@/domain/pauses'
 import { activeDays, dayOutcome } from '@/domain/streaks'
 import { SCORE_MAX, SCORE_MIN } from '@/domain/score'
 import { unratedDays } from '@/domain/stats'
+import { validLevels } from '@/domain/tags'
 import type { DayLog, DayStart, ScoreField } from '@/domain/types'
 import { SCENARIO_KEY, createDemoRepo, demoScenario } from './demoRepo'
 
@@ -801,6 +802,15 @@ describe('настройки', () => {
     expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 15 })
   })
 
+  it('снимок версии 13 (до среза 5б) тоже пересобирается — версия поднята 13 → 14', async () => {
+    const storage = fakeStorage()
+    await withStorage(storage).saveSettings({ morningUntil: 12 })
+    const raw = JSON.parse(storage.getItem('tabel-demo')!) as Record<string, unknown>
+    storage.setItem('tabel-demo', JSON.stringify({ ...raw, version: 13 }))
+
+    expect(await withStorage(storage).getSettings()).toEqual({ morningUntil: 15 })
+  })
+
   it.each(['starts', 'settings'])('снимок нынешней версии без «%s» — битый, пересобирается', async (field) => {
     const storage = fakeStorage()
     await withStorage(storage).saveSettings({ morningUntil: 12 })
@@ -914,5 +924,145 @@ describe('утро в демо', () => {
     const r = cov / Math.sqrt(mean(xs.map((x) => (x - mx) ** 2)) * mean(ys.map((y) => (y - my) ** 2)))
     expect(r).toBeGreaterThan(0.3)
     expect(r).toBeLessThan(0.95)
+  })
+})
+
+describe('демо: уровни тегов (срез 5б)', () => {
+  const SEEDS = [20260921, 20266840, 424242]
+  const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length
+
+  it.each(SEEDS)('full, зерно %i: у каждого итога дня уровни валидны (validLevels)', async (seed) => {
+    const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'full' })
+    for (const log of await r.listDayLogs()) {
+      expect(validLevels(log.tags, log.levels), log.day).toBe(true)
+    }
+  })
+
+  it.each(SEEDS)('burnout, зерно %i: у каждого итога дня уровни валидны (validLevels)', async (seed) => {
+    const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'burnout' })
+    for (const log of await r.listDayLogs()) {
+      expect(validLevels(log.tags, log.levels), log.day).toBe(true)
+    }
+  })
+
+  /*
+   * Свойства ниже — вероятностные (доля вечеров с тегом или ступенью мала), поэтому проверяются
+   * по ОБЪЕДИНЕНИЮ трёх зёрен, а не на каждом в отдельности: так порог не приходится подбирать
+   * под то, выпало ли что-то на конкретном зерне (see data.check.md №10).
+   */
+  const allFullLogs = async () => {
+    const perSeed = await Promise.all(
+      SEEDS.map((seed) => createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'full' }).listDayLogs()),
+    )
+    return perSeed.flat()
+  }
+
+  it('full, объединение трёх зёрен: у алкоголя встречаются все три ступени и есть вечера без ступени', async () => {
+    const logs = await allFullLogs()
+    const alcoholLogs = logs.filter((l) => l.tags.includes('алкоголь'))
+    expect(alcoholLogs.length).toBeGreaterThan(0)
+    const seen = new Set(alcoholLogs.map((l) => l.levels?.['алкоголь']).filter((v) => v !== undefined))
+    expect(seen).toEqual(new Set([1, 2, 3]))
+    expect(alcoholLogs.some((l) => l.levels?.['алкоголь'] === undefined)).toBe(true)
+  })
+
+  it.each(['игры', 'стресс', 'работа допоздна'] as const)(
+    'full, объединение трёх зёрен: тег «%s» встречается со ступенью, а не только именем',
+    async (tag) => {
+      const logs = await allFullLogs()
+      const withLevel = logs.filter((l) => l.tags.includes(tag) && l.levels?.[tag] !== undefined)
+      expect(withLevel.length).toBeGreaterThan(0)
+    },
+  )
+
+  it('full, объединение трёх зёрен: «работа допоздна» не бывает в выходные (частота 0 по спеке)', async () => {
+    const logs = await allFullLogs()
+    const late = logs.filter((l) => l.tags.includes('работа допоздна'))
+    expect(late.length).toBeGreaterThan(0)
+    expect(late.every((l) => isoDow(parseDay(l.day)) < 5)).toBe(true)
+  })
+
+  it('full, объединение трёх зёрен: после ступени 3 алкоголя утреннее самочувствие D+1 в среднем ниже, чем после ступени 1', async () => {
+    const wellbeingAfter = async (seed: number, level: number) => {
+      const r = createDemoRepo({ today: TODAY, seed, storage: null, scenario: 'full' })
+      const [starts, logs] = await Promise.all([r.listDayStarts(), r.listDayLogs()])
+      const byDay = new Map(starts.flatMap((s) => (s.morning ? [[s.day, s.morning.wellbeing] as const] : [])))
+      return logs
+        .filter((l) => l.tags.includes('алкоголь') && l.levels?.['алкоголь'] === level)
+        .map((l) => byDay.get(dayKey(addDays(parseDay(l.day), 1))))
+        .filter((v): v is number => v !== undefined)
+    }
+    const level3: number[] = []
+    const level1: number[] = []
+    for (const seed of SEEDS) {
+      level3.push(...(await wellbeingAfter(seed, 3)))
+      level1.push(...(await wellbeingAfter(seed, 1)))
+    }
+    expect(level3.length).toBeGreaterThan(0)
+    expect(level1.length).toBeGreaterThan(0)
+    expect(mean(level3)).toBeLessThan(mean(level1))
+  })
+
+  it('saveDayLog отклоняет неверные уровни, ничего не сохраняя (пустое хранилище)', async () => {
+    const r = createDemoRepo({ today: TODAY, seed: 20260921, storage: null, scenario: 'empty' })
+    await expect(
+      r.saveDayLog({
+        day: '2026-09-20',
+        mood: 5,
+        wellbeing: 5,
+        productivity: 5,
+        tags: ['алкоголь'],
+        note: '',
+        closedAt: '2026-09-20T21:00:00.000Z',
+        levels: { алкоголь: 5 },
+      } as DayLog),
+    ).rejects.toThrow()
+    // Пустое хранилище: проверка «ничего не сохранилось» простая — список итогов остаётся пустым.
+    // (`full`/`burnout` уже закрывают 2026-09-20 в сиде — там пришлось бы сравнивать «до» и «после».)
+    expect(await r.listDayLogs()).toEqual([])
+  })
+
+  describe('«levels» отдаётся по значению, не по ссылке', () => {
+    it('правка полученного levels не меняет хранилище (демо, без диска)', async () => {
+      const r = repo()
+      await r.saveDayLog({
+        day: '2026-09-20',
+        mood: 5,
+        wellbeing: 5,
+        productivity: 5,
+        tags: ['алкоголь'],
+        note: '',
+        closedAt: '2026-09-20T21:00:00.000Z',
+        levels: { алкоголь: 2 },
+      } as DayLog)
+      const got = (await r.listDayLogs()).find((l) => l.day === '2026-09-20')! as DayLog & {
+        levels: Record<string, number>
+      }
+      got.levels.алкоголь = 99
+      const again = (await r.listDayLogs()).find((l) => l.day === '2026-09-20')! as DayLog & {
+        levels: Record<string, number>
+      }
+      expect(again.levels).toEqual({ алкоголь: 2 })
+    })
+
+    it('ступени сохраняются и переживают пересоздание репозитория с fakeStorage', async () => {
+      const storage = fakeStorage()
+      const first = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+      await first.saveDayLog({
+        day: '2026-09-20',
+        mood: 5,
+        wellbeing: 5,
+        productivity: 5,
+        tags: ['алкоголь'],
+        note: '',
+        closedAt: '2026-09-20T21:00:00.000Z',
+        levels: { алкоголь: 2 },
+      } as DayLog)
+      const second = createDemoRepo({ today: TODAY, seed: 20260921, storage })
+      const log = (await second.listDayLogs()).find((l) => l.day === '2026-09-20')! as DayLog & {
+        levels: Record<string, number>
+      }
+      expect(log.levels).toEqual({ алкоголь: 2 })
+    })
   })
 })

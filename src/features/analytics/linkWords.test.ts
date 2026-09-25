@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Link } from '@/domain/links'
-import { caseLine, earlyNote, linkBasis, linkLine, linkTitle, otherwiseText, sheetTitle } from './linkWords'
+import type { Ladder, Link } from '@/domain/links'
+import { caseLine, earlyNote, ladderText, linkBasis, linkLine, linkTitle, otherwiseText, sheetTitle } from './linkWords'
 
 const drink: Link = {
   factor: { kind: 'tag', tag: 'алкоголь' },
@@ -128,5 +128,98 @@ describe('caseLine — случаи без обобщения', () => {
     expect(caseLine({ tag: 'ссора', values: [2], days: [], usual: 6, missing: 2 }, 'productivity')).toBe(
       'Единственный записанный день после «ссора» продуктивность — 2. После других вечеров — около 6. Ещё 2 раза вечер не закрыт.',
     )
+  })
+
+  // срез 5б: тег из LEVELS со ступенью — подпись короткой формой («алкоголь · 6+»), остальное как обычно
+  it('тег со ступенью — короткая подпись в кавычках: «алкоголь · 6+»', () => {
+    expect(caseLine({ tag: 'алкоголь', level: 3, values: [3, 4], days: [], usual: 7, missing: 0 }, 'all')).toBe(
+      'Оба утра после «алкоголь · 6+» самочувствие и настроение — 3 и 4. После других вечеров — около 7.',
+    )
+    // без ступени (level не задан) — как было, без «· …»
+    expect(caseLine({ tag: 'алкоголь', values: [3], days: [], usual: 7, missing: 0 }, 'sleep')).toBe(
+      'Единственное утро после «алкоголь» сон — 3. После других вечеров — около 7.',
+    )
+  })
+})
+
+describe('ladderText — фраза лесенки (срез 5б)', () => {
+  // реалистичная лесенка «алкоголь» (3 ступени): «не было» n = 31, ступень 1 (1–2) n = 5 (≥ LADDER_MIN),
+  // ступень 2 (3–5) n = 4, ступень 3 (6+) n = 3, «не указано» n = 2; с тегом 5 + 4 + 3 + 2 = 14 ≥ LADDER_TOTAL.
+  // Ступень 1 от «не было» на 6,5 − 5,4 = 1,1 ≥ LINK_DIFF — при trend «firstLikeNone» здесь false, как и по договору
+  const base: Ladder = {
+    tag: 'алкоголь',
+    steps: [
+      { level: 0, n: 31, mean: 6.5 },
+      { level: 1, n: 5, mean: 5.4 },
+      { level: 2, n: 4, mean: 5.0 },
+      { level: 3, n: 3, mean: 4.0 },
+      { level: null, n: 2, mean: null },
+    ],
+    trend: null,
+    firstLikeNone: false,
+  }
+
+  it('trend null — фразы нет, даже с firstLikeNone', () => {
+    expect(ladderText(base)).toBeNull()
+    expect(ladderText({ ...base, firstLikeNone: true })).toBeNull()
+  })
+
+  it('trend «worse» без firstLikeNone — только «Чем больше — тем хуже.»', () => {
+    expect(ladderText({ ...base, trend: 'worse' })).toBe('Чем больше — тем хуже.')
+  })
+
+  it('trend «better» без firstLikeNone — «Чем больше — тем лучше.»', () => {
+    // «игры»: 4 ступени, средние растут, первая дальше «не было» на 1,2 — firstLikeNone false; с тегом 4 + 3 + 3 + 3 = 13
+    const better: Ladder = {
+      tag: 'игры',
+      steps: [
+        { level: 0, n: 25, mean: 6.0 },
+        { level: 1, n: 4, mean: 7.2 },
+        { level: 2, n: 3, mean: 7.6 },
+        { level: 3, n: 3, mean: 8.1 },
+        { level: 4, n: 3, mean: 8.6 },
+      ],
+      trend: 'better',
+      firstLikeNone: false,
+    }
+    expect(ladderText(better)).toBe('Чем больше — тем лучше.')
+  })
+
+  it('firstLikeNone — дописывает длинную подпись первой ступени с заглавной буквы: «почти как без»', () => {
+    // ступень 1 от «не было» на 6,5 − 5,9 = 0,6 < LINK_DIFF — firstLikeNone true
+    const near: Ladder = { ...base, steps: base.steps.map((s) => (s.level === 1 ? { ...s, mean: 5.9 } : s)), trend: 'worse', firstLikeNone: true }
+    expect(ladderText(near)).toBe('Чем больше — тем хуже. 1–2 порции — почти как без.')
+    // «стресс»: длинная подпись первой ступени — «немного», с маленькой буквы; в фразе — с заглавной
+    const stress: Ladder = {
+      tag: 'стресс',
+      steps: [
+        { level: 0, n: 20, mean: 6.0 },
+        { level: 1, n: 4, mean: 5.8 },
+        { level: 2, n: 3, mean: 4.5 },
+        { level: 3, n: 3, mean: 3.5 },
+        // с тегом 4 + 3 + 3 + 2 = 12 = LADDER_TOTAL
+        { level: null, n: 2, mean: null },
+      ],
+      trend: 'worse',
+      firstLikeNone: true,
+    }
+    expect(ladderText(stress)).toBe('Чем больше — тем хуже. Немного — почти как без.')
+  })
+
+  it('firstLikeNone вместе с trend «better» — тоже дописывает подпись первой ступени', () => {
+    // «игры»: 4 ступени, первая («<1 ч») почти как «не было»
+    const games: Ladder = {
+      tag: 'игры',
+      steps: [
+        { level: 0, n: 25, mean: 6.0 },
+        { level: 1, n: 4, mean: 6.2 },
+        { level: 2, n: 3, mean: 6.8 },
+        { level: 3, n: 3, mean: 7.5 },
+        { level: 4, n: 3, mean: 8.0 },
+      ],
+      trend: 'better',
+      firstLikeNone: true,
+    }
+    expect(ladderText(games)).toBe('Чем больше — тем лучше. <1 ч — почти как без.')
   })
 })

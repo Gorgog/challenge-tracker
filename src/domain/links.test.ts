@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, isoDow, parseDay } from './date'
-import { cases, chain, CONTEXT_TAGS, explains, LINK_DAYS, LINK_MIN, links, NOT_MORE, shrink, type Link } from './links'
+import { cases, chain, CONTEXT_TAGS, explains, LADDER_MIN, LADDER_TOTAL, ladder, LINK_DAYS, LINK_MIN, links, NOT_MORE, shrink, type Link } from './links'
+import { HARMFUL_TAGS, round1 } from './timeline'
 import type { TimelineDay } from './timeline'
 import type { Challenge, EntryMap } from './types'
 
 const TODAY = parseDay('2026-09-23') // среда
 
-/** `bed`, `wake` — ночь перед этим утром (минуты от полуночи утра); без `bed` ночь не записана. */
-type Spec = { m?: number | null; e?: number | null; sleep?: number; prod?: number; tags?: string[]; bed?: number; wake?: number }
+/** `bed`, `wake` — ночь перед этим утром (минуты от полуночи утра); без `bed` ночь не записана.
+ *  `levels` — ступени тегов этого вечера (срез 5б); копируется в `TimelineDay.levels` только когда вечер закрыт и что-то передано. */
+type Spec = {
+  m?: number | null
+  e?: number | null
+  sleep?: number
+  prod?: number
+  tags?: string[]
+  bed?: number
+  wake?: number
+  levels?: Record<string, number>
+}
 
 /** История из `len` дней по сегодня; `dow` — 0 понедельник … 6 воскресенье. По умолчанию утро и вечер 6, сон 7. */
 function hist(len: number, spec: (i: number, dow: number) => Spec = () => ({})): TimelineDay[] {
   return Array.from({ length: len }, (_, i) => {
     const date = addDays(TODAY, i - len + 1)
-    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [], bed, wake = 460 } = spec(i, isoDow(date))
+    const { m = 6, e = 6, sleep = 7, prod = 6, tags = [], bed, wake = 460, levels } = spec(i, isoDow(date))
     const night = bed === undefined ? null : { bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const }
     return {
       day: dayKey(date),
@@ -21,7 +32,8 @@ function hist(len: number, spec: (i: number, dow: number) => Spec = () => ({})):
       started: m !== null,
       evening: e === null ? null : { mood: e, wellbeing: e, productivity: prod },
       tags: e === null ? [] : tags,
-    }
+      ...(e !== null && levels && Object.keys(levels).length ? { levels } : {}),
+    } as TimelineDay
   })
 }
 
@@ -865,5 +877,766 @@ describe('chain — что обычно шло следом', () => {
     let n = 0
     const h = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? ['алкоголь'] : [], m: after(i) ? 3 : 6, e: after(i) ? (n++ % 2 ? 6.5 : 1) : 6 }))
     expect(chain(h, top(h), [], {}, TODAY)).toBeNull()
+  })
+})
+
+describe('links — NOT_MORE новые теги (срез 5б)', () => {
+  it('NOT_MORE — ровно договорный список (§4): «дедлайн», «встречи», «игры», «стресс», «работа допоздна», и ничего лишнего', () => {
+    // arrayContaining пропустил бы лишние элементы (находка первого чекера, п.9) — здесь точный список
+    expect(NOT_MORE).toEqual(['дедлайн', 'встречи', 'игры', 'стресс', 'работа допоздна'])
+  })
+
+  it('HARMFUL_TAGS не меняется этим срезом', () => {
+    // тоже находка первого чекера (п.9) — раньше ничем не проверялось
+    expect(HARMFUL_TAGS).toEqual(['алкоголь', 'болел', 'ссора'])
+  })
+
+  it('новый тег из NOT_MORE — «лучше» даёт bucket null, «хуже» — «less» (как у «дедлайн» и «встречи»)', () => {
+    for (const tag of ['игры', 'стресс', 'работа допоздна']) {
+      const better = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? [tag] : [], m: (i - 1) % 9 === 2 ? 9 : 6 }))
+      expect(tagLink(links(better, 'all').pairs, tag)).toMatchObject({ level: 'maybe', direction: 'better', bucket: null })
+      const worse = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? [tag] : [], m: (i - 1) % 9 === 2 ? 3 : 6 }))
+      expect(tagLink(links(worse, 'all').pairs, tag)).toMatchObject({ direction: 'worse', bucket: 'less' })
+    }
+  })
+})
+
+/*
+ * §4 после правки Georgy 25.09 (замер на 2000 мирах, см. research/scratchpad/design-out/audit.md,
+ * функция doseSlope/cslope с visibleC5=true): условие 4 — НЕСТРОГАЯ монотонность видимых средних
+ * (ничьи допустимы); условие 5 — видимая разница первой/последней ПОКАЗАННОЙ ступени (без «не было»);
+ * условие 6 — наклон дозы по слоям выходной/будний с поправкой на выходные и сжатием, а не «средние
+ * с поправкой на выходные», как было раньше. Числа ниже посчитаны отдельным эталонным ladder()
+ * (не в репозитории), который зеркалит doseSlope/cslope дословно и берёт Link из настоящего links();
+ * для тегов, которых ещё нет в DAY_TAGS («игры»), Link посчитан копией tagPoints/linkOf/gateOf —
+ * сверено: на «алкоголь» эта копия даёт те же числа, что настоящий links().
+ */
+describe('ladder — лесенка тега со ступенями (срез 5б, §4 после 25.09)', () => {
+  it('LADDER_MIN = 3, LADDER_TOTAL = 12 (пороги договора)', () => {
+    expect(LADDER_MIN).toBe(3)
+    expect(LADDER_TOTAL).toBe(12)
+  })
+
+  it('тег не из LEVELS (например «дорога») — null', () => {
+    const h = hist(LINK_DAYS, (i) => ({ tags: i % 9 === 2 ? ['дорога'] : [], m: (i - 1) % 9 === 2 ? 3 : 6 }))
+    const l = tagLink(links(h, 'all').pairs, 'дорога')
+    expect(ladder(h, 'all', l)).toBeNull()
+  })
+
+  it('шаги по порядку: «не было», 1…n (даже с n = 0), «не указано» — только когда есть точки без ступени', () => {
+    // «игры» (4 ступени): ступень 1 — раз, ступень 3 — раз, без ступени — раз; ступени 2 и 4 не встречались (n = 0)
+    const h = hist(LINK_DAYS, (i) => {
+      if (i === 3) return { tags: ['игры'], levels: { 'игры': 1 } }
+      if (i === 7) return { tags: ['игры'], levels: { 'игры': 3 } }
+      if (i === 11) return { tags: ['игры'] } // тег отмечен, ступень не выбрана
+      return {}
+    })
+    const l = tagLink(links(h, 'all').pairs, 'игры')
+    const ld = ladder(h, 'all', l)!
+    // 55 пар минус 3 вечера с тегом = 52 «не было»
+    expect(ld.steps.map((s) => [s.level, s.n])).toEqual([
+      [0, 52],
+      [1, 1],
+      [2, 0],
+      [3, 1],
+      [4, 0],
+      [null, 1],
+    ])
+    // ни у одной ступени (кроме «не было») нет трёх дней — среднего не показываем
+    expect(ld.steps.filter((s) => s.level !== 0).every((s) => s.mean === null)).toBe(true)
+  })
+
+  it('«не указано» не появляется в шагах, если ни разу не встречалось', () => {
+    const h = hist(LINK_DAYS, (i) => (i === 3 ? { tags: ['игры'], levels: { 'игры': 1 } } : {}))
+    const l = tagLink(links(h, 'all').pairs, 'игры')
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => s.level)).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('граница LADDER_MIN на шаге: n = 3 — среднее показано, n = 2 — нет, хотя ступень записана', () => {
+    // ступень 1: 3 вечера (4,4,4 → mean 4); ступень 2: 2 вечера (8,8 → n < 3, mean null)
+    const l1p = [3, 7, 11]
+    const l2p = [20, 24]
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = l1p.includes(i) ? 1 : l2p.includes(i) ? 2 : undefined
+      const m = l1p.map((x) => x + 1).includes(i) ? 4 : l2p.map((x) => x + 1).includes(i) ? 8 : 6
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 50, 6],
+      [1, 3, 4],
+      [2, 2, null],
+      [3, 0, null],
+    ])
+  })
+
+  /** Общий мир «доза действует»: ступень 1 (вечера 3,7,11,14) → утра 4,8,12,15; ступень 2 (18,21,25,28) →
+   *  19,22,26,29; ступень 3 (32,35,39,42) → 33,36,40,43. По 4 вечера на ступень — ровно LADDER_TOTAL (12).
+   *  Утра-результаты — будние (слои считаются по дню результата; вечер 3 — воскресенье, но его утро 4 — понедельник),
+   *  так что наклон дозы считается в одном слое (будни) — упрощает счёт, поправка на выходные тут ни при чём. */
+  const doseLevels = new Map([
+    [3, 1], [7, 1], [11, 1], [14, 1],
+    [18, 2], [21, 2], [25, 2], [28, 2],
+    [32, 3], [35, 3], [39, 3], [42, 3],
+  ])
+  const buildDose = (resultM: Map<number, number>, none = 6) =>
+    hist(LINK_DAYS, (i) => {
+      const lvl = doseLevels.get(i)
+      const m = resultM.get(i) ?? none
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+
+  it('доза действует: все 6 условий выполнены — trend «worse» (эталон: withN=12, c1..c6 все true)', () => {
+    // видимые средние 6 → 5 → 4 → 2 (нестрого убывают), разница показанных 1 и 3: |2 − 5| = 3 ≥ LINK_DIFF.
+    // наклон дозы (доseSlope, только точки со ступенью, один слой «будни»): x = 1,2,3 по 4 точки на каждой,
+    // y = 5,4,2 без разброса внутри ступени ⇒ b = Sxy/Sxx = −1,5 (МНК прямой через 3 средних), se ≈ 0,0913,
+    // span = b·(3−1) = −3, shrunk = shrink(−3, se·2) ≈ −2,956 — знак «worse», |shrunk| ≥ 1.
+    const h = buildDose(new Map([
+      [4, 5], [8, 5], [12, 5], [15, 5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2], [43, 2],
+    ]))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(LADDER_TOTAL) // граница «withN = 12 — проходит»
+    expect(['maybe', 'notable']).toContain(l.level)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 55 - 12, 6],
+      [1, 4, 5],
+      [2, 4, 4],
+      [3, 4, 2],
+    ])
+    expect(ld.trend).toBe('worse')
+    // ступень 1 (5) отличается от «не было» (6) ровно на LINK_DIFF (1) — не «меньше», значит не «почти как без»
+    expect(ld.firstLikeNone).toBe(false)
+  })
+
+  it('withN = 11 (граница LADDER_TOTAL снизу) — trend null (эталон: падает только c2, c1/c3/c4/c5/c6 — true)', () => {
+    // тот же мир без одного вечера ступени 3 (42 → 43): withN 12 → 11, LADDER_TOTAL не достигнут.
+    // ступени и их средние не изменились (ступень 3: n 4 → 3, mean всё ещё 2 — граница LADDER_MIN не задета),
+    // наклон дозы и видимая монотонность остаются в силе (эталон это подтверждает) — блокирует только withN.
+    const resultM = new Map([
+      [4, 5], [8, 5], [12, 5], [15, 5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2],
+    ])
+    const levels11 = new Map(doseLevels)
+    levels11.delete(42)
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = levels11.get(i)
+      const m = resultM.get(i) ?? 6
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(11)
+    expect(['maybe', 'notable']).toContain(l.level)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 44, 6],
+      [1, 4, 5],
+      [2, 4, 4],
+      [3, 3, 2],
+    ])
+    expect(ld.trend).toBeNull()
+  })
+
+  it('firstLikeNone: первая ступень ближе LINK_DIFF к «не было» — true, когда trend задан', () => {
+    // тот же мир, но ступень 1 — 5,5 вместо 5: |5,5 − 6| = 0,5 < LINK_DIFF (1); монотонность и наклон целы
+    const h = buildDose(new Map([
+      [4, 5.5], [8, 5.5], [12, 5.5], [15, 5.5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2], [43, 2],
+    ]))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps[1]).toMatchObject({ level: 1, n: 4, mean: 5.5 })
+    expect(ld.trend).toBe('worse')
+    expect(ld.firstLikeNone).toBe(true)
+  })
+
+  it('«лучше» с дозой — зеркало «доза действует»: «не было» 2, ступени 3, 4, 6 — trend «better», firstLikeNone false', () => {
+    const h = buildDose(new Map([
+      [4, 3], [8, 3], [12, 3], [15, 3],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 6], [36, 6], [40, 6], [43, 6],
+    ]), 2)
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.direction).toBe('better')
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([2, 3, 4, 6])
+    expect(ld.trend).toBe('better')
+    expect(ld.firstLikeNone).toBe(false)
+  })
+
+  it('цель «Сон»: те же ступени на поле sleep — trend «worse» (не только goal «all»)', () => {
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = doseLevels.get(i)
+      const sleep = new Map([
+        [4, 5], [8, 5], [12, 5], [15, 5],
+        [19, 4], [22, 4], [26, 4], [29, 4],
+        [33, 2], [36, 2], [40, 2], [43, 2],
+      ]).get(i) ?? 6
+      return { sleep, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'sleep').pairs, 'алкоголь')
+    const ld = ladder(h, 'sleep', l)!
+    expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([6, 5, 4, 2])
+    expect(ld.trend).toBe('worse')
+  })
+
+  it('цель «Продуктивность» (вечер того же дня, не утро) — та же лесенка, что и на «all»', () => {
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = doseLevels.get(i)
+      const prod = new Map([
+        [4, 5], [8, 5], [12, 5], [15, 5],
+        [19, 4], [22, 4], [26, 4], [29, 4],
+        [33, 2], [36, 2], [40, 2], [43, 2],
+      ]).get(i) ?? 6
+      return { prod, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'productivity').pairs, 'алкоголь')
+    const ld = ladder(h, 'productivity', l)!
+    expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([6, 5, 4, 2])
+    expect(ld.trend).toBe('worse')
+  })
+
+  it('окно LINK_DAYS соблюдается: мусор за пределами последних 56 дней не меняет ни Link, ни лесенку', () => {
+    // 20 старых дней с алкоголем на ступени 1 и утром 0 — вне окна; итог должен совпасть с «доза действует»
+    const junk = hist(20, () => ({ tags: ['алкоголь'], levels: { 'алкоголь': 1 }, m: 0 }))
+    const hG = buildDose(new Map([
+      [4, 5], [8, 5], [12, 5], [15, 5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2], [43, 2],
+    ]))
+    const h = [...junk, ...hG]
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(12)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 43, 6],
+      [1, 4, 5],
+      [2, 4, 4],
+      [3, 4, 2],
+    ])
+    expect(ld.trend).toBe('worse')
+  })
+
+  it('«не указано» не участвует ни в монотонности, ни в наклоне: добавь 3 таких точки с «чужим» значением — trend не меняется', () => {
+    // 3 вечера с тегом без ступени (level = null), результат — 1 (далеко от ряда 6,5,4,2, но за пределы
+    // «показанных» ступеней 1..3 и «не было» они не попадают ни при подсчёте среднего/монотонности, ни в
+    // наклоне дозы — те же trend/steps/mean по ступеням 0..3, что и в базовом мире «доза действует»)
+    const hG = buildDose(new Map([
+      [4, 5], [8, 5], [12, 5], [15, 5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2], [43, 2],
+    ]))
+    const wildPrev = [45, 47, 49]
+    const h = hG.map((d, i) =>
+      wildPrev.includes(i)
+        ? { ...d, tags: ['алкоголь'] } // тег есть, levels нет — «не указано»
+        : wildPrev.map((x) => x + 1).includes(i)
+          ? { ...d, morning: d.morning && { ...d.morning, wellbeing: 1, mood: 1 } }
+          : d,
+    )
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(15) // 12 со ступенью + 3 «не указано» — тег засчитан в links() независимо от ступени
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 40, 6], // «не было» не выросло — «не указано» не смешалось с «не было» (43 − 3 тега = 40)
+      [1, 4, 5],
+      [2, 4, 4],
+      [3, 4, 2],
+      [null, 3, 1], // сама ступень «не указано» показана отдельно и честно (n = 3, mean = 1)
+    ])
+    expect(ld.trend).toBe('worse')
+  })
+
+  it('незакрытый вечер и неотмеченное утро результата не дают точки (те же пары, что у связи)', () => {
+    // тот же мир «доза действует»: день 3 — вечер не закрыт (тег снят автоматически), день 8 — утро не отмечено;
+    // оба вечера были на ступени 1 — с неё пропадают именно эти две точки (осталось n = 2, среднего не показываем)
+    const hG = buildDose(new Map([
+      [4, 5], [8, 5], [12, 5], [15, 5],
+      [19, 4], [22, 4], [26, 4], [29, 4],
+      [33, 2], [36, 2], [40, 2], [43, 2],
+    ]))
+    const h = hG.map((d, i) => (i === 3 ? { ...d, evening: null, tags: [] } : i === 8 ? { ...d, morning: null, started: false } : d))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(10)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 43, 6],
+      [1, 2, null],
+      [2, 4, 4],
+      [3, 4, 2],
+    ])
+  })
+
+  it('«игры» (4 ступени): та же логика на теге с бо́льшим числом ступеней — trend «worse»', () => {
+    // ступени 1..4 по 4/4/4/3 вечера, утра 5, 4.5, 3, 1 — видимые средние 6,5,4.5,3,1 нестрого убывают,
+    // разница показанных 1 и 4: |1 − 5| = 4 ≥ 1; наклон дозы по 4 точкам x=1..4 тоже значим (эталон это подтверждает)
+    const l1p = [3, 7, 11, 14]
+    const l2p = [18, 21, 25, 28]
+    const l3p = [32, 35, 39, 42]
+    const l4p = [46, 49, 52]
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = l1p.includes(i) ? 1 : l2p.includes(i) ? 2 : l3p.includes(i) ? 3 : l4p.includes(i) ? 4 : undefined
+      const m = l1p.map((x) => x + 1).includes(i)
+        ? 5
+        : l2p.map((x) => x + 1).includes(i)
+          ? 4.5
+          : l3p.map((x) => x + 1).includes(i)
+            ? 3
+            : l4p.map((x) => x + 1).includes(i)
+              ? 1
+              : 6
+      return { m, ...(lvl ? { tags: ['игры'], levels: { 'игры': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'all').pairs, 'игры')
+    expect(l.withN).toBe(15)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 40, 6],
+      [1, 4, 5],
+      [2, 4, 4.5],
+      [3, 4, 3],
+      [4, 3, 1],
+    ])
+    expect(ld.trend).toBe('worse')
+  })
+
+  describe('условие 1 — связь найдена (link.level — maybe или notable)', () => {
+    it('level «none» или «early» на настоящем Link из «доза действует» — trend null (эталон: у «none» падает только c1)', () => {
+      // берём Link из мира «доза действует» (там все 6 условий выполняются) и меняем только level —
+      // history и остальные поля Link не трогаем: c2..c6 по эталону остаются true, блокирует один c1
+      const hG = buildDose(new Map([
+        [4, 5], [8, 5], [12, 5], [15, 5],
+        [19, 4], [22, 4], [26, 4], [29, 4],
+        [33, 2], [36, 2], [40, 2], [43, 2],
+      ]))
+      const l = tagLink(links(hG, 'all').pairs, 'алкоголь')
+      expect(ladder(hG, 'all', { ...l, level: 'none' })!.trend).toBeNull()
+      expect(ladder(hG, 'all', { ...l, level: 'early', direction: null })!.trend).toBeNull()
+    })
+  })
+
+  describe('условие 2 — withN ≥ LADDER_TOTAL (12)', () => {
+    it('см. «доза действует» (withN = 12 — проходит) и «withN = 11» выше (граница снизу — trend null)', () => {
+      // тесты — в общем блоке выше, чтобы не дублировать построение мира; здесь — только ссылка-проверка
+      expect(LADDER_TOTAL).toBe(12)
+    })
+  })
+
+  describe('условие 3 — показанных ступеней (n ≥ LADDER_MIN) не меньше двух', () => {
+    it('только одна ступень набрала LADDER_MIN, дозу сравнивать не с чем — trend null (эталон: падает c3; тривиально и c5 — разница «показанной» с собой же 0, c1/c2/c4/c6 — true)', () => {
+      // 10 вечеров на ступени 1 (показана), по одному на ступенях 2 и 3 (n=1 каждая, не показаны) — withN=12
+      const l1 = [1, 4, 6, 8, 11, 13, 15, 18, 20, 22]
+      const l2 = [25]
+      const l3 = [27]
+      const l1prev = l1.map((x) => x - 1)
+      const l2prev = l2.map((x) => x - 1)
+      const l3prev = l3.map((x) => x - 1)
+      const h = hist(LINK_DAYS, (i) => {
+        const m = l1.includes(i) ? 5 : l2.includes(i) ? 4 : l3.includes(i) ? 2 : 6
+        const lvl = l1prev.includes(i) ? 1 : l2prev.includes(i) ? 2 : l3prev.includes(i) ? 3 : undefined
+        return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+      })
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      expect(l.withN).toBe(12)
+      expect(l.level).toBe('maybe')
+      const ld = ladder(h, 'all', l)!
+      expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+        [0, 43, 6],
+        [1, 10, 5],
+        [2, 1, null],
+        [3, 1, null],
+      ])
+      expect(ld.trend).toBeNull()
+    })
+  })
+
+  describe('условие 4 — видимые средние (округлённые) НЕСТРОГО монотонны в сторону direction', () => {
+    it('рост на одной из ступеней ломает даже нестрогую монотонность — trend null (эталон: падает только c4; c1/c2/c3/c5/c6 — true)', () => {
+      // тот же мир «доза действует», но ступень 2 — снова 6 (как «не было», а не ниже): 6, 5, 6, 2 —
+      // 5 → 6 растёт при direction «worse». Наклон дозы (по точкам, не по средним) всё равно значим:
+      // b = −1,5, se ≈ 0,456, span = −3, shrunk ≈ −2,19 (знак и модуль в порядке) — блокирует только монотонность.
+      const h = buildDose(new Map([
+        [4, 5], [8, 5], [12, 5], [15, 5],
+        [19, 6], [22, 6], [26, 6], [29, 6],
+        [33, 2], [36, 2], [40, 2], [43, 2],
+      ]))
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      const ld = ladder(h, 'all', l)!
+      expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([6, 5, 6, 2])
+      expect(ld.trend).toBeNull()
+      expect(ld.firstLikeNone).toBe(false) // trend null ⇒ firstLikeNone false (здесь ступень 1 — 5 против 6)
+    })
+
+    it('ничья соседних ступеней допустима — trend не null (эталон: c1..c6 все true)', () => {
+      // ступени 1 и 2 совпадают: 6, 4, 4, 2 — 4 → 4 не растёт, нестрогая монотонность соблюдена.
+      // наклон по точкам всё равно есть (x=1,2,3, y=4,4,2): b=−1, span=−2, shrunk≈−1,888 ≥ 1 по модулю.
+      const h = buildDose(new Map([
+        [4, 4], [8, 4], [12, 4], [15, 4],
+        [19, 4], [22, 4], [26, 4], [29, 4],
+        [33, 2], [36, 2], [40, 2], [43, 2],
+      ]))
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      const ld = ladder(h, 'all', l)!
+      expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([6, 4, 4, 2])
+      expect(ld.trend).toBe('worse')
+    })
+  })
+
+  describe('условие 5 — видимая разница первой и последней ПОКАЗАННОЙ ступени ≥ LINK_DIFF', () => {
+    // ступень 3 намеренно редкая (n=2 < LADDER_MIN) — не «показана»; наклон дозы всё равно берёт её точки
+    // (doseSlope не фильтрует по LADDER_MIN), поэтому наклон остаётся сильным и не изображает границу.
+    // «показанные» — только ступени 1 и 2: их разница и есть граница условия 5.
+    const mk = (level2: number) => {
+      const l1p = [3, 7, 11, 14, 17] // n=5
+      const l2p = [21, 24, 27, 30, 33] // n=5
+      const l3p = [40, 43] // n=2, не показана
+      const h = hist(LINK_DAYS, (i) => {
+        const lvl = l1p.includes(i) ? 1 : l2p.includes(i) ? 2 : l3p.includes(i) ? 3 : undefined
+        const m = l1p.map((x) => x + 1).includes(i) ? 5.5 : l2p.map((x) => x + 1).includes(i) ? level2 : l3p.map((x) => x + 1).includes(i) ? 0 : 6
+        return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+      })
+      return h
+    }
+
+    it('разница ровно 1,0 — проходит (эталон: c1..c6 все true, firstLikeNone true — |5,5 − 6| = 0,5 < 1)', () => {
+      const h = mk(4.5)
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      expect(l.withN).toBe(12)
+      const ld = ladder(h, 'all', l)!
+      expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+        [0, 43, 6],
+        [1, 5, 5.5],
+        [2, 5, 4.5],
+        [3, 2, null],
+      ])
+      expect(ld.trend).toBe('worse')
+      expect(ld.firstLikeNone).toBe(true)
+    })
+
+    it('разница 0,9 — trend null (эталон: падает только c5; c1/c2/c3/c4/c6 — true)', () => {
+      const h = mk(4.6)
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      expect(l.withN).toBe(12)
+      const ld = ladder(h, 'all', l)!
+      expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+        [0, 43, 6],
+        [1, 5, 5.5],
+        [2, 5, 4.6],
+        [3, 2, null],
+      ])
+      expect(ld.trend).toBeNull()
+      // |5,5 − 6| = 0,5 < 1, но trend null ⇒ firstLikeNone false (§4: «при trend ≠ null»)
+      expect(ld.firstLikeNone).toBe(false)
+    })
+  })
+
+  describe('условие 6 — наклон дозы по слоям (doseSlope): знак — как direction, |shrunk| ≥ LINK_DIFF', () => {
+    it('видимые средние монотонны и разница большая, но разброс внутри ступеней гасит наклон — trend null (эталон: падает только c6; c1..c5 — true)', () => {
+      // ступень 1 — значения 9,1,9,1 (mean 5, как в «доза действует»); ступень 3 — 6,−2,6,−2 (mean 2).
+      // Средние ступеней те же 6,5,4,2 (условия 4 и 5 в порядке), но внутри ступеней 1 и 3 огромный разброс:
+      // МНК-наклон b по-прежнему −1,5 (средние не изменились), но остаточная дисперсия s² подскакивает —
+      // se ≈ 1,268 (было ≈ 0,091), shrunk = shrink(−3, se·2) ≈ −0,777 — по модулю меньше LINK_DIFF (1).
+      const l1p = [3, 7, 11, 14]
+      const l2p = [18, 21, 25, 28]
+      const l3p = [32, 35, 39, 42]
+      const l1vals = [9, 1, 9, 1]
+      const l3vals = [6, -2, 6, -2]
+      const h = hist(LINK_DAYS, (i) => {
+        const lvl = l1p.includes(i) ? 1 : l2p.includes(i) ? 2 : l3p.includes(i) ? 3 : undefined
+        let m = 6
+        const l1r = l1p.map((x) => x + 1)
+        const l3r = l3p.map((x) => x + 1)
+        if (l1r.includes(i)) m = l1vals[l1r.indexOf(i)]!
+        if (l2p.map((x) => x + 1).includes(i)) m = 4
+        if (l3r.includes(i)) m = l3vals[l3r.indexOf(i)]!
+        return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+      })
+      const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+      expect(l.withN).toBe(12)
+      const ld = ladder(h, 'all', l)!
+      // видимые средние по ступеням — те же, что в «доза действует» (разброс внутри ступени на них не влияет)
+      expect(ld.steps.map((s) => (s.mean === null ? null : round1(s.mean)))).toEqual([6, 5, 4, 2])
+      expect(ld.trend).toBeNull()
+    })
+  })
+
+  it('ступень с 0 < n < LADDER_MIN (n=2) пропускается сама — соседние показанные ступени всё равно образуют тренд', () => {
+    // ступень 2 — только 2 вечера (не показана, doseSlope её точки всё равно использует); ступени 1 и 3 —
+    // по 5 вечеров, значения на прямой 5, 3.5, 2 (линейно) — наклон идеально ложится на эту прямую (se = 0)
+    const l1p = [3, 6, 9, 12, 15] // n=5
+    const l2p = [20, 23] // n=2, не показана
+    const l3p = [30, 33, 36, 39, 42] // n=5
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = l1p.includes(i) ? 1 : l2p.includes(i) ? 2 : l3p.includes(i) ? 3 : undefined
+      const m = l1p.map((x) => x + 1).includes(i) ? 5 : l2p.map((x) => x + 1).includes(i) ? 3.5 : l3p.map((x) => x + 1).includes(i) ? 2 : 6
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(12)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : round1(s.mean)])).toEqual([
+      [0, 43, 6],
+      [1, 5, 5],
+      [2, 2, null], // пропущена, но не блокирует: «показанные» — 1 и 3
+      [3, 5, 2],
+    ])
+    expect(ld.trend).toBe('worse')
+  })
+})
+
+describe('cases — верхняя ступень как отдельный случай (срез 5б)', () => {
+  it('тег частый (8 вечеров), но верхняя ступень редкая (2 раза), оба утра заметно ниже обычного — случай со ступенью', () => {
+    const l1p = [2, 7, 12, 17, 22, 27] // 6 вечеров на ступени 1 — обычные утра; тег целиком не случай: 8 ≥ LINK_MIN
+    const l3p = [32, 37] // 2 вечера на верхней ступени (3 — верхняя у алкоголя)
+    const h = hist(LINK_DAYS, (i) => {
+      if (l1p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 1 } }
+      if (l3p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 3 } }
+      if (i === 33) return { m: 3 }
+      if (i === 38) return { m: 2 }
+      return {}
+    })
+    // usual = медиана «без тега целиком» = 6 (все остальные утра — дефолт); 3 ≤ 6−1 и 2 ≤ 6−1 — оба подходят
+    expect(cases(h, 'all')).toEqual([{ tag: 'алкоголь', level: 3, values: [3, 2], days: [h[33]!.day, h[38]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('пропуск утра на верхней ступени считается так же, как у случая тега целиком', () => {
+    const l1p = [2, 7, 12, 17]
+    const l3p = [22, 27, 32] // 3 вечера на верхней ступени: 2 утра записаны, 1 — нет
+    const h = hist(LINK_DAYS, (i) => {
+      if (l1p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 1 } }
+      if (l3p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 3 } }
+      if (i === 23) return { m: 3 }
+      if (i === 28) return { m: 2 }
+      if (i === 33) return { m: null }
+      return {}
+    })
+    // missing = episodes(3) − values.length(2) = 1
+    expect(cases(h, 'all')).toEqual([{ tag: 'алкоголь', level: 3, values: [3, 2], days: [h[23]!.day, h[28]!.day], usual: 6, missing: 1 }])
+  })
+
+  it('все вечера тега — уже на верхней ступени: случай тега целиком, отдельного случая ступени не дублируется', () => {
+    const h = hist(LINK_DAYS, (i) => {
+      if (i === 20) return { tags: ['алкоголь'], levels: { 'алкоголь': 3 } }
+      if (i === 40) return { tags: ['алкоголь'], levels: { 'алкоголь': 3 } }
+      if (i === 21) return { m: 3 }
+      if (i === 41) return { m: 4 }
+      return {}
+    })
+    // те же дни, что и случай тега целиком (links.test.ts, describe cases выше) — ступень не добавляет вторую запись
+    expect(cases(h, 'all')).toEqual([{ tag: 'алкоголь', values: [3, 4], days: [h[21]!.day, h[41]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('верхней ступени нужна ровно верхняя: спайк на средней ступени случаем не становится', () => {
+    const l1p = [2, 7, 12, 17, 22]
+    const l2p = [27, 32] // ступень 2 из 3 — не верхняя (верхняя у алкоголя — 3)
+    const h = hist(LINK_DAYS, (i) => {
+      if (l1p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 1 } }
+      if (l2p.includes(i)) return { tags: ['алкоголь'], levels: { 'алкоголь': 2 } }
+      if (i === 28) return { m: 3 }
+      if (i === 33) return { m: 2 }
+      return {}
+    })
+    expect(cases(h, 'all')).toEqual([])
+  })
+
+  it('«игры» (4 ступени): верхняя — ровно 4, не 3 (мутант «level === 3» здесь бы выжил)', () => {
+    const l1p = [2, 7, 12, 17, 22, 27] // 6 вечеров на ступени 1 — обычные утра
+    const l4p = [32, 37] // 2 вечера на верхней ступени игр (4, не 3)
+    const h = hist(LINK_DAYS, (i) => {
+      if (l1p.includes(i)) return { tags: ['игры'], levels: { 'игры': 1 } }
+      if (l4p.includes(i)) return { tags: ['игры'], levels: { 'игры': 4 } }
+      if (i === 33) return { m: 3 }
+      if (i === 38) return { m: 2 }
+      return {}
+    })
+    expect(cases(h, 'all')).toEqual([{ tag: 'игры', level: 4, values: [3, 2], days: [h[33]!.day, h[38]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('«игры»: спайк на ступени 3 (не верхняя — верхняя 4) случаем не становится', () => {
+    const l1p = [2, 7, 12, 17, 22]
+    const l3p = [27, 32] // ступень 3 из 4 — не верхняя у игр
+    const h = hist(LINK_DAYS, (i) => {
+      if (l1p.includes(i)) return { tags: ['игры'], levels: { 'игры': 1 } }
+      if (l3p.includes(i)) return { tags: ['игры'], levels: { 'игры': 3 } }
+      if (i === 28) return { m: 3 }
+      if (i === 33) return { m: 2 }
+      return {}
+    })
+    expect(cases(h, 'all')).toEqual([])
+  })
+
+  it('верхняя ступень сама по себе частая (≥ LINK_MIN эпизодов) — случая нет, как и у тега целиком', () => {
+    // 5 вечеров на верхней ступени (episodes = LINK_MIN) — ни как случай тега целиком, ни как случай ступени
+    const l3 = [2, 10, 18, 26, 34]
+    const l3prev = l3.map((x) => x - 1)
+    const h = hist(LINK_DAYS, (i) => {
+      const m = l3.includes(i) ? 2 : 6
+      return { m, ...(l3prev.includes(i) ? { tags: ['алкоголь'], levels: { 'алкоголь': 3 } } : {}) }
+    })
+    expect(cases(h, 'all')).toEqual([])
+  })
+
+  it('usual верхней ступени — медиана «без тега целиком», а не «без верхней ступени» (частая ступень 1 не должна тянуть usual вниз)', () => {
+    // 30 вечеров на ступени 1 (не верхняя, индексы 0..29), утро после — 3; 2 вечера на верхней ступени 3
+    // (40, 45), утро после — 4. Тег и утро назначаются независимо (Map, а не цепочка if/return), чтобы
+    // пересечение диапазонов «вечер со ступенью» и «утро-результат» (30 и 31 — оба сразу) не затирало
+    // одно другим. usual считается по дням БЕЗ тега целиком (23 дефолтных утра = 6), а не по дням «без
+    // верхней ступени» (это дало бы медиану ≈ 3 из-за 30 троек — тогда 4 не прошло бы порог usual−1).
+    const l1p = Array.from({ length: 30 }, (_, k) => k) // индексы вечеров со ступенью 1: 0..29
+    const l1r = l1p.map((x) => x + 1) // индексы утр-результатов ступени 1: 1..30
+    const l3p = [40, 45]
+    const l3r = l3p.map((x) => x + 1) // 41, 46
+    const h = hist(LINK_DAYS, (i) => {
+      const lvl = l1p.includes(i) ? 1 : l3p.includes(i) ? 3 : undefined
+      const m = l1r.includes(i) ? 3 : l3r.includes(i) ? 4 : 6
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+    expect(cases(h, 'all')).toEqual([{ tag: 'алкоголь', level: 3, values: [4, 4], days: [h[41]!.day, h[46]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('сегодняшнее утро, ещё не отмеченное, — не пропуск и для случая верхней ступени', () => {
+    // вечера 30 и 35 — ступень 1 с обычным утром (6): тег целиком не случай (6 > 6 − 1), иначе случай ступени
+    // скрылся бы за случаем тега целиком (§5, §9). Верхняя ступень: вечер 20 → утро 21 (2) и вечер 54 → сегодня 55 (не отмечено).
+    const h = hist(LINK_DAYS, (i) => ({
+      tags: [20, 30, 35, 54].includes(i) ? ['алкоголь'] : [],
+      levels: i === 20 || i === 54 ? { 'алкоголь': 3 } : i === 30 || i === 35 ? { 'алкоголь': 1 } : undefined,
+      m: i === 21 ? 2 : i === 55 ? null : 6,
+      e: i === 55 ? null : 6,
+    }))
+    expect(cases(h, 'all')).toEqual([{ tag: 'алкоголь', level: 3, values: [2], days: [h[21]!.day], usual: 6, missing: 0 }])
+  })
+
+  it('сортировка и CASES_SHOWN = 2 — вместе с обычными случаями (случай верхней ступени наравне с остальными)', () => {
+    // ссора (тег целиком, −5), алкоголь · верхняя (−3), учёба (тег целиком, −1): показываются двое худших, случай
+    // ступени сортируется наравне с обычными. У алкоголя ещё 2 вечера на ступени 1 с утром 6 — тег целиком не случай.
+    // («дорога» сюда не годится: она в CONTEXT_TAGS и случаем не бывает вовсе.)
+    const h = hist(LINK_DAYS, (i) => {
+      if (i === 5) return { tags: ['ссора'] }
+      if (i === 6) return { m: 1 }
+      if (i === 15) return { tags: ['учёба'] }
+      if (i === 16) return { m: 5 }
+      if (i === 25) return { tags: ['алкоголь'], levels: { 'алкоголь': 3 } }
+      if (i === 26) return { m: 3 }
+      if (i === 30 || i === 35) return { tags: ['алкоголь'], levels: { 'алкоголь': 1 } }
+      return {}
+    })
+    expect(cases(h, 'all')).toEqual([
+      { tag: 'ссора', values: [1], days: [h[6]!.day], usual: 6, missing: 0 },
+      { tag: 'алкоголь', level: 3, values: [3], days: [h[26]!.day], usual: 6, missing: 0 },
+    ])
+  })
+})
+
+describe('ladder — пограничные случаи (срез 5б)', () => {
+  /** Мир: `lv` — [вечера, ступень (null — «не указано»), значения утра после каждого вечера]; остальные утра — `none`. */
+  const world = (tag: string, lv: [number[], number | null, number[]][], none = 6) =>
+    hist(LINK_DAYS, (i) => {
+      const hit = lv.find(([ev]) => ev.includes(i))
+      const res = lv.find(([ev]) => ev.includes(i - 1))
+      const m = res ? res[2][res[0].indexOf(i - 1)]! : none
+      return { m, ...(hit ? { tags: [tag], ...(hit[1] !== null ? { levels: { [tag]: hit[1] } } : {}) } : {}) }
+    })
+
+  it('C: разница по видимым числам и сама округлена: сырые 4,06 и 3,14 → видимые 4,1 и 3,1 — проходит', () => {
+    // сырая разница 0,92 < 1; видимая 4,1 − 3,1 = 0,9999999999999996 в double → round1 → 1,0 ≥ 1
+    const h = world('алкоголь', [
+      [[3, 7, 11, 14, 17], 1, [4, 4, 4, 4, 4.3]],
+      [[21, 24, 27, 30, 33], 2, [3, 3, 3, 3, 3.7]],
+      [[40, 43], 3, [0, 0]],
+    ])
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(12)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps[1]!.mean).toBeCloseTo(4.06, 9) // сырое среднее (§9), не 4,1
+    expect(ld.steps[2]!.mean).toBeCloseTo(3.14, 9)
+    expect(ld.trend).toBe('worse')
+    expect(ld.firstLikeNone).toBe(false)
+  })
+
+  it('E: ступень совпадает с выходными (3 — только перед субботой, 1 — перед вторником) — в слое одна ступень, наклона нет: trend null', () => {
+    // «не было»: будни 6, воскресенье 4; ступень 1 → вторник 4,5; ступень 3 → суббота 2,5 (внутри слоя −1,5 на любой ступени).
+    // видимые 5,6 → 4,5 → 2,5, разница 2 — условия 1–5 выполнены; слой «будни» — только ступень 1, «выходные» — только 3 ⇒
+    // doseSlope null ⇒ условие 6 не выполнено. Наклон без слоёв дал бы −1 на ступень (span −2, se 0) и «worse».
+    const h = hist(LINK_DAYS, (_i, dow) => ({
+      m: dow === 5 ? 2.5 : dow === 1 ? 4.5 : dow === 6 ? 4 : 6,
+      ...(dow === 4 ? { tags: ['алкоголь'], levels: { 'алкоголь': 3 } } : dow === 0 ? { tags: ['алкоголь'], levels: { 'алкоголь': 1 } } : {}),
+    }))
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(['maybe', 'notable']).toContain(l.level)
+    expect(l.withN).toBe(16)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps.map((s) => [s.level, s.n, s.mean === null ? null : Math.round(s.mean * 10) / 10])).toEqual([
+      [0, 39, 5.6],
+      [1, 8, 4.5],
+      [2, 0, null],
+      [3, 8, 2.5],
+    ])
+    expect(ld.trend).toBeNull()
+  })
+
+  it('F: размах — по числу ступеней тега: у игр (4) наклон −0,4 даёт span −1,2 (а не −0,8) — trend «worse»', () => {
+    const h = world('игры', [
+      [[3, 7, 11], 1, [5.5, 5.5, 5.5]],
+      [[14, 18, 21], 2, [5.1, 5.1, 5.1]],
+      [[25, 28, 32], 3, [4.7, 4.7, 4.7]],
+      [[35, 39, 42], 4, [4.3, 4.3, 4.3]],
+    ], 6.5)
+    const l = tagLink(links(h, 'all').pairs, 'игры')
+    expect(l.withN).toBe(12)
+    expect(ladder(h, 'all', l)!.trend).toBe('worse')
+  })
+
+  it('G: «не было» входит в монотонность: ступень 1 выше «не было» — trend null', () => {
+    const h = world('алкоголь', [
+      [[3, 7, 11, 14], 1, [6.3, 6.3, 6.3, 6.3]],
+      [[18, 21, 25, 28], 2, [4, 4, 4, 4]],
+      [[32, 35, 39, 42], 3, [2.5, 2.5, 2.5, 2.5]],
+    ])
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(['maybe', 'notable']).toContain(l.level)
+    expect(ladder(h, 'all', l)!.trend).toBeNull()
+  })
+
+  it('H: условие 2 — по link.withN (с «не указано»): 10 со ступенью + 3 без — 13 ≥ 12, trend «worse»', () => {
+    const h = world('алкоголь', [
+      [[3, 7, 11], 1, [5, 5, 5]],
+      [[18, 21, 25], 2, [4, 4, 4]],
+      [[32, 35, 39, 42], 3, [2, 2, 2, 2]],
+      [[45, 47, 49], null, [3, 3, 3]],
+    ])
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(13)
+    expect(ladder(h, 'all', l)!.trend).toBe('worse')
+  })
+
+  it('I: ни одной показанной ступени (по 2 вечера на ступень + 6 «не указано», withN 12) — trend null', () => {
+    const h = world('алкоголь', [
+      [[3, 7], 1, [5, 5]],
+      [[11, 14], 2, [4, 4]],
+      [[18, 21], 3, [2, 2]],
+      [[25, 28, 32, 35, 39, 42], null, [3, 3, 3, 3, 3, 3]],
+    ])
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(12)
+    expect(['maybe', 'notable']).toContain(l.level)
+    expect(ladder(h, 'all', l)!.trend).toBeNull()
+  })
+  it('J: монотонность — по видимым числам: сырые 3,98 и 4,02 видны как 4,0 и 4,0 (ничья) — trend «worse»', () => {
+    const h = world('алкоголь', [
+      [[3, 7, 11, 14], 1, [4, 4, 4, 3.92]],
+      [[18, 21, 25, 28], 2, [4, 4, 4, 4.08]],
+      [[32, 35, 39, 42], 3, [2, 2, 2, 2]],
+    ])
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps[1]!.mean).toBeCloseTo(3.98, 9)
+    expect(ld.steps[2]!.mean).toBeCloseTo(4.02, 9)
+    expect(ld.trend).toBe('worse')
   })
 })

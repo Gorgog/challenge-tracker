@@ -314,6 +314,130 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         expect(await r.getSettings()).toEqual({ morningUntil: 16 })
         expect(await r.getDayGroups()).toEqual(['holds', 'tasks'])
       }, t)
+
+      describe('уровни тегов (срез 5б)', () => {
+        it('уровни: сохраняются и читаются при том же теге', async () => {
+          const r = await makeRepo()
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь', 'игры'],
+            levels: { алкоголь: 3, игры: 1 },
+          } as DayLog)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь', 'игры'],
+            levels: { алкоголь: 3, игры: 1 },
+          })
+        }, t)
+
+        it('уровни: пустые (нет поля или «{}») — в прочитанной записи поля «levels» нет вовсе', async () => {
+          const r = await makeRepo()
+          await r.saveDayLog({ ...closedLog('2026-09-21'), tags: ['выходной'], levels: {} } as DayLog)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({ ...closedLog('2026-09-21'), tags: ['выходной'] })
+          expect(logs[0]).not.toHaveProperty('levels')
+
+          // тот же случай, но поля «levels» нет вовсе (не просто пустой объект)
+          const withoutField = { ...closedLog('2026-09-22'), tags: ['выходной'] } as DayLog
+          delete (withoutField as { levels?: unknown }).levels
+          await r.saveDayLog(withoutField)
+          const again = await r.listDayLogs()
+          expect(again.find((l) => l.day === '2026-09-22')).not.toHaveProperty('levels')
+        }, t)
+
+        it('уровни: повторное сохранение заменяет прежние целиком, а не объединяет', async () => {
+          const r = await makeRepo()
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь', 'игры'],
+            levels: { алкоголь: 2, игры: 3 },
+          } as DayLog)
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь'],
+            levels: { алкоголь: 1 },
+          } as DayLog)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({ ...closedLog('2026-09-21'), tags: ['алкоголь'], levels: { алкоголь: 1 } })
+        }, t)
+
+        it('уровни: повторное сохранение без поля «levels» снимает прежние ступени целиком', async () => {
+          const r = await makeRepo()
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь'],
+            levels: { алкоголь: 2 },
+          } as DayLog)
+          const withoutField = { ...closedLog('2026-09-21'), tags: ['алкоголь'] } as DayLog
+          delete (withoutField as { levels?: unknown }).levels
+          await r.saveDayLog(withoutField)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({ ...closedLog('2026-09-21'), tags: ['алкоголь'] })
+          expect(logs[0]).not.toHaveProperty('levels')
+        }, t)
+
+        it('уровни: повторное сохранение с «levels: {}» снимает прежние ступени целиком', async () => {
+          const r = await makeRepo()
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь'],
+            levels: { алкоголь: 2 },
+          } as DayLog)
+          await r.saveDayLog({
+            ...closedLog('2026-09-21'),
+            tags: ['алкоголь'],
+            levels: {},
+          } as DayLog)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({ ...closedLog('2026-09-21'), tags: ['алкоголь'] })
+          expect(logs[0]).not.toHaveProperty('levels')
+        }, t)
+
+        it('уровни: неверные — отказ, ничего не сохраняется (ключ не из тегов; тег без ступеней; вне диапазона; не целое)', async () => {
+          const r = await makeRepo()
+          const bad = [
+            { tags: ['алкоголь'], levels: { игры: 1 } }, // ключ не из отмеченных тегов
+            { tags: ['дорога'], levels: { дорога: 1 } }, // тег без ступеней (не из LEVELS)
+            { tags: ['алкоголь'], levels: { алкоголь: 0 } }, // меньше 1
+            { tags: ['алкоголь'], levels: { алкоголь: 4 } }, // больше числа ступеней (у алкоголя их 3)
+            { tags: ['алкоголь'], levels: { алкоголь: 1.5 } }, // не целое
+            { tags: ['игры'], levels: { игры: 5 } }, // больше числа ступеней (у игр их 4)
+          ]
+          for (const over of bad) {
+            await expect(r.saveDayLog({ ...closedLog('2026-09-21'), ...over } as DayLog)).rejects.toThrow()
+          }
+          expect(await r.listDayLogs()).toEqual([])
+        }, t)
+
+        /*
+         * Число ступеней у каждого тега — своё (спека §1): алкоголь 3, игры 4, стресс 3, работа
+         * допоздна 3. Мутант «1…3 для всех» отвергнет «игры 4» (ловит верхняя ступень игр); «1…4 для всех»
+         * или триггер без стресса / работы допоздна примет «стресс 4» / «работа допоздна 4» (ловят отказы ниже).
+         */
+        it.each([
+          ['алкоголь', 3],
+          ['игры', 4],
+          ['стресс', 3],
+          ['работа допоздна', 3],
+        ] as const)('уровни: верхняя ступень тега «%s» (%i) сохраняется и читается', async (tag, top) => {
+          const r = await makeRepo()
+          await r.saveDayLog({ ...closedLog('2026-09-21'), tags: [tag], levels: { [tag]: top } } as DayLog)
+          const logs = await r.listDayLogs()
+          expect(logs[0]).toEqual({ ...closedLog('2026-09-21'), tags: [tag], levels: { [tag]: top } })
+        }, t)
+
+        it.each([
+          ['стресс', 4],
+          ['работа допоздна', 4],
+        ] as const)('уровни: ступень «%s» %i (за верхней границей) — отказ, ничего не сохраняется', async (tag, over) => {
+          const r = await makeRepo()
+          await expect(
+            r.saveDayLog({ ...closedLog('2026-09-21'), tags: [tag], levels: { [tag]: over } } as DayLog),
+          ).rejects.toThrow()
+          expect(await r.listDayLogs()).toEqual([])
+        }, t)
+      })
     })
   })
 }

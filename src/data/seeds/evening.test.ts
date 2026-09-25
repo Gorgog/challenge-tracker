@@ -47,7 +47,15 @@ async function evening(scenario: DemoScenario, seed: number): Promise<string> {
         l.mood,
         l.wellbeing,
         l.productivity,
-        l.tags.filter((t) => t !== 'мало спал'),
+        /*
+         * Срез 5б: новые фоновые теги (игры, стресс, работа допоздна) и ступени (levels, например
+         * алкоголь 1…3) тянутся из своей последовательности (doseStream), как утро и ночь раньше —
+         * основная rnd-последовательность не сдвигается. Поэтому прежние вечерние данные (оценки,
+         * заметки, старые теги, отметки) и хеши ниже остаются теми же, что и до среза 5б: новые теги
+         * отфильтрованы здесь так же, как раньше «мало спал», а `l.levels` в отпечаток не попадает
+         * вовсе (ступень — не повод отличать одно и то же зерно).
+         */
+        l.tags.filter((t) => !['мало спал', 'игры', 'стресс', 'работа допоздна'].includes(t)),
         l.note,
         l.closedAt,
       ]),
@@ -91,6 +99,29 @@ describe('ночь не меняет утро в демо', () => {
     const starts = await mornings(scenario, seed)
     /* начало дня — местные часы и минуты: сид строит его из местного времени, а ISO зависит от пояса машины (CI — UTC) */
     const text = JSON.stringify(starts.map((s) => [s.day, minutesAt(s.startedAt), s.morning && [s.morning.sleep, s.morning.wellbeing, s.morning.mood]]))
+    expect(fingerprint(text)).toBe(expected)
+  })
+})
+
+/**
+ * Охрана ночи (срез 5б). Новые фоновые теги и ступени алкоголя тянутся из своей последовательности
+ * (`doseStream`): ночь (лёг, встал, «как обычно» / точно) — из `nightStream`, как и раньше, и не должна
+ * сдвинуться. Отпечатки сняты на коде ДО среза 5б (до появления доз): тест зелёный и до, и после реализации,
+ * а краснеет, если `doseStream` / `withDoses` сдвинет ночь.
+ */
+describe('срез 5б не меняет ночь', () => {
+  it.each([
+    ['full', 20260921, '03aa0981'],
+    ['full', 20266840, '74ed3f08'],
+    ['full', 424242, 'd045cca8'],
+    ['burnout', 20260921, '95ab90d5'],
+    ['burnout', 20266840, 'dbc70456'],
+    ['burnout', 424242, '1584a3ff'],
+  ] as const)('%s, зерно %s — ночь та же', async (scenario, seed, expected) => {
+    const starts = await mornings(scenario, seed)
+    const text = JSON.stringify(
+      starts.map((s) => [s.day, s.morning?.night ? [s.morning.night.bed, s.morning.night.wake, s.morning.night.bedHow, s.morning.night.wakeHow] : null]),
+    )
     expect(fingerprint(text)).toBe(expected)
   })
 })

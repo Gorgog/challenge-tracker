@@ -754,3 +754,217 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(rows.findIndex((t) => t?.includes('встал'))).toBe(rows.findIndex((t) => t?.startsWith('Утросон')) + 1)
   })
 })
+
+describe('AnalyticsPage — ступени тегов (срез 5б)', () => {
+  it('шторка дня: тег со ступенью — пилюля «алкоголь · 3–5 порций» (long), тег без ступени — как было', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    // back=7 — «плохой» день из world(), уже с тегом «алкоголь»; добавляем ступень 2 и тег без ступени
+    mocked.logs = mocked.logs.map((l) => (l.day === key(7) ? { ...l, tags: ['алкоголь', 'дорога'], levels: { алкоголь: 2 } } : l))
+    show()
+    await user.click(dayButton(/^ср, 16 сентября/))
+    const dialog = screen.getByRole('dialog', { name: 'ср, 16 сентября' })
+    expect(within(dialog).getByText('алкоголь · 3–5 порций')).toBeInTheDocument()
+    expect(within(dialog).getByText('дорога')).toBeInTheDocument()
+  })
+
+  /**
+   * drinkWorld, но теги и утра переопределены целиком, чтобы точно знать ступени и «обычное».
+   * «1–2» — вечера 13…16 (результаты 12…15, утро 5, n = 4), «3–5» — вечера 18…19 (результаты 17…18,
+   * утро 4, n = 2 — ниже LADDER_MIN, «мало дней»), «6+» — вечера 20…22 (результаты 19…21, утро 2,
+   * n = 3 — ровно на границе LADDER_MIN, среднее уже есть), без ступени — вечера 26…28 (результаты
+   * 25…27, утро 3, «не указано»). Остальные дни — «не было», утро 6 ровно. Окно связей — последние
+   * 56 дней истории: 55 пар (i = 1…55), «с» — 4 + 2 + 3 + 3 = 12 (= LADDER_TOTAL), «без» — 55 − 12 = 43.
+   * Фраза (§4): связь maybe/worse; withN 12 ≥ 12 (граница); показаны 1–2 и 6+ (n 4 и 3); видимые 6,0 ≥ 5,0 ≥ 2,0;
+   * |2,0 − 5,0| = 3; условие 6 — результаты «3–5» (сб 05.09, вс 06.09) только в выходные, в слое одна ступень, он
+   * пропущен; будни 4×(1; 5) + 3×(3; 2): b = −1,5, SSE = 0 → se = 0, span = −3, shrunk = −3 → «хуже».
+   * firstLikeNone: |5,0 − 6,0| = 1 не меньше LINK_DIFF → false.
+   */
+  function doseWorld() {
+    const w = drinkWorld()
+    const lvl1 = [13, 14, 15, 16]
+    const lvl2 = [18, 19]
+    const lvl3 = [20, 21, 22]
+    const none = [26, 27, 28]
+    const allEvenings = [...lvl1, ...lvl2, ...lvl3, ...none]
+    const evenings = new Set(allEvenings.map(key))
+    const logs = w.logs.map((l) => {
+      if (!evenings.has(l.day)) return { ...l, tags: [] }
+      const back = allEvenings.find((b) => key(b) === l.day)!
+      const levels = lvl1.includes(back) ? { алкоголь: 1 } : lvl2.includes(back) ? { алкоголь: 2 } : lvl3.includes(back) ? { алкоголь: 3 } : {}
+      return { ...l, tags: ['алкоголь'], levels }
+    })
+    const r1 = new Set(lvl1.map((b) => key(b - 1)))
+    const r2 = new Set(lvl2.map((b) => key(b - 1)))
+    const r3 = new Set(lvl3.map((b) => key(b - 1)))
+    const rn = new Set(none.map((b) => key(b - 1)))
+    const starts = w.starts.map((s) => {
+      const v = r1.has(s.day) ? 5 : r2.has(s.day) ? 4 : r3.has(s.day) ? 2 : rn.has(s.day) ? 3 : 6
+      return { ...s, morning: { sleep: 7, wellbeing: v, mood: v } }
+    })
+    return { logs, starts }
+  }
+
+  /**
+   * Своя, более простая раскладка (только ступени 1 и 3, без ступени 2): «1–2» — вечера 13…17 (результат —
+   * утро 5, n = 5), «6+» — вечера 20…24 (утро 2, n = 5), без ступени — только вечер 27 (утро 3, n = 1).
+   * «с» = 5 + 5 + 1 = 11 — ниже LADDER_TOTAL (12): лесенка (группа «Сколько») есть, а фразы
+   * «Чем больше…» нет. Остальные условия выполнены: показаны 1–2 и 6+ (n 5 и 5); 6,0 ≥ 5,0 ≥ 2,0; разница 3;
+   * все 10 результатов со ступенью — будни, b = −1,5, shrunk = −3. Отказ даёт только условие 2.
+   */
+  function doseWorldFew() {
+    const w = drinkWorld()
+    const lvl1 = [13, 14, 15, 16, 17]
+    const lvl3 = [20, 21, 22, 23, 24]
+    const none = [27]
+    const allEvenings = [...lvl1, ...lvl3, ...none]
+    const evenings = new Set(allEvenings.map(key))
+    const logs = w.logs.map((l) => {
+      if (!evenings.has(l.day)) return { ...l, tags: [] }
+      const back = allEvenings.find((b) => key(b) === l.day)!
+      const levels = lvl1.includes(back) ? { алкоголь: 1 } : lvl3.includes(back) ? { алкоголь: 3 } : {}
+      return { ...l, tags: ['алкоголь'], levels }
+    })
+    const r1 = new Set(lvl1.map((b) => key(b - 1)))
+    const r3 = new Set(lvl3.map((b) => key(b - 1)))
+    const rn = new Set(none.map((b) => key(b - 1)))
+    const starts = w.starts.map((s) => {
+      const v = r1.has(s.day) ? 5 : r3.has(s.day) ? 2 : rn.has(s.day) ? 3 : 6
+      return { ...s, morning: { sleep: 7, wellbeing: v, mood: v } }
+    })
+    return { logs, starts }
+  }
+
+  it('«Подробнее» у «алкоголь»: группа «Сколько» — ступени по порядку и со своими числами, «мало дней» ровно у редкой, фраза «Чем больше — тем хуже.»', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, doseWorld())
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog')
+    const group = within(dialog).getByRole('group', { name: 'Сколько' })
+    // порядок строк и число привязано к своей строке — не «где-то в группе»
+    expect(group.textContent).toMatch(
+      /не было \(43\)\s*6,0.*1–2 порции \(4\)\s*5,0.*3–5 порций \(2\)\s*мало дней.*6\+ порций \(3\)\s*2,0.*сколько — не указано \(3\)/s,
+    )
+    // «мало дней» — только у ступени 2 (n = 2 < LADDER_MIN); у «не указано» (n = 3) среднего нет вовсе
+    expect(within(group).getAllByText('мало дней')).toHaveLength(1)
+    expect(within(group).queryByText('4,0')).not.toBeInTheDocument()
+    expect(within(group).queryByText('3,0')).not.toBeInTheDocument()
+    /* у «не указано» среднего нет ни отдельным узлом, ни в одной строке с подписью (перепроверка 5б) */
+    expect(group.textContent).not.toMatch(/не указано \(3\)\s*\d/)
+    expect(within(dialog).getByText('Чем больше — тем хуже.')).toBeInTheDocument()
+    // |5,0 − 6,0| = 1 — не меньше LINK_DIFF: «почти как без» нет
+    expect(within(dialog).queryByText(/почти как без/)).not.toBeInTheDocument()
+  })
+
+  it('лесенка есть, но фразы «Чем больше…» нет — вечеров с тегом меньше LADDER_TOTAL', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, doseWorldFew())
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('group', { name: 'Сколько' })).toBeInTheDocument()
+    expect(within(dialog).queryByText(/Чем больше/)).not.toBeInTheDocument()
+  })
+
+  it('связь по тегу не из LEVELS («ссора») — блока «Сколько» в шторке нет', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = drinkWorld()
+    // «ссора» — единственный тег дня (пришла на смену «алкоголь» из drinkWorld); 5 + 5, утро после хуже
+    const evenings = [6, 15, 24, 33, 42, 51].map(key)
+    const results = [5, 14, 23, 32, 41, 50].map(key)
+    mocked.logs = w.logs.map((l) => (evenings.includes(l.day) ? { ...l, tags: ['ссора'] } : { ...l, tags: [] }))
+    mocked.starts = w.starts.map((s) => (results.includes(s.day) ? { ...s, morning: { sleep: 7, wellbeing: 4, mood: 4 } } : s))
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByRole('group', { name: 'Сколько' })).not.toBeInTheDocument()
+  })
+
+  it('«Подробнее» у «Плохая ночь» — в шторке тоже нет блока «Сколько» (это не тег)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = drinkWorld()
+    const nights = [1, 9, 17, 25, 33, 41, 49].map(key)
+    mocked.logs = w.logs.map((l) => ({ ...l, tags: [], ...(nights.includes(l.day) ? { mood: 3, wellbeing: 3 } : {}) }))
+    mocked.starts = w.starts.map((s) => ({ ...s, morning: { sleep: nights.includes(s.day) ? 2 : 7, wellbeing: 6, mood: 6 } }))
+    show()
+    await user.click(within(screen.getByRole('region', { name: 'Что попробовать' })).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog', { name: 'После плохой ночи самочувствие и настроение вечером обычно хуже' })
+    expect(within(dialog).queryByRole('group', { name: 'Сколько' })).not.toBeInTheDocument()
+  })
+
+  it('«Подробнее» у «Поздний отбой» — в шторке тоже нет блока «Сколько» (это не тег)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = drinkWorld()
+    const nightFn = (bed: number, wake: number) => ({ bed, wake, bedHow: 'exact' as const, wakeHow: 'exact' as const })
+    const late = (back: number) => back % 8 === 5
+    mocked.logs = w.logs.map((l) => ({ ...l, tags: [] }))
+    mocked.starts = w.starts.map((s) => {
+      const back = [...Array(60).keys()].find((b) => key(b) === s.day)!
+      return { ...s, morning: { sleep: late(back) ? 3 : 7, wellbeing: 6, mood: 6, night: late(back) ? nightFn(60, 460) : nightFn(-30, 460) } }
+    })
+    show()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog', { name: 'После отбоя с 00:30 и позже сон обычно хуже' })
+    expect(within(dialog).queryByRole('group', { name: 'Сколько' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * drinkWorld, но теги переопределены: «6+» — 2 вечера (backs 10, 20 → результаты 9, 19). cases() идёт от
+   * старых дней к новым: вечер 20 старше вечера 10, поэтому первым в values идёт утро key(19), вторым —
+   * key(9); чтобы текст остался «— 3 и 4», key(19) → утро 3, key(9) → утро 4.
+   * «1–2» — ещё 3 вечера (backs 30, 32, 34) без выдающихся утр — держат весь тег «алкоголь» вне случаев
+   * (эпизодов у целого тега 5 ≥ LINK_MIN, «случаем» не становится). Остальные утра — 7 ровно, «обычное» — 7.
+   */
+  function topLevelCaseWorld() {
+    const w = drinkWorld()
+    const top = [10, 20].map(key)
+    const pad = [30, 32, 34].map(key)
+    const logs = w.logs.map((l) =>
+      top.includes(l.day)
+        ? { ...l, tags: ['алкоголь'], levels: { алкоголь: 3 } }
+        : pad.includes(l.day)
+          ? { ...l, tags: ['алкоголь'], levels: { алкоголь: 1 } }
+          : { ...l, tags: [] },
+    )
+    const starts = w.starts.map((s) => {
+      if (s.day === key(9)) return { ...s, morning: { sleep: 7, wellbeing: 4, mood: 4 } }
+      if (s.day === key(19)) return { ...s, morning: { sleep: 7, wellbeing: 3, mood: 3 } }
+      return { ...s, morning: { sleep: 7, wellbeing: 7, mood: 7 } }
+    })
+    return { logs, starts }
+  }
+
+  it('«Случаи»: верхняя ступень «алкоголь · 6+» — своя строка и кнопка со ступенью в названии', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, topLevelCaseWorld())
+    show()
+    const box = screen.getByRole('region', { name: 'Случаи' })
+    expect(
+      within(box).getByText('Оба утра после «алкоголь · 6+» самочувствие и настроение — 3 и 4. После других вечеров — около 7.'),
+    ).toBeInTheDocument()
+    await user.click(within(box).getByRole('button', { name: 'Показать на графике дни после «алкоголь · 6+»' }))
+    expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(2)
+  })
+
+  /** «алкоголь» — единственный тег дня, только 2 вечера (10, 25), оба ступени 3: тег целиком — уже случай. */
+  function wholeTagIsCaseWorld() {
+    const w = drinkWorld()
+    const only = [10, 25].map(key)
+    const logs = w.logs.map((l) => (only.includes(l.day) ? { ...l, tags: ['алкоголь'], levels: { алкоголь: 3 } } : { ...l, tags: [] }))
+    const starts = w.starts.map((s) => (s.day === key(9) || s.day === key(24) ? { ...s, morning: { sleep: 7, wellbeing: 2, mood: 2 } } : s))
+    return { logs, starts }
+  }
+
+  it('тег целиком — случай на тех же днях, что верхняя ступень: строки «алкоголь · 6+» нет', async () => {
+    Object.assign(mocked, wholeTagIsCaseWorld())
+    show()
+    const box = screen.getByRole('region', { name: 'Случаи' })
+    expect(
+      within(box).getByText('Оба утра после «алкоголь» самочувствие и настроение — 2 и 2. После других вечеров — около 6.'),
+    ).toBeInTheDocument()
+    expect(within(box).queryByText(/алкоголь · 6\+/)).not.toBeInTheDocument()
+    expect(within(box).queryByRole('button', { name: /алкоголь · 6\+/ })).not.toBeInTheDocument()
+  })
+})

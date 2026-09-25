@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
+import type { DayLog } from '@/domain/types'
 import { createSupabaseRepo } from './supabaseRepo'
 
 type Row = Record<string, unknown>
-type Call = { table: string; op: string; payload?: unknown; filters: [string, unknown][] }
+type Call = { table: string; op: string; payload?: unknown; filters: [string, unknown][]; cols?: string }
 
 /**
  * Поддельный клиент: таблицы в памяти, фильтр `eq`, страницы `range` и потолок строк за ответ, как у
@@ -17,9 +18,10 @@ function fakeDb(tables: Record<string, Row[]>, maxRows = 1000, errors: Record<st
     let payload: unknown
     let range: [number, number] | null = null
     let single = false
+    let cols: string | undefined
     const filters: [string, unknown][] = []
     const b = {
-      select: () => b,
+      select: (c?: string) => ((cols = c), b),
       order: () => b,
       eq: (col: string, v: unknown) => (filters.push([col, v]), b),
       range: (f: number, t: number) => ((range = [f, t]), b),
@@ -30,7 +32,7 @@ function fakeDb(tables: Record<string, Row[]>, maxRows = 1000, errors: Record<st
       maybeSingle: () => ((single = true), b),
       single: () => ((single = true), b),
       then(res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) {
-        calls.push({ table, op, payload, filters })
+        calls.push({ table, op, payload, filters, cols })
         if (errors[table]) return Promise.resolve({ data: null, error: errors[table] }).then(res, rej)
         const rows = (tables[table] ?? []).filter((r) => filters.every(([c, v]) => r[c] === v))
         let data: unknown = null
@@ -126,5 +128,58 @@ describe('хранилище Supabase: как оно разговаривает 
     await createSupabaseRepo(client).reorderChallenges(['c', 'a'])
     expect(rpc).toEqual([{ fn: 'reorder_challenges', args: { ids: ['c', 'a', 'b'] } }])
     expect(calls.some((c) => c.op === 'update')).toBe(false)
+  })
+})
+
+describe('итог дня: уровни тегов (срез 5б)', () => {
+  const log = {
+    day: '2026-09-21',
+    mood: 5,
+    wellbeing: 5,
+    productivity: 5,
+    tags: ['алкоголь'],
+    note: '',
+    closedAt: '2026-09-21T21:00:00.000Z',
+    levels: { алкоголь: 2 },
+  } as DayLog
+
+  it('saveDayLog пишет tag_levels в апсерт', async () => {
+    const { client, calls } = fakeDb({})
+    await createSupabaseRepo(client).saveDayLog(log)
+    const saved = calls.find((c) => c.table === 'day_logs' && c.op === 'upsert')!
+    expect(saved.payload).toMatchObject({ tag_levels: { алкоголь: 2 } })
+  })
+
+  it('listDayLogs читает tag_levels в levels', async () => {
+    const { client } = fakeDb({
+      day_logs: [
+        {
+          day: '2026-09-21',
+          mood: 5,
+          wellbeing: 5,
+          productivity: 5,
+          tags: ['алкоголь'],
+          note: '',
+          closed_at: null,
+          tag_levels: { алкоголь: 2 },
+        },
+      ],
+    })
+    const logs = await createSupabaseRepo(client).listDayLogs()
+    expect(logs[0]).toMatchObject({ levels: { алкоголь: 2 } })
+  })
+
+  /*
+   * Поддельный клиент игнорирует список столбцов при фильтрации данных (`select: () => b`
+   * раньше), поэтому тест выше проходит даже если `DAY_LOG` не запрашивает `tag_levels`
+   * по-настоящему — на сайте тогда ступени не читались бы никогда. Столбцы теперь
+   * запоминаются в `calls`, и здесь мы проверяем именно список запрошенных колонок.
+   */
+  it('listDayLogs запрашивает столбец tag_levels — иначе ступени не читать по-настоящему', async () => {
+    const { client, calls } = fakeDb({ day_logs: [] })
+    await createSupabaseRepo(client).listDayLogs()
+    const select = calls.find((c) => c.table === 'day_logs' && c.op === 'select')!
+    expect(select.cols).toBeDefined()
+    expect(select.cols).toMatch(/(^|[,\s])tag_levels($|[,\s])/)
   })
 })

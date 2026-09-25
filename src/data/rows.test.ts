@@ -9,6 +9,7 @@ import {
   dayStartToRow,
   entriesFromRows,
   type ChallengeRow,
+  type DayLogRow,
 } from './rows'
 
 const challenge: Challenge = {
@@ -77,6 +78,69 @@ describe('строки базы ↔ домен', () => {
     }
     expect(dayLogFromRow({ ...dayLogToRow(log), closed_at: '2026-09-21T21:00:00+00:00' })).toEqual(log)
     expect(dayLogFromRow({ ...dayLogToRow(log), closed_at: null }).closedAt).toBeNull()
+  })
+
+  it('итог дня: уровни туда и обратно (tag_levels ↔ levels), без потерь (срез 5б)', () => {
+    const log = {
+      day: '2026-09-21',
+      mood: 0,
+      wellbeing: 10,
+      productivity: 5,
+      tags: ['алкоголь', 'игры'],
+      note: 'поздно',
+      closedAt: '2026-09-21T21:00:00.000Z',
+      levels: { алкоголь: 3, игры: 1 },
+    } as DayLog
+    const row = dayLogToRow(log) as unknown as DayLogRow & { tag_levels: Record<string, number> }
+    expect(row.tag_levels).toEqual({ алкоголь: 3, игры: 1 })
+    expect(dayLogFromRow({ ...row, closed_at: '2026-09-21T21:00:00+00:00' })).toEqual(log)
+  })
+
+  it('итог дня: пустой tag_levels — в домене поля «levels» нет вовсе (срез 5б)', () => {
+    const log: DayLog = {
+      day: '2026-09-21',
+      mood: 5,
+      wellbeing: 5,
+      productivity: 5,
+      tags: [],
+      note: '',
+      closedAt: null,
+    }
+    const row = { ...dayLogToRow(log), tag_levels: {} } as unknown as DayLogRow
+    const back = dayLogFromRow(row)
+    expect(back).toEqual(log)
+    expect(back).not.toHaveProperty('levels')
+  })
+
+  it('итог дня: dayLogToRow у лога без «levels» пишет tag_levels {} (срез 5б)', () => {
+    const log: DayLog = {
+      day: '2026-09-21',
+      mood: 5,
+      wellbeing: 5,
+      productivity: 5,
+      tags: [],
+      note: '',
+      closedAt: null,
+    }
+    const row = dayLogToRow(log) as unknown as { tag_levels: Record<string, number> }
+    expect(row.tag_levels).toEqual({})
+  })
+
+  it('итог дня: уровни — копия, правка результата строку не трогает (срез 5б)', () => {
+    const log = {
+      day: '2026-09-21',
+      mood: 5,
+      wellbeing: 5,
+      productivity: 5,
+      tags: ['алкоголь'],
+      note: '',
+      closedAt: null,
+      levels: { алкоголь: 2 },
+    } as DayLog
+    const row = dayLogToRow(log) as unknown as DayLogRow & { tag_levels: Record<string, number> }
+    const back = dayLogFromRow(row) as DayLog & { levels: Record<string, number> }
+    back.levels.алкоголь = 99
+    expect(row.tag_levels).toEqual({ алкоголь: 2 })
   })
 
   it('начало дня: утро — три столбца, ночь — четыре; пропущенное утро — null', () => {
