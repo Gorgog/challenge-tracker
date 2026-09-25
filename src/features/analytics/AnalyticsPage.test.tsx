@@ -14,13 +14,30 @@ const mocked = vi.hoisted(() => ({
   entries: {} as Record<string, EntryMap>,
   logs: [] as DayLog[],
   starts: [] as DayStart[],
-  failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts',
+  failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts' | 'layout',
+  /** Раскладка аналитики в «аккаунте»; запись меняет её, как оптимистичная запись меняет кэш. */
+  layout: { order: ['links', 'changes', 'cases', 'explains'], open: [] } as { order: string[]; open: string[] },
+  saved: [] as { order: string[]; open: string[] }[],
+  listeners: new Set<() => void>(),
 }))
 
-vi.mock('@/data/queries', () => {
+vi.mock('@/data/queries', async () => {
+  const { useSyncExternalStore } = await import('react')
   const result = (name: typeof mocked.failed, data: unknown) =>
     mocked.failed === name ? { data: undefined, isPending: false, isError: true } : { data, isPending: false, isError: false }
+  const subscribe = (f: () => void) => {
+    mocked.listeners.add(f)
+    return () => mocked.listeners.delete(f)
+  }
   return {
+    useAnalyticsLayout: () => result('layout', useSyncExternalStore(subscribe, () => mocked.layout)),
+    useSaveAnalyticsLayout: () => ({
+      mutate: (layout: typeof mocked.layout) => {
+        mocked.saved.push(layout)
+        mocked.layout = layout
+        mocked.listeners.forEach((f) => f())
+      },
+    }),
     useSettings: () => ({ data: { morningUntil: 15 }, isPending: false, isError: false }),
     useChallenges: () => result('challenges', mocked.challenges),
     useEntries: () => result('entries', mocked.entries),
@@ -85,7 +102,7 @@ const headline = () => screen.getByTestId('headline')
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 23, 12, 0))
-  Object.assign(mocked, { challenges: [push], entries: {}, failed: null, ...world() })
+  Object.assign(mocked, { challenges: [push], entries: {}, failed: null, layout: { order: ['links', 'changes', 'cases', 'explains'], open: [] }, saved: [], ...world() })
 })
 afterEach(() => vi.useRealTimers())
 
@@ -1135,3 +1152,50 @@ describe('AnalyticsPage — блоки разбора свёрнуты, «Что
     before(region('Что изменилось'), region('Случаи'))
   })
 })
+
+describe('AnalyticsPage — раскладка блоков хранится в аккаунте (решение Georgy 25.09)', () => {
+  const region = (name: string | RegExp) => screen.getByRole('region', { name })
+  const toggle = (name: string | RegExp) => within(within(region(name)).getByRole('heading', { level: 2 })).getByRole('button')
+  const before = (a: Element, b: Element) => expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const ill = () => {
+    mocked.logs = mocked.logs.map((l) => (l.day === key(7) || l.day === key(5) ? { ...l, tags: [...l.tags, 'болел'] } : l))
+  }
+
+  it('блоки — в сохранённом порядке, сохранённые открытыми — открыты', () => {
+    ill()
+    mocked.layout = { order: ['explains', 'changes', 'cases', 'links'], open: ['changes'] }
+    showFolded()
+    before(chart(), region('Объясняет плохие дни'))
+    before(region('Объясняет плохие дни'), region('Что изменилось'))
+    before(region('Что изменилось'), region(/Что попробовать|Связи: пока рано/))
+    expect(toggle('Что изменилось')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(region('Что изменилось')).getByText('«алкоголь»: 7 из 13 вечеров')).toBeInTheDocument()
+    expect(toggle('Объясняет плохие дни')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('нажатие на заголовок сохраняет открытые в аккаунт, порядок не трогает', () => {
+    showFolded()
+    fireEvent.click(toggle('Что изменилось'))
+    expect(mocked.saved.at(-1)).toEqual({ order: ['links', 'changes', 'cases', 'explains'], open: ['changes'] })
+    fireEvent.click(toggle(/Что попробовать|Связи: пока рано/))
+    fireEvent.click(toggle('Что изменилось'))
+    expect(mocked.saved.at(-1)).toEqual({ order: ['links', 'changes', 'cases', 'explains'], open: ['links'] })
+  })
+
+  it('у каждого блока, кроме графика, — ручка для перетаскивания', () => {
+    ill()
+    showFolded()
+    for (const name of ['Что изменилось', 'Объясняет плохие дни', /Что попробовать|Связи: пока рано/]) {
+      expect(within(region(name)).getByRole('button', { name: /Перетащить блок/ })).toBeInTheDocument()
+    }
+    expect(within(chart()).queryByRole('button', { name: /Перетащить блок/ })).not.toBeInTheDocument()
+  })
+
+  it('раскладка не загрузилась — обычный порядок и всё свёрнуто, разбор всё равно показан', () => {
+    mocked.failed = 'layout'
+    showFolded()
+    before(region(/Что попробовать|Связи: пока рано/), region('Что изменилось'))
+    expect(toggle('Что изменилось')).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+

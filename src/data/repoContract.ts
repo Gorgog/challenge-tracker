@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_ANALYTICS_LAYOUT } from '@/domain/analyticsLayout'
 import { addDays, dayKey, parseDay } from '@/domain/date'
 import { isPaused } from '@/domain/pauses'
 import { DEFAULT_DAY_GROUPS, DEFAULT_SETTINGS, type Challenge, type DayLog } from '@/domain/types'
@@ -313,6 +314,19 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         await r.saveSettings({ morningUntil: 16 })
         expect(await r.getSettings()).toEqual({ morningUntil: 16 })
         expect(await r.getDayGroups()).toEqual(['holds', 'tasks'])
+      }, t)
+
+      it('раскладка аналитики: по умолчанию, сохраняется и не трогает настройки и блоки дня (решение Georgy 25.09)', async () => {
+        const r = await makeRepo()
+        expect(await r.getAnalyticsLayout()).toEqual(DEFAULT_ANALYTICS_LAYOUT)
+        await r.saveSettings({ morningUntil: 12 })
+        await r.saveDayGroups(['holds', 'tasks'])
+        await r.saveAnalyticsLayout({ order: ['explains', 'links', 'changes', 'cases'], open: ['links', 'cases'] })
+        expect(await r.getAnalyticsLayout()).toEqual({ order: ['explains', 'links', 'changes', 'cases'], open: ['links', 'cases'] })
+        expect(await r.getSettings()).toEqual({ morningUntil: 12 })
+        expect(await r.getDayGroups()).toEqual(['holds', 'tasks'])
+        await r.saveDayGroups(['tasks', 'holds'])
+        expect(await r.getAnalyticsLayout()).toEqual({ order: ['explains', 'links', 'changes', 'cases'], open: ['links', 'cases'] })
       }, t)
 
       describe('уровни тегов (срез 5б)', () => {
