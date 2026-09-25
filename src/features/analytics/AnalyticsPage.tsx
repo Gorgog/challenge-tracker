@@ -105,9 +105,13 @@ export function AnalyticsPage() {
   const saveLayout = useSaveAnalyticsLayout()
   const [ownLayout, setOwnLayout] = useState<AnalyticsLayout | null>(null)
   const layout = ownLayout ?? layoutQuery.data ?? DEFAULT_ANALYTICS_LAYOUT
+  /*
+   * В аккаунт — только поверх прочитанной раскладки: иначе первое же нажатие затёрло бы сохранённый порядок обычным.
+   * Отказ записи — экран возвращается к кэшу, как и обещает тост «Изменение отменено» (ревью Opus 25.09).
+   */
   const applyLayout = (next: AnalyticsLayout) => {
     setOwnLayout(next)
-    saveLayout.mutate(next)
+    if (layoutQuery.isSuccess) saveLayout.mutate(next, { onError: () => setOwnLayout(null) })
   }
   const sensors = useSensors(
     /* порог в 4 пикселя: без него нажатие на ручку уже считалось бы перетаскиванием */
@@ -163,7 +167,9 @@ export function AnalyticsPage() {
 
   /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
   const failed = [challenges, entries, logs, starts].some((q) => q.isError && q.data === undefined)
-  const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending || layoutQuery.isPending
+  /* раскладку ждём, только пока она правда грузится: без сети запрос на паузе, и разбор рисуется в обычном порядке */
+  const loading =
+    challenges.isPending || entries.isPending || logs.isPending || starts.isPending || (layoutQuery.isPending && layoutQuery.fetchStatus === 'fetching')
 
   const outcomeOf = (c: Challenge, day: string) => dayOutcome(c, entriesById[c.id] ?? {}, parseDay(day), parseDay(todayK))
   const sheetIndex = openDay && history ? history.findIndex((d) => d.day === openDay) : -1

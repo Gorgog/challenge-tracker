@@ -238,8 +238,12 @@ export function useSaveAnalyticsLayout() {
       return { previous, gen: generation(client) }
     },
 
-    onError(_error, _layout, context) {
-      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.analyticsLayout, context.previous)
+    /* откат — только если в кэше всё ещё своя раскладка: следующая запись уже положила свою (ревью Opus 25.09) */
+    onError(_error, layout, context) {
+      const now = client.getQueryData<AnalyticsLayout>(queryKeys.analyticsLayout)
+      /* кэш хранит свою копию (structural sharing) — сравниваем содержимое */
+      if (context?.previous && context.gen === generation(client) && JSON.stringify(now) === JSON.stringify(layout))
+        client.setQueryData(queryKeys.analyticsLayout, context.previous)
     },
   })
 }

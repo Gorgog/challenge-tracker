@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { CalendarIcon, ChevronDownIcon, LightbulbIcon, MoonIcon, SunIcon, WineIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isHarmful, type DayStory } from '@/domain/dayStory'
-import type { Goal } from '@/domain/overview'
+import { isComplete, type Goal } from '@/domain/overview'
 import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
 import { clockText } from '@/domain/night'
@@ -163,8 +163,20 @@ export function DaySheet({
     ['продуктивность', '', e ? v(e.productivity) : '—'],
   ]
   const marks = day ? challenges.map((c) => [c, outcomeOf(c, day.day)] as const).filter(([, o]) => o !== 'outside') : []
-  const hits = marks.filter(([, o]) => o === 'hit').map(([c]) => c.name)
-  const misses = marks.filter(([, o]) => o === 'miss').map(([c]) => c.name)
+  /* «Ложусь раньше» — со своим временем: это ночь после вечера, а строка «ночь» выше — до утра (ревью 4б, Opus 25.09) */
+  const chipName = (c: Challenge) => {
+    const bed = day && c.measure === 'bedtime' ? valueOf(c, day.day) : undefined
+    return bed === undefined || Number.isNaN(bed) ? c.name : `${c.name} · вечером лёг в ${clockText(bed)}`
+  }
+  const pick = (o: Outcome, quit: boolean) => marks.filter(([c, x]) => x === o && (c.kind === 'quit') === quit).map(([c]) => chipName(c))
+  /* у отказа — «срыв» и «без срыва», у привычки — «пропущено» и «выполнено» */
+  const groups = [
+    { title: 'пропущено', names: pick('miss', false), hit: false },
+    { title: 'срыв', names: pick('miss', true), hit: false },
+    { title: 'выполнено', names: pick('hit', false), hit: true },
+    { title: 'без срыва', names: pick('hit', true), hit: true },
+  ].filter((g) => g.names.length > 0)
+  const partial = day && story && story.value !== null && !isComplete(day, goal) ? (day.morning ? 'утро' : 'вечер') : null
   const [all, setAll] = useState(false)
   const tone = story ? toneText(story) : null
 
@@ -183,20 +195,25 @@ export function DaySheet({
             <DialogHeader className="flex-row items-center gap-3 text-left">
               <span
                 data-testid="day-value"
+                data-partial={partial ? '' : undefined}
                 className={cn(
                   'grid size-13 shrink-0 place-items-center rounded-[14px] border text-[20px] font-semibold tabular-nums',
                   story.tone === 'worse'
                     ? 'border-worse/45 bg-worse/15 text-worse'
                     : story.tone === 'better'
                       ? 'border-better/45 bg-better/15 text-better'
-                      : 'border-border bg-secondary text-foreground',
+                      : partial
+                        ? 'border-dashed border-muted-foreground/50 bg-transparent text-muted-foreground'
+                        : 'border-border bg-secondary text-foreground',
                 )}
               >
                 {story.value === null ? '—' : num1(story.value)}
               </span>
               <div className="flex min-w-0 flex-col gap-0.5">
                 <DialogTitle className="text-lg font-bold tracking-tight">{dayName(day.day)}</DialogTitle>
-                <DialogDescription className="text-[13px]">{tone ?? 'Как прошёл этот день'}</DialogDescription>
+                <DialogDescription className="text-[13px]">
+                  {partial ? `записан наполовину: только ${partial}` : (tone ?? 'Как прошёл этот день')}
+                </DialogDescription>
               </div>
             </DialogHeader>
 
@@ -238,24 +255,15 @@ export function DaySheet({
                       </Chips>
                     </Group>
                   )}
-                  {misses.length > 0 && (
-                    <Group title="пропущено">
+                  {groups.map((g) => (
+                    <Group key={g.title} title={g.title}>
                       <Chips>
-                        {misses.map((name) => (
-                          <MarkChip key={name} name={name} hit={false} />
+                        {g.names.map((name) => (
+                          <MarkChip key={name} name={name} hit={g.hit} />
                         ))}
                       </Chips>
                     </Group>
-                  )}
-                  {hits.length > 0 && (
-                    <Group title="выполнено">
-                      <Chips>
-                        {hits.map((name) => (
-                          <MarkChip key={name} name={name} hit />
-                        ))}
-                      </Chips>
-                    </Group>
-                  )}
+                  ))}
                   {story.evening?.note && (
                     <Group title="заметка">
                       <Note text={story.evening.note} />
@@ -311,7 +319,7 @@ export function DaySheet({
               </tbody>
             </table>
             {marks.length > 0 && (
-              <ul className="flex flex-col gap-1 text-[13.5px]">
+              <ul aria-label="Отметки дня" className="flex flex-col gap-1 text-[13.5px]">
                 {marks.map(([c, o]) => (
                   <li key={c.id} className="flex justify-between gap-3">
                     <span>{c.name}</span>

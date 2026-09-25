@@ -55,6 +55,17 @@ const harmfulOf = (tags: string[]) => tags.filter(isHarmful)
 
 const size = (l: Link) => Math.abs((l.withMean ?? 0) - (l.withoutMean ?? 0))
 
+/**
+ * Связь годится в догадку: найдена, в ту же сторону, что день, и её совет виден на экране. «К лучшему» — только ведро
+ * «Больше»: вредный тег или поздний отбой «к лучшему» карточки не получают и в догадку не идут (ревью Opus 25.09).
+ * Теги «не в моих силах» — своей веткой, а не связью.
+ */
+const usable = (l: Link, tone: 'worse' | 'better') =>
+  (l.level === 'maybe' || l.level === 'notable') &&
+  l.direction === tone &&
+  (tone === 'worse' || l.bucket === 'more') &&
+  !(l.factor.kind === 'tag' && CONTEXT_TAGS.includes(l.factor.tag))
+
 /** Связь «про этот день»: её фактор был — тег накануне, поздний отбой перед утром, плохой сон этой ночи. */
 function present(l: Link, d: TimelineDay, prev: TimelineDay | null): boolean {
   const f = l.factor
@@ -94,7 +105,7 @@ export function dayStory(history: TimelineDay[], index: number, goal: Goal, band
   let guess: Guess | null = null
   if (tone === 'worse' || tone === 'better') {
     const found = links.pairs
-      .filter((l) => (l.level === 'maybe' || l.level === 'notable') && l.direction === tone && present(l, d, prev))
+      .filter((l) => usable(l, tone) && present(l, d, prev))
       .sort((a, b) => (a.level === b.level ? size(b) - size(a) : a.level === 'notable' ? -1 : 1))[0]
     if (found) guess = { kind: 'link', factor: found.factor, level: found.level as 'maybe' | 'notable', direction: tone }
     else if (tone === 'worse') {
@@ -102,7 +113,8 @@ export function dayStory(history: TimelineDay[], index: number, goal: Goal, band
       const what: Suspect[] = [
         ...(before?.harmful ?? []).map((tag) => ({ kind: 'tag' as const, tag })),
         ...(night?.late ? [{ kind: 'lateBed' as const }] : []),
-        ...(d.morning && d.morning.sleep <= BAD_SLEEP ? [{ kind: 'badSleep' as const }] : []),
+        /* на «Сне» плохой сон — это и есть плохой день, не его причина (как и в links()) */
+        ...(goal !== 'sleep' && d.morning && d.morning.sleep <= BAD_SLEEP ? [{ kind: 'badSleep' as const }] : []),
       ]
       guess = context.length ? { kind: 'context', tags: context } : what.length ? { kind: 'coincidence', what } : { kind: 'none' }
     }
