@@ -923,6 +923,17 @@ describe('ladder — лесенка тега со ступенями (срез 5
     expect(ladder(h, 'all', l)).toBeNull()
   })
 
+  it('ни одного вечера со ступенью в окне (старые «алкоголь» без ступени) — лесенки нет: null (решение Georgy 25.09)', () => {
+    // drinking(9): алкоголь 6 вечеров, связь найдена, но ступени не записаны ни разу — «Сколько» прячется
+    const h = drinking(9)
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.level).toBe('maybe')
+    expect(ladder(h, 'all', l)).toBeNull()
+    // одна ступень за окном LINK_DAYS не в счёт
+    const longer = hist(LINK_DAYS + 5, (i) => ({ tags: i % 9 === 2 ? ['алкоголь'] : [], levels: i === 2 ? { 'алкоголь': 2 } : undefined, m: (i - 1) % 9 === 2 ? 3 : 6 }))
+    expect(ladder(longer, 'all', tagLink(links(longer, 'all').pairs, 'алкоголь'))).toBeNull()
+  })
+
   it('шаги по порядку: «не было», 1…n (даже с n = 0), «не указано» — только когда есть точки без ступени', () => {
     // «игры» (4 ступени): ступень 1 — раз, ступень 3 — раз, без ступени — раз; ступени 2 и 4 не встречались (n = 0)
     const h = hist(LINK_DAYS, (i) => {

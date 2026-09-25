@@ -866,6 +866,17 @@ describe('AnalyticsPage — ступени тегов (срез 5б)', () => {
     expect(within(dialog).queryByText(/Чем больше/)).not.toBeInTheDocument()
   })
 
+  it('у «алкоголь» ещё ни одного вечера со ступенью — блока «Сколько» нет (решение Georgy 25.09)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, drinkWorld())
+    show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('после «алкоголь» (6)')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('group', { name: 'Сколько' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/мало дней/)).not.toBeInTheDocument()
+  })
+
   it('связь по тегу не из LEVELS («ссора») — блока «Сколько» в шторке нет', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const w = drinkWorld()
