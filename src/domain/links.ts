@@ -367,7 +367,8 @@ function trendOf(link: Link, none: LadderStep, shown: LadderStep[], dosed: Point
 /**
  * Лесенка тега со ступенями — по той же паре, что связь: закрытый вечер D → результат D+1 по цели, окно
  * `LINK_DAYS`. «Не было» — все точки без тега; «не указано» — тег без ступени: ни в средние ступеней, ни в наклон
- * он не идёт, показан отдельно. Не тег из `LEVELS` — null.
+ * он не идёт, показан отдельно. Не тег из `LEVELS` — null. В окне ни одной точки со ступенью (старые записи без
+ * ступеней) — тоже null: строки «мало дней» с нулями ничего не говорят (решение Georgy 25.09).
  */
 export function ladder(history: TimelineDay[], goal: Goal, link: Link): Ladder | null {
   if (link.factor.kind !== 'tag' || !LEVELS[link.factor.tag]) return null
@@ -383,6 +384,7 @@ export function ladder(history: TimelineDay[], goal: Goal, link: Link): Ladder |
   const levels = Array.from({ length: k }, (_, i) => step(i + 1, withTag.filter((p) => p.level === i + 1)))
   const unknown = withTag.filter((p) => p.level === undefined)
   const dosed = withTag.filter((p) => p.level !== undefined)
+  if (!dosed.length) return null
   const trend = trendOf(link, none, levels.filter((s) => s.mean !== null), dosed, k)
   const first = levels[0]!
   return {
