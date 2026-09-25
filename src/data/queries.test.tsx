@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { createQueryClient, resetCache } from './queryClient'
 
 /* Хранилище — подделка, чьи записи отвечают, когда тест скажет: видно, идут ли записи одна за другой. */
@@ -32,6 +32,8 @@ const repo = vi.hoisted(() => {
     setEntry: vi.fn((...args: unknown[]) => call(`entry ${args[0]} ${args[2]}`)()),
     saveDayLog: vi.fn(call('log')),
     listDayLogs: vi.fn(async () => [] as unknown[]),
+    getAnalyticsLayout: vi.fn(async () => ({ order: ['links', 'changes', 'cases', 'explains'], open: [] })),
+    saveAnalyticsLayout: vi.fn(call('layout')),
   }
 })
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
@@ -42,6 +44,8 @@ vi.mock('./supabaseClient', () => ({ supabase: {} }))
 vi.mock('./supabaseRepo', () => ({ createSupabaseRepo: () => ({}) }))
 
 const {
+  useAnalyticsLayout,
+  useSaveAnalyticsLayout,
   useChallenges,
   useCloseDay,
   useCreateChallenge,
@@ -56,6 +60,48 @@ function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient()
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
+
+describe('раскладка аналитики: отказ сети откатывает только своё (ревью Opus 25.09)', () => {
+  const A = { order: ['links', 'changes', 'cases', 'explains'] as const, open: [] as string[] }
+  const B = { order: [...A.order], open: ['links'] }
+  const C = { order: [...A.order], open: ['links', 'changes'] }
+  const hook = () =>
+    renderHook(() => ({ layout: useAnalyticsLayout(), save: useSaveAnalyticsLayout() }), {
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={createQueryClient()}>{children}</QueryClientProvider>,
+    })
+  const layoutCalls = () => repo.pending.filter((p) => p.name === 'layout')
+  /* очередь подделки общая: следующие тесты ждут в ней только свои записи */
+  afterAll(() => {
+    repo.pending.length = 0
+  })
+
+  it('одна запись упала — в кэше снова прежняя раскладка', async () => {
+    repo.pending.length = 0
+    const { result } = hook()
+    await waitFor(() => expect(result.current.layout.data).toEqual(A))
+    act(() => result.current.save.mutate(B as never))
+    await waitFor(() => expect(layoutCalls()).toHaveLength(1))
+    expect(result.current.layout.data).toEqual(B)
+    act(() => layoutCalls()[0]!.reject({ code: 'x', message: 'сеть' }))
+    await waitFor(() => expect(result.current.layout.data).toEqual(A))
+  })
+
+  it('первая из двух записей упала, вторая прошла — в кэше вторая, а не откат к первой', async () => {
+    repo.pending.length = 0
+    const { result } = hook()
+    await waitFor(() => expect(result.current.layout.data).toEqual(A))
+    act(() => {
+      result.current.save.mutate(B as never)
+      result.current.save.mutate(C as never)
+    })
+    await waitFor(() => expect(layoutCalls()).toHaveLength(1))
+    act(() => layoutCalls()[0]!.reject({ code: 'x', message: 'сеть' }))
+    await waitFor(() => expect(layoutCalls()).toHaveLength(2))
+    act(() => layoutCalls()[1]!.resolve())
+    await waitFor(() => expect(result.current.save.isPending).toBe(false))
+    expect(result.current.layout.data).toEqual(C)
+  })
+})
 
 describe('записи челленджей идут по очереди, а не наперегонки', () => {
   it('правка, начатая во время перестановки, уходит в хранилище после неё', async () => {

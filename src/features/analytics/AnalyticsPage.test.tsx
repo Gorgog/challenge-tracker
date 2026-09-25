@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,11 +15,27 @@ const mocked = vi.hoisted(() => ({
   logs: [] as DayLog[],
   starts: [] as DayStart[],
   failed: null as null | 'challenges' | 'entries' | 'logs' | 'starts' | 'layout',
+  /** Раскладка ещё не пришла и сети нет: запрос на паузе. */
+  layoutPaused: false,
+  /** Что делает DndContext по броску — тест бросает блок сам, без мыши. */
+  dragEnd: null as null | ((e: { active: { id: string }; over: { id: string } | null }) => void),
   /** Раскладка аналитики в «аккаунте»; запись меняет её, как оптимистичная запись меняет кэш. */
   layout: { order: ['links', 'changes', 'cases', 'explains'], open: [] } as { order: string[]; open: string[] },
   saved: [] as { order: string[]; open: string[] }[],
   listeners: new Set<() => void>(),
 }))
+
+vi.mock('@dnd-kit/core', async (actual) => {
+  const real = await actual<typeof import('@dnd-kit/core')>()
+  const { createElement } = await import('react')
+  return {
+    ...real,
+    DndContext: (props: Parameters<typeof real.DndContext>[0]) => {
+      mocked.dragEnd = props.onDragEnd as typeof mocked.dragEnd
+      return createElement(real.DndContext, props)
+    },
+  }
+})
 
 vi.mock('@/data/queries', async () => {
   const { useSyncExternalStore } = await import('react')
@@ -30,7 +46,11 @@ vi.mock('@/data/queries', async () => {
     return () => mocked.listeners.delete(f)
   }
   return {
-    useAnalyticsLayout: () => result('layout', useSyncExternalStore(subscribe, () => mocked.layout)),
+    useAnalyticsLayout: () => {
+      const data = useSyncExternalStore(subscribe, () => mocked.layout)
+      if (mocked.layoutPaused) return { data: undefined, isPending: true, isError: false, isSuccess: false, fetchStatus: 'paused' }
+      return { ...result('layout', data), isSuccess: mocked.failed !== 'layout', fetchStatus: 'idle' }
+    },
     useSaveAnalyticsLayout: () => ({
       mutate: (layout: typeof mocked.layout) => {
         mocked.saved.push(layout)
@@ -102,7 +122,7 @@ const headline = () => screen.getByTestId('headline')
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 23, 12, 0))
-  Object.assign(mocked, { challenges: [push], entries: {}, failed: null, layout: { order: ['links', 'changes', 'cases', 'explains'], open: [] }, saved: [], ...world() })
+  Object.assign(mocked, { challenges: [push], entries: {}, failed: null, layoutPaused: false, dragEnd: null, layout: { order: ['links', 'changes', 'cases', 'explains'], open: [] }, saved: [], ...world() })
 })
 afterEach(() => vi.useRealTimers())
 
@@ -712,6 +732,8 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     mocked.entries = { bed: { [key(6)]: -40, [key(5)]: 60, [key(4)]: NaN } }
     show()
     await user.click(dayButton(/^чт, 17 сентября/))
+    // в ленте — тоже «вечером лёг…»: это ночь после вечера, а строка «ночь» выше — до утра (ревью Opus 25.09)
+    expect(within(screen.getByRole('list', { name: 'Как прошёл день' })).getByText('✓ Ложусь раньше · вечером лёг в 23:20')).toBeInTheDocument()
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Все оценки' }))
     expect(within(screen.getByRole('dialog')).getByText('вечером лёг в 23:20 ✓')).toBeInTheDocument()
     await user.keyboard('{Escape}')
@@ -1204,11 +1226,34 @@ describe('AnalyticsPage — раскладка блоков хранится в 
     expect(within(chart()).queryByRole('button', { name: /Перетащить блок/ })).not.toBeInTheDocument()
   })
 
-  it('раскладка не загрузилась — обычный порядок и всё свёрнуто, разбор всё равно показан', () => {
+  it('раскладка не загрузилась — обычный порядок и всё свёрнуто; раскрыть можно, но в аккаунт не пишем (ревью Opus 25.09)', () => {
     mocked.failed = 'layout'
     showFolded()
     before(region(/Что попробовать|Связи: пока рано/), region('Что изменилось'))
     expect(toggle('Что изменилось')).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle('Что изменилось'))
+    expect(toggle('Что изменилось')).toHaveAttribute('aria-expanded', 'true')
+    expect(mocked.saved).toEqual([])
+  })
+
+  it('раскладки нет в кэше и нет сети — разбор всё равно показан, а не «Загружаю…» навсегда', () => {
+    mocked.layoutPaused = true
+    showFolded()
+    expect(screen.queryByText('Загружаю…')).not.toBeInTheDocument()
+    expect(region('Что изменилось')).toBeInTheDocument()
+    fireEvent.click(toggle('Что изменилось'))
+    expect(mocked.saved).toEqual([])
+  })
+
+  it('бросок блока на другой — новый порядок на экране и в аккаунте; бросок мимо — ничего', () => {
+    ill()
+    showFolded()
+    act(() => mocked.dragEnd!({ active: { id: 'explains' }, over: { id: 'links' } }))
+    expect(mocked.saved.at(-1)!.order).toEqual(['explains', 'links', 'changes', 'cases'])
+    before(region('Объясняет плохие дни'), region(/Что попробовать|Связи: пока рано/))
+    const saves = mocked.saved.length
+    act(() => mocked.dragEnd!({ active: { id: 'changes' }, over: null }))
+    expect(mocked.saved).toHaveLength(saves)
   })
 })
 
@@ -1264,6 +1309,38 @@ describe('AnalyticsPage — шторка дня лентой (решение Geo
     expect(within(dialog).queryByRole('row', { name: /самочувствие/ })).not.toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Все оценки' }))
     expect(within(dialog).getByRole('row', { name: 'самочувствие 3 7' })).toBeInTheDocument()
+  })
+
+  it('ступени тегов накануне — с подписью: «алкоголь · 3–5 порций»', async () => {
+    badDay()
+    mocked.logs = mocked.logs.map((l) => (l.day === key(4) ? { ...l, levels: { алкоголь: 2 } } : l))
+    const { dialog } = await open()
+    expect(within(within(dialog).getByRole('list', { name: 'Как прошёл день' })).getByText('алкоголь · 3–5 порций')).toBeInTheDocument()
+  })
+
+  it('у отказа — «срыв» и «без срыва», а не «пропущено» и «выполнено» (ревью Opus 25.09)', async () => {
+    badDay()
+    const quit: Challenge = { ...push, id: 'quit', code: 'БСГ', name: 'Без сигарет', kind: 'quit', measure: 'binary', goal: 1, sortOrder: 1 }
+    const beer: Challenge = { ...quit, id: 'beer', code: 'БПВ', name: 'Без пива', sortOrder: 2 }
+    mocked.challenges = [push, quit, beer]
+    mocked.entries = { push: { [key(3)]: 20 }, quit: { [key(3)]: 0 }, beer: { [key(3)]: 1 } }
+    const { dialog } = await open()
+    const ribbon = within(dialog).getByRole('list', { name: 'Как прошёл день' })
+    expect(within(ribbon).getByText('срыв')).toBeInTheDocument()
+    expect(within(ribbon).getByText('✗ Без сигарет')).toBeInTheDocument()
+    expect(within(ribbon).getByText('без срыва')).toBeInTheDocument()
+    expect(within(ribbon).getByText('✓ Без пива')).toBeInTheDocument()
+    expect(within(ribbon).getByText('выполнено')).toBeInTheDocument()
+    expect(within(ribbon).queryByText('пропущено')).not.toBeInTheDocument()
+  })
+
+  it('неполный день — число серое и подписано «записан наполовину», без «хуже / лучше» (ревью Opus 25.09)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    show()
+    await user.click(dayButton(/^ср, 23 сентября/))
+    const dialog = screen.getByRole('dialog', { name: 'ср, 23 сентября' })
+    expect(within(dialog).getByText('записан наполовину: только утро')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('day-value')).toHaveAttribute('data-partial')
   })
 
   it('ночь записана — строка «ночь» с отбоем против обычного', async () => {

@@ -29,7 +29,7 @@ function bad(p: Partial<TimelineDay> = {}): TimelineDay[] {
   ]
 }
 
-const link = (factor: Link['factor'], level: Link['level'], direction: Link['direction'], diff = 2): Link => ({
+const link = (factor: Link['factor'], level: Link['level'], direction: Link['direction'], diff = 2, bucket: Link['bucket'] = null): Link => ({
   factor,
   withDays: [],
   withN: 6,
@@ -41,7 +41,7 @@ const link = (factor: Link['factor'], level: Link['level'], direction: Link['dir
   sameSide: 5,
   shrunk: diff,
   otherwise: null,
-  bucket: null,
+  bucket,
 })
 const linksOf = (...pairs: Link[]): Links => ({
   gate: { ok: true, recorded: 50, closedShare: 1 },
@@ -125,7 +125,7 @@ describe('dayStory — лента дня в шторке (решение Georgy 
 
   it('день лучше обычного: только найденная связь «к лучшему»; вредное или ничего — без догадки о причине', () => {
     const good = [day('2026-09-18', { tags: ['отдых'] }), day('2026-09-19', { morning: { sleep: 9, wellbeing: 9, mood: 10 }, evening: { mood: 9, wellbeing: 10, productivity: 8 } })]
-    expect(dayStory(good, 1, 'all', BAND, linksOf(link({ kind: 'tag', tag: 'отдых' }, 'maybe', 'better')), NIGHT).guess).toEqual({
+    expect(dayStory(good, 1, 'all', BAND, linksOf(link({ kind: 'tag', tag: 'отдых' }, 'maybe', 'better', 2, 'more')), NIGHT).guess).toEqual({
       kind: 'link',
       factor: { kind: 'tag', tag: 'отдых' },
       level: 'maybe',
@@ -139,6 +139,59 @@ describe('dayStory — лента дня в шторке (решение Georgy 
     const poor = [prev!, { ...d!, morning: { ...d!.morning!, sleep: 2 } }]
     const links = linksOf(link({ kind: 'badSleep' }, 'maybe', 'worse', 3), link({ kind: 'tag', tag: 'алкоголь' }, 'maybe', 'worse', 1))
     expect(dayStory(poor, 1, 'all', BAND, links, NIGHT).guess).toEqual({ kind: 'link', factor: { kind: 'badSleep' }, level: 'maybe', direction: 'worse' })
+  })
+
+  it('день лучше: связь «к лучшему» без ведра «Больше» (алкоголь, поздний отбой, дедлайн) — не догадка (ревью Opus 25.09)', () => {
+    const good = (tags: string[], bed = -30) => [
+      day('2026-09-18', { tags }),
+      day('2026-09-19', {
+        morning: { sleep: 9, wellbeing: 9, mood: 10, night: { bed, wake: 460, bedHow: 'exact', wakeHow: 'exact' } },
+        evening: { mood: 9, wellbeing: 10, productivity: 8 },
+      }),
+    ]
+    expect(dayStory(good(['алкоголь']), 1, 'all', BAND, linksOf(link({ kind: 'tag', tag: 'алкоголь' }, 'maybe', 'better')), NIGHT).guess).toBeNull()
+    expect(dayStory(good(['дедлайн']), 1, 'all', BAND, linksOf(link({ kind: 'tag', tag: 'дедлайн' }, 'notable', 'better')), NIGHT).guess).toBeNull()
+    expect(dayStory(good([], 60), 1, 'all', BAND, linksOf(link({ kind: 'lateBed', from: 30 }, 'maybe', 'better')), NIGHT).guess).toBeNull()
+  })
+
+  it('день хуже: связь в обратную сторону («к лучшему») при том же факторе — не довод', () => {
+    const links = linksOf(link({ kind: 'tag', tag: 'алкоголь' }, 'notable', 'better', 3))
+    expect(dayStory(bad({ tags: [] }), 1, 'all', BAND, links, NIGHT).guess).toEqual({
+      kind: 'coincidence',
+      what: [{ kind: 'tag', tag: 'алкоголь' }, { kind: 'lateBed' }],
+    })
+  })
+
+  it('«не в моих силах» накануне — тоже «не в моих силах», даже если по нему найдена связь', () => {
+    const [prev, d] = bad({ tags: [] })
+    const withIll = [{ ...prev!, tags: ['болел'] }, d!]
+    const links = linksOf(link({ kind: 'tag', tag: 'болел' }, 'maybe', 'worse', 3))
+    expect(dayStory(withIll, 1, 'all', BAND, links, NIGHT).guess).toEqual({ kind: 'context', tags: ['болел'] })
+  })
+
+  it('цель «Сон»: плохой сон — это и есть плохой день, в подозреваемые не идёт (ревью Opus 25.09)', () => {
+    const d = day('2026-09-19', { morning: { sleep: 2, wellbeing: 6, mood: 6, night: { bed: -30, wake: 460, bedHow: 'exact', wakeHow: 'exact' } } })
+    expect(dayStory([day('2026-09-18'), d], 1, 'sleep', BAND, NONE, NIGHT).guess).toEqual({ kind: 'none' })
+  })
+
+  it('границы: отбой ровно в порог — поздний; сон ровно 4 — плохой; тег «только Меньше» — вредный', () => {
+    const at = (bed: number, sleep: number, tags: string[] = []) => [
+      day('2026-09-18', { tags }),
+      day('2026-09-19', {
+        morning: { sleep, wellbeing: 2, mood: 2, night: { bed, wake: 460, bedHow: 'exact', wakeHow: 'exact' } },
+        evening: { mood: 2, wellbeing: 2, productivity: 2 },
+      }),
+    ]
+    expect(dayStory(at(30, 7), 1, 'all', BAND, NONE, NIGHT).night!.late).toBe(true)
+    expect(dayStory(at(30, 7), 1, 'all', BAND, linksOf(link({ kind: 'lateBed', from: 30 }, 'maybe', 'worse')), NIGHT).guess).toEqual({
+      kind: 'link',
+      factor: { kind: 'lateBed', from: 30 },
+      level: 'maybe',
+      direction: 'worse',
+    })
+    expect(dayStory(at(-30, 4), 1, 'all', BAND, NONE, NIGHT).guess).toEqual({ kind: 'coincidence', what: [{ kind: 'badSleep' }] })
+    expect(dayStory(at(-30, 4), 1, 'all', BAND, linksOf(link({ kind: 'badSleep' }, 'maybe', 'worse')), NIGHT).guess).toMatchObject({ kind: 'link' })
+    expect(dayStory(at(-30, 7, ['игры']), 1, 'all', BAND, NONE, NIGHT).before!.harmful).toEqual(['игры'])
   })
 
   it('неполный день (только утро) — итога против полосы и догадки нет', () => {
