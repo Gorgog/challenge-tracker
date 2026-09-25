@@ -1650,4 +1650,71 @@ describe('ladder — пограничные случаи (срез 5б)', () => 
     expect(ld.steps[2]!.mean).toBeCloseTo(4.02, 9)
     expect(ld.trend).toBe('worse')
   })
+
+  /**
+   * Мир Симпсона (ревью 5б): видимые средние идут в сторону связи, но внутри будней доза к лучшему — крупные
+   * дозы просто приходятся на выходные, которые и так хуже. «Не было»: будни 6,5, выходные 3,5. Ступени перед
+   * будним утром: 1 → 5 (5 вечеров), 2 → 5,5 (2), 3 → 6 (1); ступень 3 ещё 5 раз перед выходным утром → 2.
+   * Видимые: «не было» ≈ 5,7, «1–2» 5,0, «6+» (5·2 + 6)/6 ≈ 2,7 — по убыванию, разница ступеней 2,3; связь «хуже».
+   * Наклон: будни — ступени 1, 2, 3 со значениями 5 / 5,5 / 6 ровно на прямой, b = +0,5, se = 0; выходные —
+   * одна ступень, слой пропущен. span = +0,5 · 2 = +1,0, shrunk = +1,0 — знак против «хуже» → фразы нет.
+   * Без проверки знака (только |shrunk| ≥ 1) встала бы «Чем больше — тем хуже». `mirror` — то же зеркально.
+   */
+  const simpson = (mirror: boolean) => {
+    const resultWeekend = (i: number) => isoDow(addDays(TODAY, i + 1 - LINK_DAYS + 1)) >= 5
+    const plan = new Map<number, number>()
+    const need = { w1: 5, w2: 2, w3: 1, e3: 5 }
+    for (let i = 2; i <= LINK_DAYS - 3; i += 2) {
+      if (resultWeekend(i)) {
+        if (need.e3) (plan.set(i, 3), need.e3--)
+      } else if (need.w1) (plan.set(i, 1), need.w1--)
+      else if (need.w2) (plan.set(i, 2), need.w2--)
+      else if (need.w3) (plan.set(i, 3), need.w3--)
+    }
+    const weekdayAfter = mirror ? [5, 4.5, 4] : [5, 5.5, 6]
+    return hist(LINK_DAYS, (i, dow) => {
+      const weekend = dow >= 5
+      const before = plan.get(i - 1)
+      const m =
+        before === undefined
+          ? mirror ? (weekend ? 6.5 : 3.5) : (weekend ? 3.5 : 6.5)
+          : weekend ? (mirror ? 8 : 2) : weekdayAfter[before - 1]!
+      const lvl = plan.get(i)
+      return { m, ...(lvl ? { tags: ['алкоголь'], levels: { 'алкоголь': lvl } } : {}) }
+    })
+  }
+
+  it.each([false, true])('мир Симпсона (зеркально: %s): видимые средние по порядку, но внутри слоёв доза в другую сторону — фразы нет', (mirror) => {
+    const h = simpson(mirror)
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.level === 'maybe' || l.level === 'notable').toBe(true)
+    expect(l.direction).toBe(mirror ? 'better' : 'worse')
+    expect(l.withN).toBe(13) // 5 + 2 + 1 перед буднями и 5 перед выходными
+    const ld = ladder(h, 'all', l)!
+    // условия 3–5 выполнены: показаны 1–2 и 6+ (n 5 и 6), видимые по порядку, разница ступеней ≥ 1
+    const shown = ld.steps.filter((s) => s.level !== null && s.mean !== null).map((s) => round1(s.mean!))
+    expect(shown).toHaveLength(3)
+    const ordered = mirror ? shown[0]! <= shown[1]! && shown[1]! <= shown[2]! : shown[0]! >= shown[1]! && shown[1]! >= shown[2]!
+    expect(ordered).toBe(true)
+    expect(round1(Math.abs(shown[1]! - shown[2]!))).toBeGreaterThanOrEqual(1)
+    expect(ld.trend).toBeNull()
+  })
+
+  it('«почти как без» — по видимым числам: сырые 5,96 и 5,04 (разница 0,92) видны как 6,0 и 5,0 — разница 1,0, не «почти как без»', () => {
+    // «не было» — 5,96 во всех остальных утрах; ступень 1 — (5·4 + 5,2)/5 = 5,04; ступени 2 и 3 — 4 и 3.
+    // Фраза есть (6,0 ≥ 5,0 ≥ 4,0 ≥ 3,0; разница ступеней 2; наклон ≈ −1 на ступень), а firstLikeNone — по
+    // видимым 6,0 и 5,0: |5,0 − 6,0| = 1,0 не меньше LINK_DIFF. По сырым 0,92 < 1 было бы «почти как без».
+    const h = world('алкоголь', [
+      [[3, 7, 11, 14, 17], 1, [5, 5, 5, 5, 5.2]],
+      [[21, 24, 27, 30, 33], 2, [4, 4, 4, 4, 4]],
+      [[37, 40, 43, 46, 49], 3, [3, 3, 3, 3, 3]],
+    ], 5.96)
+    const l = tagLink(links(h, 'all').pairs, 'алкоголь')
+    expect(l.withN).toBe(15)
+    const ld = ladder(h, 'all', l)!
+    expect(ld.steps[0]!.mean).toBeCloseTo(5.96, 9)
+    expect(ld.steps[1]!.mean).toBeCloseTo(5.04, 9)
+    expect(ld.trend).toBe('worse')
+    expect(ld.firstLikeNone).toBe(false)
+  })
 })

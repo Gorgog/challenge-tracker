@@ -1000,7 +1000,18 @@ describe('демо: уровни тегов (срез 5б)', () => {
     }
     expect(level3.length).toBeGreaterThan(0)
     expect(level1.length).toBeGreaterThan(0)
-    expect(mean(level3)).toBeLessThan(mean(level1))
+    // с запасом, а не только знак (ревью 5б): ступень наугад даёт средние почти равными (4,13 и 4,11), и строгое «<»
+    // выполнялось случайно; у сида связь ступени с утром — 7,0 против 1,6
+    expect(mean(level1) - mean(level3)).toBeGreaterThanOrEqual(2)
+  })
+
+  it('full, объединение трёх зёрен: у фоновых тегов встречается больше одной ступени, у игр — и «5+ ч» (ступень 4)', async () => {
+    const logs = await allFullLogs()
+    for (const tag of ['игры', 'стресс', 'работа допоздна']) {
+      const seen = new Set(logs.flatMap((l) => (l.levels?.[tag] !== undefined ? [l.levels[tag]] : [])))
+      expect(seen.size, tag).toBeGreaterThan(1)
+    }
+    expect(logs.some((l) => l.levels?.['игры'] === 4)).toBe(true)
   })
 
   it('saveDayLog отклоняет неверные уровни, ничего не сохраняя (пустое хранилище)', async () => {

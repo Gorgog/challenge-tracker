@@ -866,6 +866,40 @@ describe('AnalyticsPage — ступени тегов (срез 5б)', () => {
     expect(within(dialog).queryByText(/Чем больше/)).not.toBeInTheDocument()
   })
 
+  it('лесенка — по выбранной цели: на «Сне» ступени считаются по сну, а не по самочувствию и настроению (ревью 5б)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const w = doseWorld()
+    // сон после ступеней — свой: «1–2» → 4, «3–5» → 3, «6+» → 1, без ступени → 2, остальное → 7 (на «Всё» было 5 / 4 / 2 / 3 / 6)
+    const sleepOf = (v: number) => (v === 5 ? 4 : v === 4 ? 3 : v === 2 ? 1 : v === 3 ? 2 : 7)
+    mocked.logs = w.logs
+    mocked.starts = w.starts.map((s) => (s.morning ? { ...s, morning: { ...s.morning, sleep: sleepOf(s.morning.wellbeing) } } : s))
+    show()
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const group = within(screen.getByRole('dialog')).getByRole('group', { name: 'Сколько' })
+    // «не было» 7,0 · «1–2» (4) 4,0 · «6+» (3) 1,0 — числа сна; по «Всё» было бы 6,0 · 5,0 · 2,0
+    expect(group.textContent).toMatch(/не было \(43\)\s*7,0.*1–2 порции \(4\)\s*4,0.*6\+ порций \(3\)\s*1,0/s)
+  })
+
+  it('лесенка — снимок на момент открытия, как и сама связь: пришли новые записи — числа в открытой шторке прежние (ревью 5б)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, doseWorld())
+    const { rerender } = show()
+    await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))
+    const group = () => within(screen.getByRole('dialog')).getByRole('group', { name: 'Сколько' })
+    expect(group().textContent).toMatch(/1–2 порции \(4\)/)
+    // с другого устройства у одного вечера «1–2» сняли ступень: в свежей истории «1–2» — 3 дня, «не указано» — 4
+    mocked.logs = mocked.logs.map((l) => (l.day === key(13) ? { ...l, levels: {} } : l))
+    rerender(
+      <MemoryRouter>
+        <AnalyticsPage />
+      </MemoryRouter>,
+    )
+    // шторка показывает тот же снимок, что и полоски «без / после» над ней
+    expect(group().textContent).toMatch(/1–2 порции \(4\)/)
+    expect(group().textContent).toMatch(/не указано \(3\)/)
+  })
+
   it('у «алкоголь» ещё ни одного вечера со ступенью — блока «Сколько» нет (решение Georgy 25.09)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     Object.assign(mocked, drinkWorld())
