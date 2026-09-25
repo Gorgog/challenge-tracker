@@ -12,6 +12,7 @@ import {
   sleepScore,
   startedAt,
   type Seed,
+  withDoses,
   withNights,
 } from './common'
 
@@ -193,7 +194,9 @@ export function seedBurnout(today: Date, seed: number): Seed {
 
   /* выбираясь, начал иногда нормально спать: месяц назад ложился на полтора часа позже */
   const late = (day: string) => 90 * (daysBetween(parseDay(day), today) / (DAYS - 1))
+  /* новые теги и ступени (срез 5б) — поверх готовой истории: вечер, утро и ночь прежние */
+  const closedLogs = withDoses(logs, starts, seed)
   /* отказов в этой истории нет, но правило то же, что в `full`: заведут — закрытые дни будут отвечены */
-  answerQuits(challenges, entries, logs, today)
-  return { challenges, entries, logs, starts: withNights(starts, logs, seed, late), tags }
+  answerQuits(challenges, entries, closedLogs, today)
+  return { challenges, entries, logs: closedLogs, starts: withNights(starts, closedLogs, seed, late), tags }
 }

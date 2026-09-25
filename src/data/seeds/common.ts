@@ -1,6 +1,7 @@
 import { addDays, dayKey, isoDow, parseDay } from '@/domain/date'
 import { usualNight } from '@/domain/night'
 import { dayOutcome } from '@/domain/streaks'
+import { LEVELS } from '@/domain/tags'
 import type { Challenge, DayLog, DayStart, EntryMap, Night, NightHow, Tag } from '@/domain/types'
 
 /** Что насыпает сценарий демо: челленджи, отметки, итоги и начала дней, теги. */
@@ -78,6 +79,12 @@ export const morningStream = (seed: number) => mulberry32(seed ^ 0x5bd1e995)
  */
 export const nightStream = (seed: number) => mulberry32(seed ^ 0x27d4eb2d)
 
+/**
+ * Новые теги и ступени (срез 5б) тянут числа из четвёртой последовательности: вечер, утро и ночь не
+ * сдвигаются (отпечатки — в seeds/evening.test.ts).
+ */
+export const doseStream = (seed: number) => mulberry32(seed ^ 0x9e3779b9)
+
 const step5 = (v: number) => Math.round(v / 5) * 5
 
 /**
@@ -134,6 +141,61 @@ export function withNights(starts: DayStart[], logs: DayLog[], seed: number, lat
     out.push({ ...s, morning: { ...s.morning, night } })
   }
   return out
+}
+
+/** Новые теги (срез 5б) — доля вечеров в будни и в выходные. На оценки не влияют: фон для аналитики. */
+const BACKGROUND_TAGS: readonly (readonly [tag: string, weekday: number, weekend: number])[] = [
+  ['игры', 0.15, 0.35],
+  ['стресс', 0.15, 0.05],
+  ['работа допоздна', 0.12, 0],
+]
+
+/** Доля вечеров с алкоголем без ступени — «было, сколько — не указано». */
+const ALCOHOL_UNSPECIFIED = 0.15
+
+/**
+ * Ступень алкоголя — по уже посчитанному утру D+1: чем ниже самочувствие против обычного (среднее записанных
+ * утр), тем выше ступень; `noise` сдвигает на ±1 балл, чтобы связь не была ровной. Утра нет — ступень наугад.
+ */
+function alcoholLevel(next: number | undefined, usual: number, noise: number): number {
+  if (next === undefined) return 1 + Math.floor(noise * 3)
+  const drop = usual - next + (noise - 0.5) * 2
+  return drop >= 4 ? 3 : drop >= 2 ? 2 : 1
+}
+
+/**
+ * Новые теги и ступени в закрытых итогах (срез 5б) — поверх готовой истории, поэтому оценки, заметки, прежние
+ * теги, утро и ночь те же. Игры, стресс и работа допоздна — фон со случайной ступенью. Ступень алкоголя
+ * связана с утром после него (`alcoholLevel`), часть вечеров — без ступени. Числа тянутся одинаковым числом на
+ * каждый итог, что бы ни выпало: соседние дни не сдвигаются.
+ */
+export function withDoses(logs: DayLog[], starts: DayStart[], seed: number): DayLog[] {
+  const rnd = doseStream(seed)
+  const wellbeingOn = new Map(starts.flatMap((s) => (s.morning ? [[s.day, s.morning.wellbeing] as const] : [])))
+  const recorded = [...wellbeingOn.values()]
+  const usual = recorded.reduce((a, b) => a + b, 0) / recorded.length
+  return [...logs]
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .map((log) => {
+      /* восемь чисел на итог: по два на новый тег (выпал ли, ступень), два на алкоголь (без ступени ли, шум) */
+      const draws = BACKGROUND_TAGS.map(() => [rnd(), rnd()] as const)
+      const bare = rnd()
+      const noise = rnd()
+      if (log.closedAt === null) return log
+      const weekend = isoDow(parseDay(log.day)) >= 5
+      const tags = [...log.tags]
+      const levels: Record<string, number> = { ...log.levels }
+      if (tags.includes('алкоголь') && bare >= ALCOHOL_UNSPECIFIED) {
+        levels['алкоголь'] = alcoholLevel(wellbeingOn.get(dayKey(addDays(parseDay(log.day), 1))), usual, noise)
+      }
+      BACKGROUND_TAGS.forEach(([tag, weekday, weekendChance], i) => {
+        const [u, step] = draws[i]!
+        if (u >= (weekend ? weekendChance : weekday)) return
+        tags.push(tag)
+        levels[tag] = 1 + Math.floor(step * LEVELS[tag]!.short.length)
+      })
+      return { ...log, tags, ...(Object.keys(levels).length > 0 ? { levels } : {}) }
+    })
 }
 
 /** Доля утр, которые пропускают. */
