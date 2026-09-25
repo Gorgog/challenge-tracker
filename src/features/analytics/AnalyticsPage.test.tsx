@@ -119,6 +119,20 @@ describe('AnalyticsPage — обзор: цель, фраза, график, «Ч
     expect(headline()).toHaveTextContent('Сон за последние 30 дней — как обычно')
   })
 
+  it('линия: полные дни подряд — сплошная, через неполный день — пунктир к следующему полному (решение Georgy 25.09)', () => {
+    // 3 дня назад — только утро: точка вне линии, линия 4 → 2 дня назад — пунктиром
+    mocked.logs = mocked.logs.filter((l) => l.day !== key(3))
+    show()
+    const gaps = chart().querySelectorAll('path[data-line="gap"]')
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0]).toHaveAttribute('stroke-dasharray')
+    expect(gaps[0]!.getAttribute('d')!.match(/M/g)).toHaveLength(1)
+    // сплошная: 59…4 и 2…1 назад — два куска; сегодня (только утро) — ни в одной
+    const solid = chart().querySelector('path[data-line="solid"]')!
+    expect(solid.getAttribute('d')!.match(/M/g)).toHaveLength(2)
+    expect(solid).not.toHaveAttribute('stroke-dasharray')
+  })
+
   it('нажатие на день открывает его: утро, вечер, теги и ночь словами', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     show()

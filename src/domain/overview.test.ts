@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, dayKey, parseDay } from './date'
-import { changes, dayShift, eventRows, goalValue, isComplete, lateFrom, pointClass, usualBand, verdict } from './overview'
+import { changes, dayShift, eventRows, goalValue, isComplete, lateFrom, lineLinks, pointClass, usualBand, verdict } from './overview'
 import type { TimelineDay } from './timeline'
 import type { Challenge, EntryMap } from './types'
 
@@ -350,5 +350,24 @@ describe('changes — поздний отбой', () => {
     const h = days(28, (i) => ({ bed: i >= 14 ? 90 : -30 }))
     const c = changes(h, 27, 14, [], {}, TODAY, false, null)
     expect(c.status === 'ok' && c.lines).toEqual([])
+  })
+})
+
+describe('lineLinks — линия графика: соседние полные дни (решение Georgy 25.09)', () => {
+  const T = true
+  const F = false
+  it('подряд — сплошная, через пропуск или неполный день — пунктир до следующего полного', () => {
+    expect(lineLinks([T, T, F, T, F, F, T])).toEqual([
+      { from: 0, to: 1, gap: false },
+      { from: 1, to: 3, gap: true },
+      { from: 3, to: 6, gap: true },
+    ])
+  })
+  it('неполные дни по краям окна не тянут линию ни к чему', () => {
+    expect(lineLinks([F, T, T, F])).toEqual([{ from: 1, to: 2, gap: false }])
+  })
+  it('один полный день или ни одного — линии нет', () => {
+    expect(lineLinks([F, T, F])).toEqual([])
+    expect(lineLinks([])).toEqual([])
   })
 })
