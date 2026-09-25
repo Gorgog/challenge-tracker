@@ -23,7 +23,7 @@ import {
 const CHALLENGE =
   'id, name, code, kind, measure, goal, unit, color, tag_ids, start_date, length_days, pauses, rules_locked, deleted_at, sort_order'
 const DAY_LOG = 'day, mood, wellbeing, productivity, tags, tag_levels, note, closed_at'
-const DAY_START = 'day, morning_sleep, morning_wellbeing, morning_mood, bed_min, wake_min, bed_how, wake_how, started_at'
+const DAY_START = 'day, morning_sleep, morning_wellbeing, morning_mood, bed_min, wake_min, bed_how, wake_how, morning_note, started_at'
 /**
  * PostgREST отдаёт ограниченное число строк за раз (по умолчанию 1000, настраивается в проекте) — длинные
  * списки читаем страницами до пустой, не полагаясь на размер ответа.

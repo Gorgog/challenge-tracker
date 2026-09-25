@@ -7,6 +7,7 @@ import { validLevels } from '@/domain/tags'
 import {
   DEFAULT_DAY_GROUPS,
   DEFAULT_SETTINGS,
+  MORNING_NOTE_MAX,
   type Challenge,
   type DayGroup,
   type DayLog,
@@ -41,8 +42,12 @@ export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
 const STORAGE_VERSION = 14
 
-/** Копия утра с ночью; утро без ночи — ночь null, как читает база. */
-const copyMorning = (m: Morning | null): Morning | null => (m ? { ...m, night: m.night ? { ...m.night } : null } : null)
+/** Копия утра с ночью; утро без ночи — ночь null, как читает база; пустой заметки нет — поля нет. */
+const copyMorning = (m: Morning | null): Morning | null => {
+  if (!m) return null
+  const { note, ...rest } = m
+  return { ...rest, night: m.night ? { ...m.night } : null, ...(note?.trim() ? { note: note.trim() } : {}) }
+}
 
 /** Копия итога дня; ступени — полем только непустые, как читает база (срез 5б). */
 const copyLog = ({ levels, ...log }: DayLog): DayLog => ({
@@ -290,6 +295,8 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       /* те же правила, что держит база (day_starts_night_*) */
       const night = start.morning?.night
       if (night && !validNight(night)) throw new Error(`Ночь ${start.day} записана неверно: отбой должен быть раньше подъёма`)
+      /* тот же предел, что держит база (day_starts.morning_note) */
+      if ((start.morning?.note?.trim().length ?? 0) > MORNING_NOTE_MAX) throw new Error(`Заметка утра длиннее ${MORNING_NOTE_MAX} знаков`)
       starts.set(start.day, { ...start, morning: copyMorning(start.morning) })
       persist()
     },

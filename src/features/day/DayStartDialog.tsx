@@ -8,13 +8,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
 import { clockText, minutesOf, nightProblem, type UsualNight } from '@/domain/night'
-import type { Morning } from '@/domain/types'
+import { MORNING_NOTE_MAX, type Morning } from '@/domain/types'
 import { NightTime, type NightAnswer } from './NightTime'
 import { ScoreScale, type Scale } from './ScoreScale'
 
-type MorningField = Exclude<keyof Morning, 'night'>
+type MorningField = Exclude<keyof Morning, 'night' | 'note'>
 
 /**
  * Утро — сон и те же шкалы самочувствия и настроения, что вечером, с теми же якорями:
@@ -57,6 +58,9 @@ export function DayStartDialog({ open, day, usual, now, onStart, onSkip, onCance
   const [scores, setScores] = useState<Draft>({ sleep: null, wellbeing: null, mood: null })
   const [bed, setBed] = useState<NightAnswer>(NONE)
   const [wake, setWake] = useState<NightAnswer>(NONE)
+  /* заметка утра — необязательна и спрятана за «+ заметка»: утро не становится длиннее (решение Georgy 25.09) */
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [note, setNote] = useState('')
   const nowMin = minutesOf(now())
   const problem = nightProblem({ bed: bed.value, wake: wake.value }, nowMin)
   const ready = SCALES.every((s) => scores[s.field] !== null) && bed.how !== null && wake.how !== null && problem === null
@@ -69,6 +73,7 @@ export function DayStartDialog({ open, day, usual, now, onStart, onSkip, onCance
       wellbeing: scores.wellbeing!,
       mood: scores.mood!,
       night: { bed: bed.value!, wake: wake.value!, bedHow: bed.how!, wakeHow: wake.how! },
+      ...(note.trim() ? { note: note.trim() } : {}),
     })
   }
 
@@ -112,6 +117,22 @@ export function DayStartDialog({ open, day, usual, now, onStart, onSkip, onCance
             onChange={(value) => setScores((prev) => ({ ...prev, [scale.field]: value }))}
           />
         ))}
+
+        {noteOpen ? (
+          <Textarea
+            aria-label="Заметка утра"
+            autoFocus
+            value={note}
+            maxLength={MORNING_NOTE_MAX}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Как спал, что на уме с утра"
+            className="min-h-16"
+          />
+        ) : (
+          <button type="button" onClick={() => setNoteOpen(true)} className="self-start text-[13px] text-primary">
+            + заметка
+          </button>
+        )}
 
         <DialogFooter className="items-center sm:justify-between">
           <span className="max-w-[250px] text-[11.5px] text-muted-foreground">

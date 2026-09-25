@@ -48,6 +48,8 @@ export type DayStartRow = {
   wake_min: number | null
   bed_how: NightHow | null
   wake_how: NightHow | null
+  /** Заметка утра; пустой нет — null. */
+  morning_note: string | null
   started_at: string
 }
 
@@ -157,6 +159,7 @@ export function dayStartFromRow(r: DayStartRow): DayStart {
             r.bed_min !== null && r.wake_min !== null && r.bed_how !== null && r.wake_how !== null
               ? { bed: r.bed_min, wake: r.wake_min, bedHow: r.bed_how, wakeHow: r.wake_how }
               : null,
+          ...(r.morning_note ? { note: r.morning_note } : {}),
         }
       : null,
     startedAt: iso(r.started_at),
@@ -173,6 +176,7 @@ export function dayStartToRow(s: DayStart): DayStartRow {
     wake_min: s.morning?.night?.wake ?? null,
     bed_how: s.morning?.night?.bedHow ?? null,
     wake_how: s.morning?.night?.wakeHow ?? null,
+    morning_note: s.morning?.note?.trim() || null,
     started_at: s.startedAt,
   }
 }

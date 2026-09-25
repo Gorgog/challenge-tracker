@@ -32,8 +32,9 @@ import {
   type Ladder,
   type Link as LinkData,
 } from '@/domain/links'
+import { dayStory } from '@/domain/dayStory'
 import { morningOpen } from '@/domain/dayStart'
-import { changes as changesOf, dayShift, eventRows, GOALS, lateFrom, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
+import { changes as changesOf, dayShift, eventRows, GOALS, LATE_BED, lateFrom, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
 import { timeline } from '@/domain/timeline'
 import { DEFAULT_SETTINGS, type Challenge } from '@/domain/types'
@@ -146,6 +147,7 @@ export function AnalyticsPage() {
     const short = (r: Row): Row => (r.kind === 'challenge' ? { ...r, label: code.get(r.key.slice('challenge:'.length)) ?? r.label } : r)
     return {
       window,
+      late,
       band,
       verdict: verdict(window, band, goal),
       rows: { main: rows.main.map(short), more: rows.more.map(short) },
@@ -167,6 +169,11 @@ export function AnalyticsPage() {
   const sheetIndex = openDay && history ? history.findIndex((d) => d.day === openDay) : -1
   const sheetDay = sheetIndex >= 0 ? history![sheetIndex]! : null
   const sheetShift = sheetIndex >= 0 ? dayShift(history!, sheetIndex, parseDay(todayK), open) : null
+  /* лента дня — по той же цели, полосе, связям и порогу позднего отбоя, что и экран: одно число на экран */
+  const sheetStory =
+    sheetIndex >= 0 && view
+      ? dayStory(history!, sheetIndex, goal, view.band, view.links, { usualBed: view.late === null ? null : view.late - LATE_BED, lateFrom: view.late })
+      : null
   const head = view ? headline(view.verdict, goal, len) : null
   const band = view?.band
   const lit = useMemo(() => (highlight ? new Set(highlight) : undefined), [highlight])
@@ -301,7 +308,7 @@ export function AnalyticsPage() {
 
           <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
           <LinkSheet link={openLink} ladder={openLadder} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
-          <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} valueOf={(c, day) => entriesById[c.id]?.[day]} onClose={() => setOpenDay(null)} />
+          <DaySheet day={sheetDay} story={sheetStory} goal={goal} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} valueOf={(c, day) => entriesById[c.id]?.[day]} onClose={() => setOpenDay(null)} />
         </>
       )}
     </div>

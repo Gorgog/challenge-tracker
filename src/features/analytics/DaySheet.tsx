@@ -1,9 +1,16 @@
+import { useState, type ReactNode } from 'react'
+import { CalendarIcon, ChevronDownIcon, LightbulbIcon, MoonIcon, SunIcon, WineIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { DayStory } from '@/domain/dayStory'
+import type { Goal } from '@/domain/overview'
 import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
 import { clockText } from '@/domain/night'
 import { levelLabel } from '@/domain/tags'
-import { dayName, shiftText } from './words'
+import { cn } from '@/lib/utils'
+import { LEVEL } from './linkWords'
+import { guessText, laterText, toneText } from './storyWords'
+import { dayName, num1, shiftText } from './words'
 
 /**
  * У «Ложусь раньше» — своё время со словом «вечером»: это ночь после вечера дня, а строка «лёг» выше — ночь перед
@@ -34,9 +41,41 @@ const tagText = (tag: string, levels: Record<string, number> | undefined) => {
   return level ? `${tag} · ${level}` : tag
 }
 
-/** Один день целиком: ночь перед ним, утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
+const Pill = ({ children }: { children: ReactNode }) => (
+  <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[12.5px] text-secondary-foreground">{children}</span>
+)
+
+const LINE =
+  '[&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-7 [&:not(:last-child)]:before:bottom-0 [&:not(:last-child)]:before:left-[13.5px] [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-border'
+
+/** Шаг ленты: значок слева на общей линии, подпись и что было. `warn` — то, что могло утянуть вниз. */
+function Step({ icon, label, warn = false, children }: { icon: ReactNode; label: string; warn?: boolean; children?: ReactNode }) {
+  return (
+    <li className={cn('relative grid grid-cols-[28px_minmax(0,1fr)] gap-2.5 pb-3 last:pb-0', LINE)}>
+      <span
+        aria-hidden
+        className={cn('grid size-7 place-items-center rounded-full [&_svg]:size-4', warn ? 'bg-warn/20 text-warn' : 'bg-secondary text-muted-foreground')}
+      >
+        {icon}
+      </span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-[12px] text-muted-foreground">{label}</p>
+        {children}
+      </div>
+    </li>
+  )
+}
+
+const withValue = (label: string, v: number | null) => (v === null ? label : `${label} · ${num1(v)}`)
+
+/**
+ * Один день лентой (решение Georgy 25.09, макет одобрен): сверху точка дня против обычного, дальше по порядку —
+ * вечер накануне, ночь, утро, вечер; одна догадка; все оценки и отметки — свёрнуты. Пустое — прочерком, а не нулём.
+ */
 export function DaySheet({
   day,
+  story,
+  goal,
   isToday,
   shift,
   challenges,
@@ -45,6 +84,9 @@ export function DaySheet({
   onClose,
 }: {
   day: TimelineDay | null
+  /** Лента дня (`dayStory`) по выбранной цели. */
+  story: DayStory | null
+  goal: Goal
   isToday: boolean
   /** Ночь и день словами (`dayShift`). */
   shift: Shift
@@ -67,16 +109,106 @@ export function DaySheet({
     ['продуктивность', '', e ? v(e.productivity) : '—'],
   ]
   const marks = day ? challenges.map((c) => [c, outcomeOf(c, day.day)] as const).filter(([, o]) => o !== 'outside') : []
+  const hits = marks.filter(([, o]) => o === 'hit').map(([c]) => c.name)
+  const misses = marks.filter(([, o]) => o === 'miss').map(([c]) => c.name)
+  const [all, setAll] = useState(false)
+  const tone = story ? toneText(story) : null
 
   return (
-    <Dialog open={day !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="gap-4 sm:max-w-sm">
-        {day && (
+    <Dialog
+      open={day !== null}
+      onOpenChange={(o) => {
+        if (o) return
+        setAll(false)
+        onClose()
+      }}
+    >
+      <DialogContent className="max-h-[90dvh] gap-4 overflow-y-auto sm:max-w-sm">
+        {day && story && (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold tracking-tight">{dayName(day.day)}</DialogTitle>
-              <DialogDescription>Утро, вечер и отметки этого дня.</DialogDescription>
+            <DialogHeader className="flex-row items-center gap-3 text-left">
+              <span
+                data-testid="day-value"
+                className={cn(
+                  'grid size-13 shrink-0 place-items-center rounded-[14px] text-[20px] font-semibold tabular-nums',
+                  story.tone === 'worse' ? 'bg-worse/15 text-worse' : story.tone === 'better' ? 'bg-better/15 text-better' : 'bg-secondary text-foreground',
+                )}
+              >
+                {story.value === null ? '—' : num1(story.value)}
+              </span>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <DialogTitle className="text-lg font-bold tracking-tight">{dayName(day.day)}</DialogTitle>
+                <DialogDescription className="text-[13px]">{tone ?? 'Как прошёл этот день'}</DialogDescription>
+              </div>
             </DialogHeader>
+
+            <ul aria-label="Как прошёл день" className="flex flex-col">
+              {story.before && (
+                <Step icon={<WineIcon />} label={withValue('вечер накануне', story.before.value)} warn={story.before.harmful.length > 0}>
+                  {story.before.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {story.before.tags.map((t) => (
+                        <Pill key={t}>{tagText(t, story.before!.levels)}</Pill>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[13.5px] text-muted-foreground">тегов не было</p>
+                  )}
+                </Step>
+              )}
+              {story.night && (
+                <Step icon={<MoonIcon />} label="ночь" warn={story.night.late}>
+                  <p className="text-[14px]">{`лёг в ${clockText(story.night.bed)}${laterText(story.night.later)}`}</p>
+                </Step>
+              )}
+              <Step icon={<SunIcon />} label={story.morning ? withValue('утро', story.morning.value) : 'утро'}>
+                {!story.morning ? (
+                  <p className="text-[13.5px] text-muted-foreground">{day.started ? 'пропущено' : 'день не начат'}</p>
+                ) : (
+                  story.morning.note && <p className="text-[13.5px] text-muted-foreground">{`«${story.morning.note}»`}</p>
+                )}
+              </Step>
+              <Step icon={<CalendarIcon />} label={story.evening ? withValue('вечер', story.evening.value) : 'вечер'}>
+                {!story.evening && <p className="text-[13.5px] text-muted-foreground">{isToday ? 'ещё не закрыт' : 'не закрыт'}</p>}
+                {story.evening && story.evening.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {story.evening.tags.map((t) => (
+                      <Pill key={t}>{tagText(t, day.levels)}</Pill>
+                    ))}
+                  </div>
+                )}
+                {misses.length > 0 && <p className="text-[13.5px] text-worse">{`✗ ${misses.join(', ')}`}</p>}
+                {hits.length > 0 && <p className="text-[13.5px] text-better">{`✓ ${hits.join(', ')}`}</p>}
+                {story.evening?.note && <p className="text-[13.5px] text-muted-foreground">{`«${story.evening.note}»`}</p>}
+              </Step>
+            </ul>
+
+            {story.guess && (
+              <div className="flex items-start gap-2.5 rounded-[10px] bg-secondary px-3 py-2.5">
+                <LightbulbIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" />
+                <p className="text-[13.5px]">
+                  {guessText(story.guess, goal)}
+                  {story.guess.kind === 'link' && (
+                    <>
+                      {' '}
+                      <span className="font-mono text-muted-foreground">{LEVEL[story.guess.level].dots}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              aria-expanded={all}
+              onClick={() => setAll((v) => !v)}
+              className="flex items-center justify-between rounded-md border border-input px-3 py-2 text-[13px]"
+            >
+              Все оценки
+              <ChevronDownIcon aria-hidden className={cn('size-4 transition-transform', all && 'rotate-180')} />
+            </button>
+            {all && (
+            <div className="flex flex-col gap-3">
             {shiftText(shift) && <p className="text-[14px]">{shiftText(shift)}</p>}
             <table className="w-full text-[14px]">
               <thead>
@@ -96,21 +228,6 @@ export function DaySheet({
                 ))}
               </tbody>
             </table>
-            {!m && !shift && <p className="text-[13px] text-muted-foreground">День ещё не начат</p>}
-            {!e && <p className="text-[13px] text-muted-foreground">{isToday ? 'Вечер ещё не закрыт' : 'Вечер не закрыт'}</p>}
-            {e && (
-              <div className="flex flex-wrap gap-1.5">
-                {day.tags.length ? (
-                  day.tags.map((t) => (
-                    <span key={t} className="rounded-full bg-secondary px-2.5 py-0.5 text-[12.5px] text-secondary-foreground">
-                      {tagText(t, day.levels)}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[13px] text-muted-foreground">Тегов не было</span>
-                )}
-              </div>
-            )}
             {marks.length > 0 && (
               <ul className="flex flex-col gap-1 text-[13.5px]">
                 {marks.map(([c, o]) => (
@@ -120,6 +237,8 @@ export function DaySheet({
                   </li>
                 ))}
               </ul>
+            )}
+            </div>
             )}
           </>
         )}

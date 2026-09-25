@@ -158,9 +158,15 @@ describe('строки базы ↔ домен', () => {
       wake_min: 460,
       bed_how: 'usual',
       wake_how: 'exact',
+      morning_note: null,
       started_at: '2026-09-21T07:30:00.000Z',
     })
     expect(dayStartFromRow(dayStartToRow(start))).toEqual(start)
+    // заметка утра — столбцом, туда и обратно; пустая — null (решение Georgy 25.09)
+    const noted: DayStart = { ...start, morning: { ...start.morning!, note: 'Голова болит' } }
+    expect(dayStartToRow(noted).morning_note).toBe('Голова болит')
+    expect(dayStartFromRow(dayStartToRow(noted))).toEqual(noted)
+    expect(dayStartToRow({ ...start, morning: { ...start.morning!, note: '  ' } }).morning_note).toBeNull()
     const skipped: DayStart = { day: '2026-09-20', morning: null, startedAt: '2026-09-20T16:00:00.000Z' }
     const skippedRow = dayStartToRow(skipped)
     expect([skippedRow.bed_min, skippedRow.wake_min, skippedRow.bed_how, skippedRow.wake_how]).toEqual([null, null, null, null])

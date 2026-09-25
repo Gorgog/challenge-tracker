@@ -88,9 +88,13 @@ export type Night = { bed: number; wake: number; bedHow: NightHow; wakeHow: Nigh
 
 /**
  * Утренние оценки 0–10 — сон, самочувствие и настроение до дел дня. `night` нет или null — время сна
- * не записано (утра до 25.09 и сиды без него).
+ * не записано (утра до 25.09 и сиды без него). `note` — заметка утра (решение Georgy 25.09): пишется вместе с
+ * утром и не правится; пустой нет — поля нет.
  */
-export type Morning = { sleep: number; wellbeing: number; mood: number; night?: Night | null }
+export type Morning = { sleep: number; wellbeing: number; mood: number; night?: Night | null; note?: string }
+
+/** Длиннее — заметку утра не принимают ни база, ни демо. */
+export const MORNING_NOTE_MAX = 1000
 
 /**
  * Начало дня — отдельная запись: утро измерено до сегодняшних дел и служит базой дня.
