@@ -65,12 +65,21 @@ function world() {
   return { logs, starts }
 }
 
-const show = () =>
+/** Страница как открыл: блоки разбора свёрнуты. */
+const showFolded = () =>
   render(
     <MemoryRouter>
       <AnalyticsPage />
     </MemoryRouter>,
   )
+/** Раскрыть все свёрнутые блоки разбора — как если бы нажал на каждый заголовок. */
+const unfold = () => document.querySelectorAll<HTMLElement>('[data-fold][aria-expanded="false"]').forEach((b) => fireEvent.click(b))
+/** Страница с раскрытыми блоками: тесты содержимого блоков. */
+const show = () => {
+  const r = showFolded()
+  unfold()
+  return r
+}
 const headline = () => screen.getByTestId('headline')
 
 beforeEach(() => {
@@ -1010,5 +1019,91 @@ describe('AnalyticsPage — ступени тегов (срез 5б)', () => {
     ).toBeInTheDocument()
     expect(within(box).queryByText(/алкоголь · 6\+/)).not.toBeInTheDocument()
     expect(within(box).queryByRole('button', { name: /алкоголь · 6\+/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('AnalyticsPage — блоки разбора свёрнуты, «Что попробовать» — под графиком (решение Georgy 25.09)', () => {
+  const region = (name: string | RegExp) => screen.getByRole('region', { name })
+  /** Кнопка в заголовке блока; свёрнут ли — проверяет сама: тесты ниже начинают со свёрнутых. */
+  const header = (name: string | RegExp) => {
+    const button = within(within(region(name)).getByRole('heading', { level: 2 })).getByRole('button')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    return button
+  }
+  const before = (a: Element, b: Element) => expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const ill = () => {
+    mocked.logs = mocked.logs.map((l) => (l.day === key(7) || l.day === key(5) ? { ...l, tags: [...l.tags, 'болел'] } : l))
+  }
+  const quarrel = () => {
+    const w = drinkWorld()
+    mocked.logs = w.logs.map((l) => (l.day === key(10) || l.day === key(25) ? { ...l, tags: ['ссора'] } : l))
+    mocked.starts = w.starts.map((s) => (s.day === key(9) || s.day === key(24) ? { ...s, morning: { sleep: 7, wellbeing: 2, mood: 2 } } : s))
+  }
+
+  it('открыл аналитику — у блоков видны только заголовки, содержимого нет; фраза и график открыты', () => {
+    ill()
+    showFolded()
+    expect(headline()).toHaveTextContent('хуже обычного')
+    expect(chart().querySelector('[data-fold]')).toBeNull()
+    expect(header('Что изменилось')).toHaveTextContent('Что изменилось')
+    expect(screen.queryByText('«алкоголь»: 7 из 13 вечеров')).not.toBeInTheDocument()
+    expect(header('Объясняет плохие дни')).toHaveTextContent('Объясняет плохие дни · это не совет')
+    expect(screen.queryByText('«болел» — 4 дня из 7 плохих')).not.toBeInTheDocument()
+    expect(header(/Что попробовать|Связи: пока рано/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Смотрели /)).not.toBeInTheDocument()
+  })
+
+  it('«Случаи» и «Что попробовать» тоже свёрнуты', () => {
+    quarrel()
+    showFolded()
+    expect(header('Случаи')).toHaveTextContent('Случаи · обобщать пока рано')
+    expect(screen.queryByText(/Оба утра после «ссора»/)).not.toBeInTheDocument()
+    expect(header('Что попробовать')).toHaveTextContent('Что попробовать')
+    expect(screen.queryByText('«алкоголь» вечером')).not.toBeInTheDocument()
+  })
+
+  it('«Связи: пока рано» свёрнуты так же', () => {
+    Object.assign(mocked, drinkWorld(20))
+    showFolded()
+    expect(header('Связи: пока рано')).toHaveTextContent('Связи: пока рано')
+    expect(screen.queryByText(/Нужно 5 дней «с» и 5 «без»/)).not.toBeInTheDocument()
+  })
+
+  it('нажатие на заголовок раскрывает блок, повторное — сворачивает', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.assign(mocked, drinkWorld())
+    showFolded()
+    const button = header('Что попробовать')
+    await user.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(within(region('Что попробовать')).getByText('«алкоголь» вечером')).toBeInTheDocument()
+    await user.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('«алкоголь» вечером')).not.toBeInTheDocument()
+  })
+
+  it('раскрытый блок не сворачивается сам при смене периода', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    showFolded()
+    await user.click(header('Что изменилось'))
+    await user.click(screen.getByRole('button', { name: '30 дней' }))
+    expect(within(within(region('Что изменилось')).getByRole('heading', { level: 2 })).getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(region('Что изменилось')).getByText(/Против прошлых 30 дней/)).toBeInTheDocument()
+  })
+
+  it('порядок: график, «Что попробовать», «Что изменилось», «Объясняет плохие дни», «Челленджи ›»', () => {
+    ill()
+    showFolded()
+    before(chart(), region(/Что попробовать|Связи: пока рано/))
+    before(region(/Что попробовать|Связи: пока рано/), region('Что изменилось'))
+    before(region('Что изменилось'), region('Объясняет плохие дни'))
+    before(region('Объясняет плохие дни'), screen.getByRole('link', { name: 'Челленджи ›' }))
+  })
+
+  it('порядок: «Что попробовать» выше «Что изменилось», «Случаи» — после «Что изменилось»', () => {
+    quarrel()
+    showFolded()
+    before(region('Что попробовать'), region('Что изменилось'))
+    before(region('Что изменилось'), region('Случаи'))
   })
 })
