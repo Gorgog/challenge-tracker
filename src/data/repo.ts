@@ -1,3 +1,4 @@
+import type { AnalyticsLayout } from '@/domain/analyticsLayout'
 import type { ChallengePatch } from '@/domain/challenges'
 import type { Challenge, DayGroup, DayLog, DayStart, EntryMap, Settings, Tag } from '@/domain/types'
 
@@ -53,4 +54,7 @@ export type Repo = {
   /** Порядок блоков на экране дня. */
   getDayGroups(): Promise<DayGroup[]>
   saveDayGroups(groups: DayGroup[]): Promise<void>
+  /** Раскладка аналитики: порядок блоков разбора и открытые (решение Georgy 25.09). */
+  getAnalyticsLayout(): Promise<AnalyticsLayout>
+  saveAnalyticsLayout(layout: AnalyticsLayout): Promise<void>
 }

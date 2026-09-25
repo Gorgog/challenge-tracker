@@ -1,6 +1,26 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  useAnalyticsLayout,
+  useChallenges,
+  useDayLogs,
+  useDayStarts,
+  useEntries,
+  useSaveAnalyticsLayout,
+  useSettings,
+} from '@/data/queries'
+import { DEFAULT_ANALYTICS_LAYOUT, moveBlock, toggleOpen, type AnalyticsBlock, type AnalyticsLayout } from '@/domain/analyticsLayout'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
 import {
@@ -19,6 +39,7 @@ import { timeline } from '@/domain/timeline'
 import { DEFAULT_SETTINGS, type Challenge } from '@/domain/types'
 import { useClock } from '@/features/day/useClock'
 import { plural } from '@/lib/plural'
+import { BlockSlot } from './BlockSlot'
 import { CasesCard, ExplainsCard } from './CasesCard'
 import { ChainSheet } from './ChainSheet'
 import { ChangesCard } from './ChangesCard'
@@ -34,6 +55,14 @@ const PERIODS = [14, 30] as const
 type Period = (typeof PERIODS)[number]
 /** От какого окна меряется обычный отбой для порога позднего — от короткого периода, при любом выбранном. */
 const LATE_BASE = PERIODS[0]
+
+/** Как блок называется для ручки перетаскивания. */
+const BLOCK_NAME: Record<AnalyticsBlock, string> = {
+  links: 'Что попробовать',
+  changes: 'Что изменилось',
+  cases: 'Случаи',
+  explains: 'Объясняет плохие дни',
+}
 
 const CHOICE = 'rounded-full border px-3 py-1.5 text-[13px] whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring'
 const choice = (on: boolean) => `${CHOICE} ${on ? 'border-foreground bg-foreground text-background' : 'border-input bg-card text-foreground'}`
@@ -66,6 +95,28 @@ export function AnalyticsPage() {
   /* дни из карточки связи — ключами: окно могут переключить, а дни остаются */
   const [highlight, setHighlight] = useState<string[] | null>(null)
   const chartRef = useRef<HTMLElement>(null)
+  /*
+   * Раскладка блоков — в аккаунте (решение Georgy 25.09). На экране — своя копия с первого изменения: бросок и нажатие
+   * применяются в том же кадре (рывок перетаскивания, errors.md 21.09), запись в базу идёт следом по очереди.
+   * Не загрузилась — обычный порядок и всё свёрнуто: это вид, а не данные.
+   */
+  const layoutQuery = useAnalyticsLayout()
+  const saveLayout = useSaveAnalyticsLayout()
+  const [ownLayout, setOwnLayout] = useState<AnalyticsLayout | null>(null)
+  const layout = ownLayout ?? layoutQuery.data ?? DEFAULT_ANALYTICS_LAYOUT
+  const applyLayout = (next: AnalyticsLayout) => {
+    setOwnLayout(next)
+    saveLayout.mutate(next)
+  }
+  const sensors = useSensors(
+    /* порог в 4 пикселя: без него нажатие на ручку уже считалось бы перетаскиванием */
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const onBlockDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return
+    applyLayout({ ...layout, order: moveBlock(layout.order, active.id as AnalyticsBlock, over.id as AnalyticsBlock) })
+  }
 
   const live = useMemo(() => (challenges.data ?? []).filter(isLive).sort((a, b) => a.sortOrder - b.sortOrder), [challenges.data])
   const entriesById = useMemo(() => entries.data ?? {}, [entries.data])
@@ -110,7 +161,7 @@ export function AnalyticsPage() {
 
   /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
   const failed = [challenges, entries, logs, starts].some((q) => q.isError && q.data === undefined)
-  const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending
+  const loading = challenges.isPending || entries.isPending || logs.isPending || starts.isPending || layoutQuery.isPending
 
   const outcomeOf = (c: Challenge, day: string) => dayOutcome(c, entriesById[c.id] ?? {}, parseDay(day), parseDay(todayK))
   const sheetIndex = openDay && history ? history.findIndex((d) => d.day === openDay) : -1
@@ -198,7 +249,16 @@ export function AnalyticsPage() {
             />
           </section>
 
-          {/* «Что попробовать» — сразу под графиком, остальной разбор — ниже (решение Georgy 25.09) */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+            onDragEnd={onBlockDragEnd}
+          >
+            {(() => {
+              /* блоки разбора — в порядке из раскладки; пустые «Случаи» и «Объясняет» не рисуются и не мешают порядку */
+              const blocks: Record<AnalyticsBlock, ReactNode> = {
+                links: (
           <LinksCard
             data={view.links}
             goal={goal}
@@ -215,12 +275,25 @@ export function AnalyticsPage() {
               setLinkOpen(true)
             }}
           />
-
-          <ChangesCard changes={view.changes} len={len} />
-
-          <CasesCard list={view.cases} goal={goal} onShow={showDays} />
-
-          <ExplainsCard list={view.explains} />
+                ),
+                changes: <ChangesCard changes={view.changes} len={len} />,
+                cases: view.cases.length ? <CasesCard list={view.cases} goal={goal} onShow={showDays} /> : null,
+                explains: view.explains.length ? <ExplainsCard list={view.explains} /> : null,
+              }
+              const shown = layout.order.filter((b) => blocks[b] !== null)
+              return (
+                <SortableContext items={shown} strategy={verticalListSortingStrategy}>
+                  <div className="flex flex-col gap-3">
+                    {shown.map((b) => (
+                      <BlockSlot key={b} id={b} name={BLOCK_NAME[b]} open={layout.open.includes(b)} onToggle={() => applyLayout(toggleOpen(layout, b))}>
+                        {blocks[b]}
+                      </BlockSlot>
+                    ))}
+                  </div>
+                </SortableContext>
+              )
+            })()}
+          </DndContext>
 
           <Link to={live.length ? '/analytics/challenges' : '/challenges'} className="self-start text-[14px] text-primary">
             {live.length ? 'Челленджи ›' : 'Челленджей пока нет — заведи первый ›'}

@@ -1,3 +1,4 @@
+import { normalizeLayout, type AnalyticsLayout } from '@/domain/analyticsLayout'
 import { parseDay, todayKey } from '@/domain/date'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
 import { validBedtimeGoal } from '@/domain/bedtime'
@@ -59,6 +60,8 @@ type Snapshot = {
   tags: Tag[]
   /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
   dayGroups?: DayGroup[]
+  /** Может отсутствовать в снимках до раскладки аналитики (25.09) — тогда по умолчанию. */
+  analyticsLayout?: AnalyticsLayout
   /** Начала дней — с версии 7; с версии 8 в сиде нет сегодняшних отметок. */
   starts: DayStart[]
   settings: Settings
@@ -147,6 +150,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
   const logs = new Map(state.logs.map((l) => [l.day, l]))
   const tags = state.tags
   let dayGroups: DayGroup[] = state.dayGroups ?? [...DEFAULT_DAY_GROUPS]
+  let analyticsLayout = normalizeLayout(state.analyticsLayout)
   const starts = new Map(state.starts.map((s) => [s.day, s]))
   let settings: Settings = { ...state.settings }
 
@@ -172,6 +176,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       logs: [...logs.values()],
       tags,
       dayGroups,
+      analyticsLayout,
       starts: [...starts.values()],
       settings,
     })
@@ -305,6 +310,13 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
     },
     async saveDayGroups(groups) {
       dayGroups = [...groups]
+      persist()
+    },
+    async getAnalyticsLayout() {
+      return { order: [...analyticsLayout.order], open: [...analyticsLayout.open] }
+    },
+    async saveAnalyticsLayout(layout) {
+      analyticsLayout = normalizeLayout(layout)
       persist()
     },
   }

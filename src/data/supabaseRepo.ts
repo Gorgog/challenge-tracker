@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { DEFAULT_ANALYTICS_LAYOUT, normalizeLayout, type AnalyticsBlock } from '@/domain/analyticsLayout'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
 import { DEFAULT_DAY_GROUPS, DEFAULT_SETTINGS, type DayGroup } from '@/domain/types'
@@ -243,6 +244,22 @@ export function createSupabaseRepo(db: SupabaseClient): Repo {
 
     async saveDayGroups(groups) {
       ok(await db.from('user_settings').upsert({ user_id: await uid(), day_groups: [...groups] }, { onConflict: 'user_id' }))
+    },
+
+    /* своим запросом, а не в settingsRow: настройки и блоки дня не зависят от новых колонок */
+    async getAnalyticsLayout() {
+      const row = ok(
+        await db
+          .from('user_settings')
+          .select('analytics_order, analytics_open')
+          .maybeSingle<{ analytics_order: AnalyticsBlock[]; analytics_open: AnalyticsBlock[] }>(),
+      )
+      return row ? normalizeLayout({ order: row.analytics_order, open: row.analytics_open }) : { ...DEFAULT_ANALYTICS_LAYOUT, order: [...DEFAULT_ANALYTICS_LAYOUT.order] }
+    },
+
+    async saveAnalyticsLayout(layout) {
+      const { order, open } = normalizeLayout(layout)
+      ok(await db.from('user_settings').upsert({ user_id: await uid(), analytics_order: order, analytics_open: open }, { onConflict: 'user_id' }))
     },
   }
 }

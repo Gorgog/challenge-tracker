@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import type { AnalyticsLayout } from '@/domain/analyticsLayout'
 import { bedtimeEntries } from '@/domain/bedtime'
 import { applyPatch, pause, restore, resume, type ChallengePatch } from '@/domain/challenges'
 import { parseDay } from '@/domain/date'
@@ -50,6 +51,7 @@ export const queryKeys = {
   entries: ['entries'] as const,
   dayLogs: ['dayLogs'] as const,
   dayGroups: ['dayGroups'] as const,
+  analyticsLayout: ['analyticsLayout'] as const,
   tags: ['tags'] as const,
   dayStarts: ['dayStarts'] as const,
   settings: ['settings'] as const,
@@ -89,6 +91,10 @@ export function useDayLogs() {
 
 export function useDayGroups() {
   return useQuery({ queryKey: queryKeys.dayGroups, queryFn: () => repo.getDayGroups() })
+}
+
+export function useAnalyticsLayout() {
+  return useQuery({ queryKey: queryKeys.analyticsLayout, queryFn: () => repo.getAnalyticsLayout() })
 }
 
 export function useDayStarts() {
@@ -212,6 +218,29 @@ export function useSaveDayGroups() {
     },
 
     /* Инвалидации нет по той же причине, что и у порядка челленджей. */
+  })
+}
+
+/** Раскладка аналитики — как порядок блоков дня: сразу в кэш, при отказе откат и общий тост. */
+export function useSaveAnalyticsLayout() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (layout: AnalyticsLayout) => repo.saveAnalyticsLayout(layout),
+    /* по очереди: быстрые нажатия не должны лечь в базу вперемешку — последней остаётся последняя раскладка */
+    scope: { id: 'analyticsLayout' },
+    meta: { errorText: 'Не получилось сохранить раскладку аналитики' },
+
+    async onMutate(layout) {
+      await client.cancelQueries({ queryKey: queryKeys.analyticsLayout })
+      const previous = client.getQueryData<AnalyticsLayout>(queryKeys.analyticsLayout)
+      client.setQueryData<AnalyticsLayout>(queryKeys.analyticsLayout, layout)
+      return { previous, gen: generation(client) }
+    },
+
+    onError(_error, _layout, context) {
+      if (context?.previous && context.gen === generation(client)) client.setQueryData(queryKeys.analyticsLayout, context.previous)
+    },
   })
 }
 

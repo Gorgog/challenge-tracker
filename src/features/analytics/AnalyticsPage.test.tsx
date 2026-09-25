@@ -359,7 +359,7 @@ describe('AnalyticsPage — связи', () => {
     expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
     expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(3)
     expect(screen.getByText('Подсвечено 3 дня из 6 — остальные раньше')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Подсвечено 3 дня из 6 — остальные раньше')
+    expect(within(chart()).getByRole('status')).toHaveTextContent('Подсвечено 3 дня из 6 — остальные раньше')
     await user.click(screen.getByRole('button', { name: 'Убрать подсветку' }))
     expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(0)
   })
@@ -787,7 +787,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     await user.click(within(links()).getByRole('button', { name: 'Показать эти дни на графике' }))
     expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'true')
     expect(chart().querySelectorAll('[data-highlight]')).toHaveLength(4)
-    expect(screen.getByRole('status')).toHaveTextContent('Подсвечено 4 дня из 7 — остальные раньше')
+    expect(within(chart()).getByRole('status')).toHaveTextContent('Подсвечено 4 дня из 7 — остальные раньше')
   })
 
   it('«Что обычно шло следом»: ночью — лёг, утром — встал, против обычного', async () => {
