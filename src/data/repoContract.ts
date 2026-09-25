@@ -396,7 +396,7 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
 
         it('уровни: неверные — отказ, ничего не сохраняется (ключ не из тегов; тег без ступеней; вне диапазона; не целое)', async () => {
           const r = await makeRepo()
-          const bad = [
+          const bad: Pick<DayLog, 'tags' | 'levels'>[] = [
             { tags: ['алкоголь'], levels: { игры: 1 } }, // ключ не из отмеченных тегов
             { tags: ['дорога'], levels: { дорога: 1 } }, // тег без ступеней (не из LEVELS)
             { tags: ['алкоголь'], levels: { алкоголь: 0 } }, // меньше 1
@@ -405,7 +405,7 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
             { tags: ['игры'], levels: { игры: 5 } }, // больше числа ступеней (у игр их 4)
           ]
           for (const over of bad) {
-            await expect(r.saveDayLog({ ...closedLog('2026-09-21'), ...over } as DayLog)).rejects.toThrow()
+            await expect(r.saveDayLog({ ...closedLog('2026-09-21'), ...over }), JSON.stringify(over)).rejects.toThrow()
           }
           expect(await r.listDayLogs()).toEqual([])
         }, t)
