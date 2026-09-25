@@ -114,6 +114,14 @@ function Step({ icon, label, value = null, warn = false, children }: { icon: Rea
 
 const Chips = ({ children }: { children: ReactNode }) => <div className="flex flex-wrap gap-1.5">{children}</div>
 
+/** Группа внутри шага — своей мелкой подписью: теги, пропущено, выполнено, заметка (поправка Georgy 25.09). */
+const Group = ({ title, children }: { title: string; children: ReactNode }) => (
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[11px] text-muted-foreground">{title}</span>
+    {children}
+  </div>
+)
+
 /**
  * Один день лентой (решение Georgy 25.09, макет одобрен): сверху точка дня против обычного, дальше по порядку —
  * вечер накануне, ночь, утро, вечер; одна догадка; все оценки и отметки — свёрнуты. Пустое — прочерком, а не нулём.
@@ -220,24 +228,40 @@ export function DaySheet({
               </Step>
               <Step icon={<CalendarIcon />} label="вечер" value={story.evening?.value ?? null}>
                 {!story.evening && <p className="text-[13.5px] text-muted-foreground">{isToday ? 'ещё не закрыт' : 'не закрыт'}</p>}
-                {story.evening && story.evening.tags.length > 0 && (
-                  <Chips>
-                    {story.evening.tags.map((t) => (
-                      <TagChip key={t} tag={t} levels={day.levels} />
-                    ))}
-                  </Chips>
-                )}
-                {misses.length + hits.length > 0 && (
-                  <Chips>
-                    {misses.map((name) => (
-                      <MarkChip key={name} name={name} hit={false} />
-                    ))}
-                    {hits.map((name) => (
-                      <MarkChip key={name} name={name} hit />
-                    ))}
-                  </Chips>
-                )}
-                {story.evening?.note && <Note text={story.evening.note} />}
+                <div className="flex flex-col gap-3">
+                  {story.evening && story.evening.tags.length > 0 && (
+                    <Group title="теги">
+                      <Chips>
+                        {story.evening.tags.map((t) => (
+                          <TagChip key={t} tag={t} levels={day.levels} />
+                        ))}
+                      </Chips>
+                    </Group>
+                  )}
+                  {misses.length > 0 && (
+                    <Group title="пропущено">
+                      <Chips>
+                        {misses.map((name) => (
+                          <MarkChip key={name} name={name} hit={false} />
+                        ))}
+                      </Chips>
+                    </Group>
+                  )}
+                  {hits.length > 0 && (
+                    <Group title="выполнено">
+                      <Chips>
+                        {hits.map((name) => (
+                          <MarkChip key={name} name={name} hit />
+                        ))}
+                      </Chips>
+                    </Group>
+                  )}
+                  {story.evening?.note && (
+                    <Group title="заметка">
+                      <Note text={story.evening.note} />
+                    </Group>
+                  )}
+                </div>
               </Step>
             </ul>
 
