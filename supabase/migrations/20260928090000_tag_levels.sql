@@ -16,6 +16,12 @@ begin
   if jsonb_typeof(new.tag_levels) is distinct from 'object' then
     return new;
   end if;
+  -- Вкладка со старым сайтом (до среза 5б) ступеней не шлёт: апсерт не трогает tag_levels, и тег, снятый в ней,
+  -- оставил бы ступень без тега — запись бы отвергалась. Ступени не менялись — ступени снятых тегов убираем,
+  -- как окно итога (ревью 5б); присланные неверные ступени по-прежнему — отказ.
+  if tg_op = 'UPDATE' and new.tag_levels = old.tag_levels then
+    new.tag_levels := new.tag_levels - array(select k from jsonb_object_keys(new.tag_levels) as k where not (k = any (new.tags)));
+  end if;
   if exists (
     select 1
     from jsonb_each(new.tag_levels) as l (tag, level)

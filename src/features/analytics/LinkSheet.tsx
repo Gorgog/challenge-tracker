@@ -113,7 +113,8 @@ export function LinkSheet({
         : [`без ${factorName(link)}`, `после ${factorName(link)}`]
   return (
     <Dialog open={open && link !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="gap-4 sm:max-w-md">
+      {/* с лесенкой шторка выше экрана телефона — прокрутка внутри, как у окна итога (ревью 5б) */}
+      <DialogContent className="max-h-[90dvh] gap-4 overflow-y-auto sm:max-w-md">
         {link && level && (
           <>
             <DialogHeader>

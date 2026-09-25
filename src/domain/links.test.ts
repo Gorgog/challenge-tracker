@@ -1664,12 +1664,16 @@ describe('ladder — пограничные случаи (срез 5б)', () => 
     const resultWeekend = (i: number) => isoDow(addDays(TODAY, i + 1 - LINK_DAYS + 1)) >= 5
     const plan = new Map<number, number>()
     const need = { w1: 5, w2: 2, w3: 1, e3: 5 }
+    const take = (i: number, level: number, slot: keyof typeof need) => {
+      plan.set(i, level)
+      need[slot]--
+    }
     for (let i = 2; i <= LINK_DAYS - 3; i += 2) {
       if (resultWeekend(i)) {
-        if (need.e3) (plan.set(i, 3), need.e3--)
-      } else if (need.w1) (plan.set(i, 1), need.w1--)
-      else if (need.w2) (plan.set(i, 2), need.w2--)
-      else if (need.w3) (plan.set(i, 3), need.w3--)
+        if (need.e3) take(i, 3, 'e3')
+      } else if (need.w1) take(i, 1, 'w1')
+      else if (need.w2) take(i, 2, 'w2')
+      else if (need.w3) take(i, 3, 'w3')
     }
     const weekdayAfter = mirror ? [5, 4.5, 4] : [5, 5.5, 6]
     return hist(LINK_DAYS, (i, dow) => {

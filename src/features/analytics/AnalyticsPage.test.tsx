@@ -868,11 +868,10 @@ describe('AnalyticsPage — ступени тегов (срез 5б)', () => {
 
   it('лесенка — по выбранной цели: на «Сне» ступени считаются по сну, а не по самочувствию и настроению (ревью 5б)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    const w = doseWorld()
+    Object.assign(mocked, doseWorld())
     // сон после ступеней — свой: «1–2» → 4, «3–5» → 3, «6+» → 1, без ступени → 2, остальное → 7 (на «Всё» было 5 / 4 / 2 / 3 / 6)
     const sleepOf = (v: number) => (v === 5 ? 4 : v === 4 ? 3 : v === 2 ? 1 : v === 3 ? 2 : 7)
-    mocked.logs = w.logs
-    mocked.starts = w.starts.map((s) => (s.morning ? { ...s, morning: { ...s.morning, sleep: sleepOf(s.morning.wellbeing) } } : s))
+    mocked.starts = mocked.starts.map((s) => (s.morning ? { ...s, morning: { ...s.morning, sleep: sleepOf(s.morning.wellbeing) } } : s))
     show()
     await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
     await user.click(within(links()).getByRole('button', { name: /Подробнее/ }))

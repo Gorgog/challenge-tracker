@@ -9,6 +9,7 @@ import {
   explains as explainsOf,
   ladder as ladderOf,
   links as linksOf,
+  type Ladder,
   type Link as LinkData,
 } from '@/domain/links'
 import { morningOpen } from '@/domain/dayStart'
@@ -57,6 +58,9 @@ export function AnalyticsPage() {
   /* открытый день — датой: после полуночи окно сдвигается, а день остаётся */
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [openLink, setOpenLink] = useState<LinkData | null>(null)
+  /* лесенка открытой связи — снимок вместе с ней: иначе после полуночи или свежих записей полоски «без / после» и
+     ступени под ними считались бы по разным окнам (ревью 5б) */
+  const [openLadder, setOpenLadder] = useState<Ladder | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
   const [chainOpen, setChainOpen] = useState(false)
   /* дни из карточки связи — ключами: окно могут переключить, а дни остаются */
@@ -103,8 +107,6 @@ export function AnalyticsPage() {
       explains: explainsOf(history, windowStart, band, goal),
     }
   }, [history, len, goal, live, entriesById, todayK, open])
-  /* лесенка — по той же паре и окну, что открытая связь; не тег со ступенями — null (срез 5б) */
-  const ladder = useMemo(() => (history && openLink ? ladderOf(history, goal, openLink) : null), [history, goal, openLink])
 
   /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
   const failed = [challenges, entries, logs, starts].some((q) => q.isError && q.data === undefined)
@@ -211,6 +213,8 @@ export function AnalyticsPage() {
             onShow={showDays}
             onOpen={(l) => {
               setOpenLink(l)
+              /* лесенка — по той же паре, окну и цели, что открытая связь; не тег со ступенями — null (срез 5б) */
+              setOpenLadder(history ? ladderOf(history, goal, l) : null)
               setLinkOpen(true)
             }}
           />
@@ -222,7 +226,7 @@ export function AnalyticsPage() {
           </Link>
 
           <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
-          <LinkSheet link={openLink} ladder={ladder} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
+          <LinkSheet link={openLink} ladder={openLadder} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} valueOf={(c, day) => entriesById[c.id]?.[day]} onClose={() => setOpenDay(null)} />
         </>
       )}
