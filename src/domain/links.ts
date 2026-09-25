@@ -1,7 +1,7 @@
 import { isoDow, parseDay } from './date'
 import { dayOutcome } from './streaks'
 import { goalValue, isComplete, pointClass, type Band, type Goal } from './overview'
-import { DAY_TAGS } from './tags'
+import { DAY_TAGS, LEVELS } from './tags'
 import { BAD_SLEEP, HARMFUL_TAGS, round1, stateOf, type TimelineDay } from './timeline'
 import type { Challenge, EntryMap, Night } from './types'
 
@@ -12,6 +12,8 @@ import type { Challenge, EntryMap, Night } from './types'
  * «с / без» — только для тегов и сна (ответ «Да, без» появился в срезе 5а, но правило прежнее).
  * Сжатая разница решает, показывать ли связь; на экране — сырые средние «с / без» и счёт случаев.
  * Последний день окна — сегодня: пока он не записан, он ещё идёт, а не пропущен.
+ * Теги с количеством (срез 5б, 25.09): связь — по тегу целиком, ступени — лесенкой по той же паре (`ladder`),
+ * у «Случаев» верхняя ступень — свой фактор.
  */
 
 /** Окно связей: в 14–30 днях 5 + 5 почти не набирается. */
@@ -35,8 +37,11 @@ const PART_MIN = 3
 
 /** «Не в моих силах»: такие теги объясняют плохие дни, но не становятся советом («болей меньше»). */
 export const CONTEXT_TAGS: readonly string[] = ['болел', 'дорога', 'выходной']
-/** Совет «Больше» по ним звучал бы как «бери дедлайны»: только «Меньше» (решение Georgy 24.09). */
-export const NOT_MORE: readonly string[] = ['дедлайн', 'встречи']
+/**
+ * Совет «Больше» по ним звучал бы как «бери дедлайны»: только «Меньше» (решение Georgy 24.09). Игры, стресс и
+ * работа допоздна — туда же (срез 5б): «больше стресса» советом не бывает.
+ */
+export const NOT_MORE: readonly string[] = ['дедлайн', 'встречи', 'игры', 'стресс', 'работа допоздна']
 
 /** `lateBed.from` — с какого отбоя поздно, минуты от полуночи утра: тот же порог, что у ряда «лёг 00:30+». */
 export type Factor = { kind: 'tag'; tag: string } | { kind: 'badSleep' } | { kind: 'lateBed'; from: number }
@@ -93,8 +98,11 @@ const variance = (v: number[]) => {
   return v.reduce((a, x) => a + (x - m) ** 2, 0) / (v.length - 1)
 }
 
-/** Результат, привязанный к дню: значение, день результата и теги вечера, после которого он измерен. */
-type Point = { value: number; day: string; weekend: boolean; before: string[] }
+/**
+ * Результат, привязанный к дню: значение, день результата и теги вечера, после которого он измерен.
+ * `level` — ступень тега пары в тот вечер (срез 5б): только у пары «тег → результат» и только если ступень выбрана.
+ */
+type Point = { value: number; day: string; weekend: boolean; before: string[]; level?: number }
 
 const morningValue = (d: TimelineDay, goal: Goal): number | null => {
   const m = d.morning
@@ -129,7 +137,7 @@ function tagPoints(window: TimelineDay[], goal: Goal, tag: string) {
     if (!prev.evening) continue
     const value = nextValue(d, goal)
     if (value === null) continue
-    const p = { value, day: d.day, weekend: isWeekend(d.day), before: prev.tags }
+    const p = { value, day: d.day, weekend: isWeekend(d.day), before: prev.tags, level: prev.levels?.[tag] }
     ;(prev.tags.includes(tag) ? withTag : without).push(p)
   }
   return { withTag, without }
@@ -282,14 +290,120 @@ function gateOf(window: TimelineDay[]): Gate {
 const score = (l: Link) => Math.abs(l.shrunk ?? 0) * (l.level === 'notable' ? 2 : 1)
 const found = (l: Link) => l.level === 'maybe' || l.level === 'notable'
 
+/* ---------- лесенка: тег со ступенями (срез 5б) ---------- */
+
+/** Ступень лесенки: level 0 — «не было», 1…n — ступень, null — «сколько — не указано». mean — сырое, при n ≥ LADDER_MIN, иначе null. */
+export type LadderStep = { level: number | null; n: number; mean: number | null }
+export type Ladder = {
+  tag: string
+  /** По порядку: «не было», ступени 1…n (все, даже с n = 0), затем «не указано» — только если n > 0. */
+  steps: LadderStep[]
+  /** «Чем больше — тем хуже / лучше» — только когда выполнены все условия `trendOf`; иначе null. */
+  trend: 'worse' | 'better' | null
+  /** Первая ступень почти как «не было» (видимые средние ближе LINK_DIFF) — при trend ≠ null. Иначе false. */
+  firstLikeNone: boolean
+}
+
+/** Дней на ступени, чтобы показать её среднее. */
+export const LADDER_MIN = 3
+/** Вечеров с тегом (`withN`), чтобы звучала фраза «чем больше — тем …». */
+export const LADDER_TOTAL = 12
+
+/**
+ * Наклон дозы по слоям: внутри выходных и внутри будних дней результата отдельно — МНК-наклон значения по номеру
+ * ступени, средний с весом числа точек слоя. Без слоёв «6+ — перед субботой» выдало бы плохие субботы за дозу.
+ * Слой с одной ступенью наклона не даёт; остаточной дисперсии не из чего считать — null. Эталон — `doseSlope`
+ * замера на 2000 мирах (25.09).
+ */
+function doseSlope(dosed: Point[]): { b: number; se: number } | null {
+  let sse = 0
+  let df = 0
+  const parts: { n: number; sxx: number; b: number }[] = []
+  for (const weekend of [false, true]) {
+    const p = dosed.filter((x) => x.weekend === weekend)
+    if (new Set(p.map((x) => x.level)).size < 2) continue
+    const mx = mean(p.map((x) => x.level!))!
+    const my = mean(values(p))!
+    let sxx = 0
+    let sxy = 0
+    for (const x of p) {
+      sxx += (x.level! - mx) ** 2
+      sxy += (x.level! - mx) * (x.value - my)
+    }
+    const b = sxy / sxx
+    for (const x of p) sse += (x.value - my - b * (x.level! - mx)) ** 2
+    df += p.length - 2
+    parts.push({ n: p.length, sxx, b })
+  }
+  if (!parts.length || df < 1) return null
+  const total = parts.reduce((a, x) => a + x.n, 0)
+  const s2 = sse / df
+  return {
+    b: parts.reduce((a, x) => a + x.n * x.b, 0) / total,
+    se: Math.sqrt(parts.reduce((a, x) => a + (x.n / total) ** 2 * (s2 / x.sxx), 0)),
+  }
+}
+
+/**
+ * Фраза «чем больше — тем …» (решение Georgy 25.09 по замеру на 2000 мирах): связь найдена; вечеров с тегом не
+ * меньше `LADDER_TOTAL`; показанных ступеней две и больше; видимые средние «не было» и показанных ступеней нестрого
+ * идут в сторону связи; первая и последняя показанные разнятся на видимый балл — числа на экране те же, что
+ * проверяет порог; наклон дозы по слоям, сжатый к нулю, — в ту же сторону и не меньше балла. Размах наклона — на
+ * всю лесенку тега (`k` ступеней), а не на показанные.
+ */
+function trendOf(link: Link, none: LadderStep, shown: LadderStep[], dosed: Point[], k: number): Ladder['trend'] {
+  const dir = link.direction
+  if (!found(link) || dir === null || link.withN < LADDER_TOTAL || shown.length < 2 || none.mean === null) return null
+  const seen = [none, ...shown].map((s) => round1(s.mean!))
+  if (!seen.every((v, i) => i === 0 || (dir === 'worse' ? v <= seen[i - 1]! : v >= seen[i - 1]!))) return null
+  /* разность видимых чисел — тоже через round1: 5,3 − 4,3 в double даёт 0,999… */
+  if (round1(Math.abs(seen[seen.length - 1]! - seen[1]!)) < LINK_DIFF) return null
+  const slope = doseSlope(dosed)
+  if (!slope) return null
+  const shrunk = shrink(slope.b * (k - 1), slope.se * (k - 1))
+  return (dir === 'worse' ? shrunk < 0 : shrunk > 0) && Math.abs(shrunk) >= LINK_DIFF ? dir : null
+}
+
+/**
+ * Лесенка тега со ступенями — по той же паре, что связь: закрытый вечер D → результат D+1 по цели, окно
+ * `LINK_DAYS`. «Не было» — все точки без тега; «не указано» — тег без ступени: ни в средние ступеней, ни в наклон
+ * он не идёт, показан отдельно. Не тег из `LEVELS` — null.
+ */
+export function ladder(history: TimelineDay[], goal: Goal, link: Link): Ladder | null {
+  if (link.factor.kind !== 'tag' || !LEVELS[link.factor.tag]) return null
+  const tag = link.factor.tag
+  const k = LEVELS[tag].short.length
+  const { withTag, without } = tagPoints(history.slice(-LINK_DAYS), goal, tag)
+  const step = (level: number | null, points: Point[]): LadderStep => ({
+    level,
+    n: points.length,
+    mean: points.length >= LADDER_MIN ? mean(values(points)) : null,
+  })
+  const none = step(0, without)
+  const levels = Array.from({ length: k }, (_, i) => step(i + 1, withTag.filter((p) => p.level === i + 1)))
+  const unknown = withTag.filter((p) => p.level === undefined)
+  const dosed = withTag.filter((p) => p.level !== undefined)
+  const trend = trendOf(link, none, levels.filter((s) => s.mean !== null), dosed, k)
+  const first = levels[0]!
+  return {
+    tag,
+    steps: [none, ...levels, ...(unknown.length ? [step(null, unknown)] : [])],
+    trend,
+    firstLikeNone: trend !== null && first.mean !== null && round1(Math.abs(round1(first.mean) - round1(none.mean!))) < LINK_DIFF,
+  }
+}
+
 /* ---------- случаи и «объясняет плохие дни» ---------- */
 
 /** Случай — утро (день) после редкого тега; ниже обычного — от балла. Показываем не больше двух. */
 export const CASE_GAP = 1
 const CASES_SHOWN = 2
 
-/** `missing` — сколько раз день после тега не записан (сегодняшний, который ещё идёт, не в счёт). */
-export type Case = { tag: string; values: number[]; days: string[]; usual: number; missing: number }
+/**
+ * `missing` — сколько раз день после тега не записан (сегодняшний, который ещё идёт, не в счёт).
+ * `level` — случай верхней ступени тега (срез 5б); у тега целиком поля нет.
+ */
+export type Case = { tag: string; level?: number; values: number[]; days: string[]; usual: number; missing: number }
 
 const median = (v: number[]) => {
   const s = [...v].sort((a, b) => a - b)
@@ -301,24 +415,42 @@ const median = (v: number[]) => {
  * «Случаи · обобщать пока рано»: тег в моих силах был 1–4 вечера (закрытых), и каждый записанный результат
  * после него ниже обычного (медиана после других закрытых вечеров) на `CASE_GAP` и больше. Не связь — перечень,
  * без среднего. Когда записей мало для связей (ворота закрыты), и случаев нет: сравнивать не с чем.
+ * У тега со ступенями верхняя ступень — свой фактор (срез 5б): частая выпивка не случай, а редкие «6+» — да.
+ * Обычное для неё — то же, что у тега целиком (после вечеров без тега); тег целиком уже случай — те же дни, второй
+ * строки нет.
  */
 export function cases(history: TimelineDay[], goal: Goal): Case[] {
   const window = history.slice(-LINK_DAYS)
   if (!gateOf(window).ok) return []
   const last = window.length - 1
+  /** Закрытых вечеров `hit`, кроме вчерашнего, если сегодняшний день после него ещё не записан. */
+  const episodes = (hit: (evening: TimelineDay) => boolean) => {
+    let n = 0
+    for (let i = 1; i < window.length; i++) {
+      if (!window[i - 1]!.evening || !hit(window[i - 1]!)) continue
+      if (i === last && nextValue(window[i]!, goal) === null) continue
+      n++
+    }
+    return n
+  }
   return DAY_TAGS.filter((t) => !CONTEXT_TAGS.includes(t))
     .flatMap((tag) => {
       const { withTag, without } = tagPoints(window, goal, tag)
-      let episodes = 0
-      for (let i = 1; i < window.length; i++) {
-        if (!window[i - 1]!.evening || !window[i - 1]!.tags.includes(tag)) continue
-        if (i === last && nextValue(window[i]!, goal) === null) continue
-        episodes++
-      }
-      if (!withTag.length || episodes >= LINK_MIN || without.length < LINK_MIN) return []
+      if (without.length < LINK_MIN) return []
       const usual = median(values(without))
-      if (!withTag.every((p) => p.value <= usual - CASE_GAP)) return []
-      return [{ tag, values: values(withTag), days: withTag.map((p) => p.day), usual, missing: episodes - withTag.length }]
+      const caseOf = (points: Point[], count: number, level?: number): Case[] => {
+        if (!points.length || count >= LINK_MIN || !points.every((p) => p.value <= usual - CASE_GAP)) return []
+        const base = { tag, values: values(points), days: points.map((p) => p.day), usual, missing: count - points.length }
+        return [level === undefined ? base : { ...base, level }]
+      }
+      const whole = caseOf(withTag, episodes((d) => d.tags.includes(tag)))
+      if (whole.length || !LEVELS[tag]) return whole
+      const top = LEVELS[tag].short.length
+      return caseOf(
+        withTag.filter((p) => p.level === top),
+        episodes((d) => d.tags.includes(tag) && d.levels?.[tag] === top),
+        top,
+      )
     })
     .sort((a, b) => mean(a.values)! - a.usual - (mean(b.values)! - b.usual))
     .slice(0, CASES_SHOWN)
