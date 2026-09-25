@@ -97,6 +97,33 @@ describe('окно начала дня', () => {
     expect(onSkip).not.toHaveBeenCalled()
   })
 
+  it('заметка утра — по кнопке «+ заметка», необязательная; уходит вместе с утром (решение Georgy 25.09)', async () => {
+    const { user, onStart } = setup()
+    expect(screen.queryByRole('textbox', { name: 'Заметка утра' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '+ заметка' }))
+    await user.type(screen.getByRole('textbox', { name: 'Заметка утра' }), '  Голова болит ')
+    await usualNight(user)
+    await scores(user)
+    await user.click(startButton())
+    expect(onStart).toHaveBeenCalledWith({
+      sleep: 6,
+      wellbeing: 6,
+      mood: 6,
+      night: { bed: -30, wake: 460, bedHow: 'usual', wakeHow: 'usual' },
+      note: 'Голова болит',
+    })
+  })
+
+  it('заметку открыли и не написали — утро без заметки', async () => {
+    const { user, onStart } = setup()
+    await user.click(screen.getByRole('button', { name: '+ заметка' }))
+    await user.type(screen.getByRole('textbox', { name: 'Заметка утра' }), '   ')
+    await usualNight(user)
+    await scores(user)
+    await user.click(startButton())
+    expect(onStart.mock.calls[0]![0]).not.toHaveProperty('note')
+  })
+
   it('«как обычно» подставляет обычное время в поле и справа', async () => {
     const { user } = setup()
     expect(usualButton('Лёг')).toHaveTextContent('23:30')

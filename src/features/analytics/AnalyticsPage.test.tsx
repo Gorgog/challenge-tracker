@@ -1199,3 +1199,66 @@ describe('AnalyticsPage — раскладка блоков хранится в 
   })
 })
 
+describe('AnalyticsPage — шторка дня лентой (решение Georgy 25.09)', () => {
+  /** drinkWorld: 20 сентября (3 дня назад) — утро 3 после вечера с алкоголем, вечер 7: день 5,0 при обычном 6,5. */
+  function badDay() {
+    const w = drinkWorld()
+    mocked.logs = w.logs.map((l) => (l.day === key(3) ? { ...l, note: 'Весь день лежал' } : l))
+    mocked.starts = w.starts.map((s) => (s.day === key(3) ? { ...s, morning: { ...s.morning!, note: 'Голова болит' } } : s))
+    mocked.entries = { push: { [key(3)]: 20 } }
+  }
+  const open = async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    show()
+    await user.click(dayButton(/^вс, 20 сентября/))
+    return { user, dialog: screen.getByRole('dialog', { name: 'вс, 20 сентября' }) }
+  }
+
+  it('сверху — точка дня и где она против обычного', async () => {
+    badDay()
+    const { dialog } = await open()
+    expect(within(dialog).getByTestId('day-value')).toHaveTextContent('5,0')
+    expect(within(dialog).getByText('хуже обычного · обычно 6,5')).toBeInTheDocument()
+  })
+
+  it('лента по порядку: вечер накануне с тегами, утро с заметкой, вечер с челленджами и заметкой', async () => {
+    badDay()
+    const { dialog } = await open()
+    const ribbon = within(dialog).getByRole('list', { name: 'Как прошёл день' })
+    const before = within(ribbon).getByText('вечер накануне · 7,0')
+    const morning = within(ribbon).getByText('утро · 3,0')
+    const evening = within(ribbon).getByText('вечер · 7,0')
+    expect(before.compareDocumentPosition(morning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(morning.compareDocumentPosition(evening) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(ribbon).getByText('алкоголь')).toBeInTheDocument()
+    expect(within(ribbon).getByText('«Голова болит»')).toBeInTheDocument()
+    expect(within(ribbon).getByText('✓ Отжиматься по 20 раз')).toBeInTheDocument()
+    expect(within(ribbon).getByText('«Весь день лежал»')).toBeInTheDocument()
+    // ночь не записана — строки нет
+    expect(within(ribbon).queryByText('ночь')).not.toBeInTheDocument()
+  })
+
+  it('догадка — найденная связь с тем, что было накануне, с точками уверенности', async () => {
+    badDay()
+    const { dialog } = await open()
+    expect(within(dialog).getByText('Похоже на «алкоголь» накануне: после него утро у тебя обычно хуже')).toBeInTheDocument()
+    expect(within(dialog).getByText('●○○')).toBeInTheDocument()
+  })
+
+  it('все оценки — свёрнуты; раскрываются кнопкой', async () => {
+    badDay()
+    const { user, dialog } = await open()
+    expect(within(dialog).queryByRole('row', { name: /самочувствие/ })).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Все оценки' }))
+    expect(within(dialog).getByRole('row', { name: 'самочувствие 3 7' })).toBeInTheDocument()
+  })
+
+  it('ночь записана — строка «ночь» с отбоем против обычного', async () => {
+    badDay()
+    const n = (bed: number) => ({ bed, wake: 460, bedHow: 'exact' as const, wakeHow: 'exact' as const })
+    mocked.starts = mocked.starts.map((s) => ({ ...s, morning: s.morning ? { ...s.morning, night: n(s.day === key(3) ? 105 : -30) } : null }))
+    const { dialog } = await open()
+    expect(within(within(dialog).getByRole('list', { name: 'Как прошёл день' })).getByText('лёг в 1:45 — на 2 ч 15 мин позже обычного')).toBeInTheDocument()
+  })
+})
+

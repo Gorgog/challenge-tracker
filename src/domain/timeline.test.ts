@@ -86,6 +86,20 @@ describe('timeline — дни с утром, вечером и тегами', ()
     expect(b!.tags).toEqual([])
   })
 
+  it('заметки: вечерняя — только у закрытого дня и не пустая, утренняя — в утре (решение Georgy 25.09)', () => {
+    const { logs, starts } = world([
+      { log: { ...log(2, 4, 5), note: 'Весь день лежал' }, start: start(2, [3, 4, 5]) },
+      { log: { ...log(1, 7, 7, [], false), note: 'черновик' } },
+      { log: { ...log(0, 7, 7), note: '' } },
+    ])
+    starts[0] = { ...starts[0]!, morning: { ...starts[0]!.morning!, note: 'Голова болит' } }
+    const [a, b, c] = timeline(logs, starts, addDays(TODAY, -2), TODAY)
+    expect(a!.note).toBe('Весь день лежал')
+    expect(a!.morning!.note).toBe('Голова болит')
+    expect(b!.note).toBeUndefined()
+    expect(c!.note).toBeUndefined()
+  })
+
   it('stateOf — среднее самочувствия и настроения', () => {
     expect(stateOf({ wellbeing: 4, mood: 7 })).toBe(5.5)
     expect(stateOf(null)).toBeNull()

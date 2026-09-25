@@ -269,6 +269,19 @@ export function repoContract(name: string, makeRepo: () => Promise<Repo>, option
         expect(logs[1]).toEqual({ ...closedLog('2026-09-21'), mood: 9, tags: ['спорт', 'отдых'] })
       }, t)
 
+      it('заметка утра — вместе с утром; пустая не хранится; длиннее 1000 знаков — отказ (решение Georgy 25.09)', async () => {
+        const r = await makeRepo()
+        await r.startDay({ day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 5, note: 'Голова болит' }, startedAt: '2026-09-21T07:30:00.000Z' })
+        await r.startDay({ day: '2026-09-22', morning: { sleep: 7, wellbeing: 6, mood: 5, note: '   ' }, startedAt: '2026-09-22T07:30:00.000Z' })
+        await expect(
+          r.startDay({ day: '2026-09-23', morning: { sleep: 7, wellbeing: 6, mood: 5, note: 'я'.repeat(1001) }, startedAt: '2026-09-23T07:30:00.000Z' }),
+        ).rejects.toThrow()
+        const [a, b, ...rest] = await r.listDayStarts()
+        expect(a!.morning!.note).toBe('Голова болит')
+        expect(b!.morning).not.toHaveProperty('note')
+        expect(rest).toEqual([])
+      }, t)
+
       it('начало дня: второе бросает, первое остаётся; день без утра — утро null', async () => {
         const r = await makeRepo()
         const morning = { day: '2026-09-21', morning: { sleep: 7, wellbeing: 6, mood: 5 }, startedAt: '2026-09-21T07:30:00.000Z' }
