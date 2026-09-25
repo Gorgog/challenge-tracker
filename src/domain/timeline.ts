@@ -21,6 +21,8 @@ export type TimelineDay = {
   evening: Evening | null
   /** Теги ставятся при закрытии дня — у незакрытого их нет. */
   tags: string[]
+  /** Ступени тегов с количеством из закрытого итога (срез 5б); нет ступеней — поля нет. */
+  levels?: Record<string, number>
 }
 
 /** Сон утром 0–4 — плохой, от 7 — хороший. */
@@ -53,6 +55,7 @@ export function timeline(logs: DayLog[], starts: DayStart[], from: Date, to: Dat
       started: startBy.has(day),
       evening: closed ? { mood: closed.mood, wellbeing: closed.wellbeing, productivity: closed.productivity } : null,
       tags: closed ? [...closed.tags] : [],
+      ...(closed?.levels && Object.keys(closed.levels).length ? { levels: { ...closed.levels } } : {}),
     })
   }
   return out

@@ -68,6 +68,11 @@ export type DayLog = {
   wellbeing: number
   productivity: number
   tags: string[]
+  /**
+   * Ступени тегов с количеством (срез 5б): тег → ступень 1…n (`LEVELS` в `tags.ts`), только у отмеченных тегов.
+   * Нет поля или `{}` — ступеней нет; тег отмечен без ступени — «было, сколько — не указано».
+   */
+  levels?: Record<string, number>
   note: string
   closedAt: string | null
 }
