@@ -3,7 +3,14 @@ import { Link } from 'react-router'
 import { useChallenges, useDayLogs, useDayStarts, useEntries, useSettings } from '@/data/queries'
 import { isLive } from '@/domain/challenges'
 import { addDays, parseDay, todayKey } from '@/domain/date'
-import { cases as casesOf, chain as chainOf, explains as explainsOf, links as linksOf, type Link as LinkData } from '@/domain/links'
+import {
+  cases as casesOf,
+  chain as chainOf,
+  explains as explainsOf,
+  ladder as ladderOf,
+  links as linksOf,
+  type Link as LinkData,
+} from '@/domain/links'
 import { morningOpen } from '@/domain/dayStart'
 import { changes as changesOf, dayShift, eventRows, GOALS, lateFrom, usualBand, verdict, type Goal, type Row } from '@/domain/overview'
 import { dayOutcome } from '@/domain/streaks'
@@ -96,6 +103,8 @@ export function AnalyticsPage() {
       explains: explainsOf(history, windowStart, band, goal),
     }
   }, [history, len, goal, live, entriesById, todayK, open])
+  /* лесенка — по той же паре и окну, что открытая связь; не тег со ступенями — null (срез 5б) */
+  const ladder = useMemo(() => (history && openLink ? ladderOf(history, goal, openLink) : null), [history, goal, openLink])
 
   /* не загрузилось — ничего не считаем: пустые данные выдали бы сбой за пропуски */
   const failed = [challenges, entries, logs, starts].some((q) => q.isError && q.data === undefined)
@@ -213,7 +222,7 @@ export function AnalyticsPage() {
           </Link>
 
           <ChainSheet chain={view.chain} open={chainOpen} onShow={showDays} onClose={() => setChainOpen(false)} />
-          <LinkSheet link={openLink} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
+          <LinkSheet link={openLink} ladder={ladder} open={linkOpen} goal={goal} onShow={showDays} onClose={() => setLinkOpen(false)} />
           <DaySheet day={sheetDay} isToday={openDay === todayK} shift={sheetShift} challenges={live} outcomeOf={outcomeOf} valueOf={(c, day) => entriesById[c.id]?.[day]} onClose={() => setOpenDay(null)} />
         </>
       )}

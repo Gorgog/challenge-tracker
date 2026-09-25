@@ -1,12 +1,15 @@
 import type { Case, Explain } from '@/domain/links'
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
-import { caseLine } from './linkWords'
+import { caseLine, caseName } from './linkWords'
 
 const KICKER = 'text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase'
 const CARD = 'flex flex-col gap-2 rounded-2xl border border-border bg-card px-4 py-3.5'
 
-/** «Случаи · обобщать пока рано» — редкие сильные события, перечнем, без среднего. */
+/**
+ * «Случаи · обобщать пока рано» — редкие сильные события, перечнем, без среднего. Ключ и кнопка — по имени случая:
+ * у тега со ступенями верхняя ступень — свой случай (срез 5б).
+ */
 export function CasesCard({ list, goal, onShow }: { list: Case[]; goal: Goal; onShow: (days: string[]) => void }) {
   if (!list.length) return null
   return (
@@ -14,11 +17,11 @@ export function CasesCard({ list, goal, onShow }: { list: Case[]; goal: Goal; on
       <h2 className={KICKER}>Случаи · обобщать пока рано</h2>
       <ul className="flex flex-col gap-2">
         {list.map((c) => (
-          <li key={c.tag} className="flex flex-col gap-0.5">
+          <li key={caseName(c)} className="flex flex-col gap-0.5">
             <p className="text-[14.5px]">{caseLine(c, goal)}</p>
             <button
               type="button"
-              aria-label={`Показать на графике дни после «${c.tag}»`}
+              aria-label={`Показать на графике дни после «${caseName(c)}»`}
               onClick={() => onShow(c.days)}
               className="self-start text-[13.5px] text-primary"
             >

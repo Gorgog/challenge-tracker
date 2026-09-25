@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { DOW_FULL, formatHuman, isoDow, parseDay } from '@/domain/date'
-import { DAY_TAGS } from '@/domain/tags'
+import { DAY_TAGS, levelLabel, LEVELS } from '@/domain/tags'
 import type { Challenge, DayLog, ScoreField } from '@/domain/types'
 import { cn } from '@/lib/utils'
 import { plural } from '@/lib/plural'
@@ -62,6 +62,56 @@ const emptyDraft: Draft = { mood: null, wellbeing: null, productivity: null }
 const draftFrom = (log: DayLog | null | undefined): Draft =>
   log ? { mood: log.mood, wellbeing: log.wellbeing, productivity: log.productivity } : emptyDraft
 
+type Levels = Record<string, number>
+
+/**
+ * Ступени правки — только отмеченных тегов и только годные: ступень снятого тега иначе всплыла бы нажатой, когда
+ * тег отметят заново.
+ */
+const levelsFrom = (log: DayLog | null | undefined): Levels =>
+  log
+    ? Object.fromEntries(
+        Object.entries(log.levels ?? {}).filter(([tag, level]) => log.tags.includes(tag) && levelLabel(tag, level) !== null),
+      )
+    : {}
+
+const omit = (levels: Levels, tag: string): Levels => Object.fromEntries(Object.entries(levels).filter(([t]) => t !== tag))
+
+/**
+ * «Сколько?» у отмеченного тега со ступенями (срез 5б, макет одобрен Georgy). Заранее ничего не нажато: тег без
+ * ступени — «было, сколько — не указано», значение по умолчанию выдало бы догадку за запись.
+ */
+function LevelPicker({ tag, value, onPick }: { tag: string; value: number | undefined; onPick: (level: number) => void }) {
+  const { question, short, note } = LEVELS[tag]!
+  return (
+    <div role="group" aria-label={question} className="flex flex-col gap-2 rounded-[10px] border px-2.5 py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[13.5px] font-medium">{question}</span>
+        <em className="font-mono text-xs not-italic text-muted-foreground">можно не выбирать</em>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {short.map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            aria-pressed={value === i + 1}
+            onClick={() => onPick(i + 1)}
+            className={cn(
+              'min-w-14 rounded-lg border px-3 py-1.5 text-[13px] transition-colors',
+              value === i + 1
+                ? 'border-primary bg-primary font-semibold text-primary-foreground'
+                : 'border-input bg-secondary text-secondary-foreground hover:bg-muted',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {note && <p className="text-[11.5px] text-muted-foreground">{note}</p>}
+    </div>
+  )
+}
+
 export function DayCloseDialog({
   open,
   day,
@@ -76,6 +126,7 @@ export function DayCloseDialog({
   /* Черновик начинается заново для каждого дня: вызывающий передаёт key={day}. */
   const [scores, setScores] = useState<Draft>(() => draftFrom(existing))
   const [tags, setTags] = useState<string[]>(() => [...(existing?.tags ?? [])])
+  const [levels, setLevels] = useState<Levels>(() => levelsFrom(existing))
   const [note, setNote] = useState(() => existing?.note ?? '')
   const [answers, setAnswers] = useState<Record<string, 0 | 1 | null>>(() =>
     Object.fromEntries(quits.map((q) => [q.challenge.id, answerOf(q.value)])),
@@ -89,8 +140,14 @@ export function DayCloseDialog({
   const ready = SCALES.every((s) => scores[s.field] !== null) && unanswered === 0
   const canCancel = Boolean(onCancel) && !saving
 
-  const toggleTag = (tag: string) =>
+  const toggleTag = (tag: string) => {
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
+    /* снял тег — ступень пропадает вместе с ним; у только что отмеченного её ещё нет */
+    setLevels((prev) => omit(prev, tag))
+  }
+  /* ступень необязательна (решение Georgy 25.09): повторное нажатие её снимает, тег остаётся «было» */
+  const pickLevel = (tag: string, level: number) =>
+    setLevels((prev) => (prev[tag] === level ? omit(prev, tag) : { ...prev, [tag]: level }))
 
   const save = () => {
     if (!ready || saving) return
@@ -100,6 +157,7 @@ export function DayCloseDialog({
       wellbeing: scores.wellbeing!,
       productivity: scores.productivity!,
       tags,
+      levels,
       note: note.trim(),
       closedAt: existing?.closedAt ?? new Date().toISOString(),
     }, Object.fromEntries(
@@ -196,6 +254,8 @@ export function DayCloseDialog({
           <div className="flex flex-wrap gap-1.5">
             {DAY_TAGS.map((tag) => {
               const active = tags.includes(tag)
+              /* ступени есть только у отмеченных тегов — чип подписан ступенью: «алкоголь · 3–5» */
+              const level = levelLabel(tag, levels[tag])
               return (
                 <button
                   key={tag}
@@ -209,11 +269,14 @@ export function DayCloseDialog({
                       : 'border-input bg-secondary text-secondary-foreground hover:bg-muted',
                   )}
                 >
-                  {tag}
+                  {level ? `${tag} · ${level}` : tag}
                 </button>
               )
             })}
           </div>
+          {DAY_TAGS.filter((tag) => tags.includes(tag) && LEVELS[tag]).map((tag) => (
+            <LevelPicker key={tag} tag={tag} value={levels[tag]} onPick={(level) => pickLevel(tag, level)} />
+          ))}
         </div>
 
         <div className="flex flex-col gap-2">

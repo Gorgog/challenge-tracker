@@ -1,6 +1,7 @@
-import { LINK_MIN, type Case, type Link, type Level } from '@/domain/links'
+import { LINK_MIN, type Case, type Ladder, type Link, type Level } from '@/domain/links'
 import { clockText } from '@/domain/night'
 import type { Goal } from '@/domain/overview'
+import { levelLabel } from '@/domain/tags'
 import { HARMFUL_TAGS } from '@/domain/timeline'
 import { plural } from '@/lib/plural'
 import { num1 } from './words'
@@ -118,9 +119,16 @@ const CASE_NOUN: Record<Goal, string> = {
 const plain = (v: number) => (Number.isInteger(v) ? String(v) : num1(v))
 const listOf = (v: string[]) => (v.length < 2 ? v.join('') : `${v.slice(0, -1).join(', ')} и ${v[v.length - 1]}`)
 
+/** Имя случая: тег или его верхняя ступень короткой подписью — «алкоголь · 6+» (срез 5б), как на чипе итога. */
+export const caseName = (c: Case) => {
+  const level = levelLabel(c.tag, c.level)
+  return level ? `${c.tag} · ${level}` : c.tag
+}
+
 /**
  * Случаи без обобщения: каждое число отдельно, рядом — что бывает после других вечеров (не полоса «обычно»
  * с графика: та считается по полным дням). Неотмеченные дни после тега названы, «оба» — только о записанных.
+ * У верхней ступени «после других вечеров» — те же вечера без тега, что у тега целиком.
  */
 export function caseLine(c: Case, goal: Goal): string {
   const day = goal === 'productivity'
@@ -134,7 +142,18 @@ export function caseLine(c: Case, goal: Goal): string {
         ? `Оба${recs} ${day ? 'дня' : 'утра'}`
         : `Все ${n}${recs} ${day ? 'дня' : 'утра'}`
   const miss = c.missing ? ` Ещё ${times(c.missing)} ${day ? 'вечер не закрыт' : 'утро не отмечено'}.` : ''
-  return `${lead} после «${c.tag}» ${CASE_NOUN[goal]} — ${listOf(c.values.map(plain))}. После других вечеров — около ${plain(c.usual)}.${miss}`
+  return `${lead} после «${caseName(c)}» ${CASE_NOUN[goal]} — ${listOf(c.values.map(plain))}. После других вечеров — около ${plain(c.usual)}.${miss}`
+}
+
+/**
+ * Фраза под лесенкой (срез 5б): только когда `ladder` нашёл наклон — иначе ступени остаются числами без вывода.
+ * Первая ступень почти как «не было» — названа длинной подписью: «1–2 порции — почти как без.»
+ */
+export function ladderText(l: Ladder): string | null {
+  if (!l.trend) return null
+  const head = `Чем больше — тем ${l.trend === 'worse' ? 'хуже' : 'лучше'}.`
+  const first = l.firstLikeNone ? levelLabel(l.tag, 1, 'long') : null
+  return first ? `${head} ${first[0]!.toUpperCase()}${first.slice(1)} — почти как без.` : head
 }
 
 /** Под прогрессом «пока рано»: вредное не зовём, остальному — сколько не хватает. */

@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
 import { clockText } from '@/domain/night'
+import { levelLabel } from '@/domain/tags'
 import { dayName, shiftText } from './words'
 
 /**
@@ -23,6 +24,15 @@ const outcomeText = (c: Challenge, o: Outcome, bed: number | undefined) =>
         : c.kind === 'quit'
         ? o === 'hit' ? 'без срыва' : 'срыв'
         : o === 'hit' ? 'выполнен' : 'пропущен'
+
+/**
+ * Тег со ступенью — полной подписью: «алкоголь · 3–5 порций» (срез 5б). Без ступени — просто тег: «было, сколько —
+ * не указано».
+ */
+const tagText = (tag: string, levels: Record<string, number> | undefined) => {
+  const level = levelLabel(tag, levels?.[tag], 'long')
+  return level ? `${tag} · ${level}` : tag
+}
 
 /** Один день целиком: ночь перед ним, утро, вечер, теги и отметки челленджей. Пустое — прочерком, а не нулём. */
 export function DaySheet({
@@ -93,7 +103,7 @@ export function DaySheet({
                 {day.tags.length ? (
                   day.tags.map((t) => (
                     <span key={t} className="rounded-full bg-secondary px-2.5 py-0.5 text-[12.5px] text-secondary-foreground">
-                      {t}
+                      {tagText(t, day.levels)}
                     </span>
                   ))
                 ) : (
