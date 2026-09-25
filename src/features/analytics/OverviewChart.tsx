@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { goalValue, isComplete, pointClass, type Band, type Goal, type Row } from '@/domain/overview'
+import { goalValue, isComplete, lineLinks, pointClass, type Band, type Goal, type Row } from '@/domain/overview'
 import { BAD_SLEEP, HARMFUL_TAGS, type TimelineDay } from '@/domain/timeline'
 import { dayName, num1, shortDate } from './words'
 import { useWidth } from './useWidth'
@@ -49,12 +49,11 @@ export function OverviewChart({
   const values = days.map((d) => goalValue(d, goal))
   const full = days.map((d) => isComplete(d, goal))
 
-  /* линия связывает соседние полные дни; пропуск и неполный день — разрыв, значение не подставляется */
-  let path = ''
-  values.forEach((v, i) => {
-    if (v === null || !full[i]) return
-    path += `${i > 0 && full[i - 1] && values[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`
-  })
+  /* соседние полные дни подряд — сплошная линия, через пропуск или неполный день — пунктир; значение не подставляется */
+  const pt = (i: number) => `${x(i).toFixed(1)} ${y(values[i]!).toFixed(1)}`
+  const links = lineLinks(values.map((v, i) => v !== null && full[i]!))
+  const solid = links.filter((l) => !l.gap).map((l, k, all) => `${k > 0 && all[k - 1]!.to === l.from ? '' : `M${pt(l.from)}`}L${pt(l.to)}`).join('')
+  const gaps = links.filter((l) => l.gap).map((l) => `M${pt(l.from)}L${pt(l.to)}`).join('')
   const dates = [...new Set([0, Math.floor((n - 1) / 2), n - 1])]
   const label = (i: number) =>
     `${dayName(days[i]!.day)}${values[i] === null ? ': нет записи' : `: ${num1(values[i]!)}`}${highlight?.has(days[i]!.day) ? ', подсвечен' : ''}`
@@ -144,7 +143,8 @@ export function OverviewChart({
               ) : null,
             )}
           {scrub !== null && <rect x={PLOT.left + scrub * cw} y={PLOT.top - 6} width={cw} height={height - PLOT.top + 6} fill="var(--primary)" opacity={0.14} rx={3} />}
-          <path d={path} fill="none" stroke="var(--axis)" strokeWidth={1.2} />
+          {gaps && <path data-line="gap" d={gaps} fill="none" stroke="var(--axis)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.7} />}
+          {solid && <path data-line="solid" d={solid} fill="none" stroke="var(--axis)" strokeWidth={1.2} />}
           {values.map((v, i) => {
             if (v === null) return null
             if (!full[i]) {

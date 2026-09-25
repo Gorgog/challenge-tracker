@@ -57,6 +57,15 @@ export function isComplete(d: TimelineDay, goal: Goal): boolean {
   return d.morning !== null && d.evening !== null
 }
 
+/**
+ * Линия графика — между соседними полными днями (решение Georgy 25.09): подряд — сплошная, через пропуск или неполный
+ * день — пунктир до следующего полного. Неполный день на линию не встаёт: утро обычно ниже вечера, вышел бы ложный провал.
+ */
+export function lineLinks(full: boolean[]): { from: number; to: number; gap: boolean }[] {
+  const at = full.flatMap((f, i) => (f ? [i] : []))
+  return at.slice(1).map((to, k) => ({ from: at[k]!, to, gap: to - at[k]! > 1 }))
+}
+
 /** Значение полного дня; неполный и пустой — null. */
 const fullValue = (d: TimelineDay, goal: Goal) => (isComplete(d, goal) ? goalValue(d, goal) : null)
 
