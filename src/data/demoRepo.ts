@@ -2,6 +2,7 @@ import { parseDay, todayKey } from '@/domain/date'
 import { applyPatch, pause, restore, resume } from '@/domain/challenges'
 import { validBedtimeGoal } from '@/domain/bedtime'
 import { validNight } from '@/domain/night'
+import { validLevels } from '@/domain/tags'
 import {
   DEFAULT_DAY_GROUPS,
   DEFAULT_SETTINGS,
@@ -37,15 +38,23 @@ const STORAGE_KEY = 'tabel-demo'
 /** Какую историю насыпать при следующем сбросе — выбор переживает и сброс, и перезагрузку. */
 export const SCENARIO_KEY = 'tabel-demo-scenario'
 /** Растёт, когда меняется форма снимка: старый снимок тогда просто пересобирается. */
-const STORAGE_VERSION = 13
+const STORAGE_VERSION = 14
 
 /** Копия утра с ночью; утро без ночи — ночь null, как читает база. */
 const copyMorning = (m: Morning | null): Morning | null => (m ? { ...m, night: m.night ? { ...m.night } : null } : null)
+
+/** Копия итога дня; ступени — полем только непустые, как читает база (срез 5б). */
+const copyLog = ({ levels, ...log }: DayLog): DayLog => ({
+  ...log,
+  tags: [...log.tags],
+  ...(levels && Object.keys(levels).length > 0 ? { levels: { ...levels } } : {}),
+})
 
 type Snapshot = {
   version: number
   challenges: Challenge[]
   entries: Record<string, EntryMap>
+  /** Ступени тегов (`levels`) и новые теги в сиде — с версии 14. */
   logs: DayLog[]
   tags: Tag[]
   /** Может отсутствовать в снимках, сделанных до появления перетаскивания блоков. */
@@ -183,9 +192,7 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       return snapshotEntries()
     },
     async listDayLogs() {
-      return [...logs.values()]
-        .map((l) => ({ ...l, tags: [...l.tags] }))
-        .sort((a, b) => a.day.localeCompare(b.day))
+      return [...logs.values()].map(copyLog).sort((a, b) => a.day.localeCompare(b.day))
     },
     async createChallenge(draft) {
       /* то же правило, что держит база: «Время» — только у привычки, цель — целые минуты в границах ночи */
@@ -263,7 +270,9 @@ export function createDemoRepo(options: DemoOptions = {}): Repo {
       persist()
     },
     async saveDayLog(log) {
-      logs.set(log.day, { ...log, tags: [...log.tags] })
+      /* те же правила, что держит база (day_logs_tag_levels): ступень — только у отмеченного тега с количеством */
+      if (!validLevels(log.tags, log.levels)) throw new Error(`Ступени тегов ${log.day} записаны неверно`)
+      logs.set(log.day, copyLog(log))
       persist()
     },
     async listDayStarts() {

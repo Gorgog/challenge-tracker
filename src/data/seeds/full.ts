@@ -13,6 +13,7 @@ import {
   sleepScore,
   startedAt,
   type Seed,
+  withDoses,
   withNights,
 } from './common'
 
@@ -220,7 +221,8 @@ export function seedFull(today: Date, seed: number): Seed {
      Числа на них всё равно вытянуты: основная последовательность не сдвигается. */
   for (const map of Object.values(entries)) delete map[dayKey(today)]
 
-  const closedLogs = [...logs.values()]
+  /* новые теги и ступени (срез 5б) — поверх готовой истории: вечер, утро и ночь прежние */
+  const closedLogs = withDoses([...logs.values()], starts, seed)
   answerQuits(challenges, entries, closedLogs, today)
   return { challenges, entries, logs: closedLogs, starts: withNights(starts, closedLogs, seed), tags }
 }

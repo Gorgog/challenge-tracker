@@ -21,7 +21,7 @@ import {
 
 const CHALLENGE =
   'id, name, code, kind, measure, goal, unit, color, tag_ids, start_date, length_days, pauses, rules_locked, deleted_at, sort_order'
-const DAY_LOG = 'day, mood, wellbeing, productivity, tags, note, closed_at'
+const DAY_LOG = 'day, mood, wellbeing, productivity, tags, tag_levels, note, closed_at'
 const DAY_START = 'day, morning_sleep, morning_wellbeing, morning_mood, bed_min, wake_min, bed_how, wake_how, started_at'
 /**
  * PostgREST отдаёт ограниченное число строк за раз (по умолчанию 1000, настраивается в проекте) — длинные
@@ -45,9 +45,9 @@ const duplicate = (e: unknown) => (e as { code?: string } | null)?.code === '235
 
 /**
  * Хранилище в Supabase (таблицы — `supabase/migrations`). Видит только строки вошедшего: RLS. Правила,
- * которые держит база (оценки 0–10, одно начало дня, замок), здесь не повторяются, кроме перевода её
- * отказов в те же ошибки, что у демо. Пауза, возврат и порядок — функции домена: прочитать, посчитать,
- * записать.
+ * которые держит база (оценки 0–10, одно начало дня, замок, ступени тегов), здесь не повторяются, кроме
+ * перевода её отказов в те же ошибки, что у демо. Пауза, возврат и порядок — функции домена: прочитать,
+ * посчитать, записать.
  */
 export function createSupabaseRepo(db: SupabaseClient): Repo {
   async function uid() {

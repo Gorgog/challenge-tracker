@@ -32,6 +32,8 @@ export type DayLogRow = {
   wellbeing: number
   productivity: number
   tags: string[]
+  /** Ступени тегов с количеством (срез 5б): тег → ступень; `{}` — ступеней нет. */
+  tag_levels: Record<string, number>
   note: string
   closed_at: string | null
 }
@@ -107,6 +109,14 @@ export function entriesFromRows(challengeIds: string[], rows: EntryRow[]): Recor
   return out
 }
 
+/**
+ * Ступени — полем только непустые (срез 5б): итог без ступеней читается как до них, без `levels`. Строку без
+ * столбца (выбор без `tag_levels`) тоже читаем без ступеней.
+ */
+function levelsFromRow(v: Record<string, number> | undefined): Pick<DayLog, 'levels'> {
+  return v && Object.keys(v).length > 0 ? { levels: { ...v } } : {}
+}
+
 export function dayLogFromRow(r: DayLogRow): DayLog {
   return {
     day: r.day,
@@ -114,6 +124,7 @@ export function dayLogFromRow(r: DayLogRow): DayLog {
     wellbeing: r.wellbeing,
     productivity: r.productivity,
     tags: [...r.tags],
+    ...levelsFromRow(r.tag_levels),
     note: r.note,
     closedAt: r.closed_at === null ? null : iso(r.closed_at),
   }
@@ -126,6 +137,8 @@ export function dayLogToRow(l: DayLog): DayLogRow {
     wellbeing: l.wellbeing,
     productivity: l.productivity,
     tags: [...l.tags],
+    /* пишется всегда: итог без ступеней снимает прежние, а не оставляет их в строке */
+    tag_levels: { ...l.levels },
     note: l.note,
     closed_at: l.closedAt,
   }
