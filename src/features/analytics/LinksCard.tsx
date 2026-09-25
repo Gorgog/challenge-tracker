@@ -4,11 +4,10 @@ import { CONTEXT_TAGS, LINK_CLOSED, LINK_MIN, LINK_RECORDED, type Chain, type Li
 import type { Goal } from '@/domain/overview'
 import { plural } from '@/lib/plural'
 import { chainLead } from './ChainSheet'
+import { Fold } from './Fold'
 import { earlyNote, factorName, LEVEL, linkLine, linkTitle } from './linkWords'
 
 const BUCKET = { less: 'Меньше', more: 'Больше' } as const
-const KICKER = 'text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase'
-const CARD = 'flex flex-col gap-2.5 rounded-2xl border border-border bg-card px-4 py-3.5'
 const links = (n: number) => `${n} ${plural(n, 'связь', 'связи', 'связей')}`
 const need = (l: Link) => Math.max(0, LINK_MIN - l.withN) + Math.max(0, LINK_MIN - l.withoutN)
 
@@ -46,8 +45,7 @@ function Early({ data }: { data: Links }) {
   const rows = nearest(data.pairs)
   const why = gateText(data)
   return (
-    <section aria-label="Связи: пока рано" className={CARD}>
-      <h2 className={KICKER}>Связи: пока рано</h2>
+    <>
       {why && <p className="text-[14px]">{why}</p>}
       <p className="text-[14px] text-muted-foreground">Нужно 5 дней «с» и 5 «без» — тогда покажем, что с чем идёт.</p>
       {rows.length > 0 && (
@@ -71,7 +69,7 @@ function Early({ data }: { data: Links }) {
           <p className="text-[13px] text-muted-foreground">{earlyNote(rows[0]!)}</p>
         </>
       )}
-    </section>
+    </>
   )
 }
 
@@ -182,10 +180,16 @@ export function LinksCard({
   /** «Ложусь раньше» уже идёт — вместо «Попробовать» ссылка на разбор. */
   bedtimeRunning: boolean
 }) {
-  if (!data.cards.length && !data.night && !data.late) return <Early data={data} />
+  /* одно место на экране: при смене цели «пока рано» и «Что попробовать» сменяют друг друга, раскрытость остаётся */
+  if (!data.cards.length && !data.night && !data.late) {
+    return (
+      <Fold label="Связи: пока рано" title="Связи: пока рано" gap="gap-2.5">
+        <Early data={data} />
+      </Fold>
+    )
+  }
   return (
-    <section aria-label="Что попробовать" className={CARD}>
-      <h2 className={KICKER}>Что попробовать</h2>
+    <Fold label="Что попробовать" title="Что попробовать" gap="gap-2.5">
       <ul className="flex flex-col gap-3">
         {data.cards.map((l) => (
           <Item key={factorName(l)} l={l} label={BUCKET[l.bucket!]} tone={l.bucket === 'less' ? 'text-worse' : 'text-better'} goal={goal} onOpen={onOpen} />
@@ -213,6 +217,6 @@ export function LinksCard({
         </button>
       )}
       <p className="text-[12px] text-muted-foreground">{`Смотрели ${links(data.checked)}, заметных ${data.found}.`}</p>
-    </section>
+    </Fold>
   )
 }

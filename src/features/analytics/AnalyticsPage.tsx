@@ -198,10 +198,7 @@ export function AnalyticsPage() {
             />
           </section>
 
-          <ChangesCard changes={view.changes} len={len} />
-
-          <CasesCard list={view.cases} goal={goal} onShow={showDays} />
-
+          {/* «Что попробовать» — сразу под графиком, остальной разбор — ниже (решение Georgy 25.09) */}
           <LinksCard
             data={view.links}
             goal={goal}
@@ -218,6 +215,10 @@ export function AnalyticsPage() {
               setLinkOpen(true)
             }}
           />
+
+          <ChangesCard changes={view.changes} len={len} />
+
+          <CasesCard list={view.cases} goal={goal} onShow={showDays} />
 
           <ExplainsCard list={view.explains} />
 

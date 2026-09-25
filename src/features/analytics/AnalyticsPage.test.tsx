@@ -590,6 +590,19 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
     expect(within(dialog).getByText('после отбоя с 00:30 (7)')).toBeInTheDocument()
   })
 
+  it('раскрыл связи и сменил цель — на месте «Связи: пока рано» «Что попробовать», и он раскрыт (решение Georgy 25.09)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    lateWorld()
+    showFolded()
+    const heading = () => within(links()).getByRole('heading', { level: 2 })
+    expect(heading()).toHaveTextContent('Связи: пока рано')
+    await user.click(within(heading()).getByRole('button'))
+    await user.click(within(screen.getByRole('group', { name: 'Цель' })).getByRole('button', { name: 'Сон' }))
+    expect(heading()).toHaveTextContent('Что попробовать')
+    expect(within(heading()).getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(links()).getByText('Ночь')).toBeInTheDocument()
+  })
+
   /** Страница аналитики и куда ведёт «Попробовать»: на «Челленджах» видно, с каким черновиком пришли. */
   function showRoutes() {
     function Challenges() {
@@ -605,6 +618,7 @@ describe('AnalyticsPage — ночь: лёг и встал', () => {
         </Routes>
       </MemoryRouter>,
     )
+    unfold()
   }
 
   it('«Ночь»: «Попробовать: ложусь раньше» — форма челленджа с черновиком (срез 4б)', async () => {

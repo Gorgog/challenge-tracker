@@ -2,6 +2,7 @@ import type { ChangeLine, Changes } from '@/domain/overview'
 import { BAD_SLEEP } from '@/domain/timeline'
 import { clockText } from '@/domain/night'
 import { plural } from '@/lib/plural'
+import { Fold } from './Fold'
 
 /** Строка словами и «было»; `up` — доля выросла. Числа — те же, что сравнивало правило. */
 function line(l: ChangeLine): { text: string; was: string; up: boolean } {
@@ -27,8 +28,7 @@ function line(l: ChangeLine): { text: string; was: string; up: boolean } {
 export function ChangesCard({ changes, len }: { changes: Changes; len: number }) {
   const [prev, cur, prevOf] = len === 14 ? ['Прошлые 2 недели', 'Эти 2 недели', 'прошлых 2 недель'] : [`Прошлые ${len} дней`, `Эти ${len} дней`, `прошлых ${len} дней`]
   return (
-    <section aria-label="Что изменилось" className="flex flex-col gap-2 rounded-2xl border border-border bg-card px-4 py-3.5">
-      <h2 className="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">Что изменилось</h2>
+    <Fold label="Что изменилось" title="Что изменилось">
       {changes.status !== 'ok' ? (
         <p className="text-[14px] text-muted-foreground">{changes.status === 'prevEmpty' ? prev : cur} почти не записаны — сравнивать не с чем.</p>
       ) : !changes.lines.length ? (
@@ -53,6 +53,6 @@ export function ChangesCard({ changes, len }: { changes: Changes; len: number })
       <p className="text-[12px] text-muted-foreground">
         Против {prevOf}, долей записанных дней; плохая ночь — сон 0–{BAD_SLEEP}. Это факты из записей — без выводов о причинах.
       </p>
-    </section>
+    </Fold>
   )
 }
