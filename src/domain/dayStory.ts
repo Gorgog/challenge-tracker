@@ -48,7 +48,10 @@ const eveningPart = (d: TimelineDay, goal: Goal): number | null => {
   return goal === 'productivity' ? e.productivity : goal === 'wellbeing' ? e.wellbeing : goal === 'mood' ? e.mood : stateOf(e)
 }
 
-const harmfulOf = (tags: string[]) => tags.filter((t) => HARMFUL_TAGS.includes(t) || NOT_MORE.includes(t))
+/** Тег, который может утянуть вниз: вредный или только «Меньше» — его чип в шторке оранжевый. */
+export const isHarmful = (tag: string) => HARMFUL_TAGS.includes(tag) || NOT_MORE.includes(tag)
+
+const harmfulOf = (tags: string[]) => tags.filter(isHarmful)
 
 const size = (l: Link) => Math.abs((l.withMean ?? 0) - (l.withoutMean ?? 0))
 

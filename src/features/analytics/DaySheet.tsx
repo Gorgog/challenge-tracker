@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { CalendarIcon, ChevronDownIcon, LightbulbIcon, MoonIcon, SunIcon, WineIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import type { DayStory } from '@/domain/dayStory'
+import { isHarmful, type DayStory } from '@/domain/dayStory'
 import type { Goal } from '@/domain/overview'
 import type { Shift, TimelineDay } from '@/domain/timeline'
 import type { Challenge, Outcome } from '@/domain/types'
@@ -41,32 +41,78 @@ const tagText = (tag: string, levels: Record<string, number> | undefined) => {
   return level ? `${tag} · ${level}` : tag
 }
 
-const Pill = ({ children }: { children: ReactNode }) => (
-  <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[12.5px] text-secondary-foreground">{children}</span>
+/** Тег — обведённый чип; тот, что может утянуть вниз, — оранжевый (поправка Georgy 25.09: «цвета сливаются»). */
+function TagChip({ tag, levels }: { tag: string; levels: Record<string, number> | undefined }) {
+  return (
+    <span
+      className={cn(
+        'rounded-full border px-2.5 py-0.5 text-[12.5px]',
+        isHarmful(tag) ? 'border-warn/45 bg-warn/10 text-warn' : 'border-foreground/25 bg-foreground/5 text-foreground',
+      )}
+    >
+      {tagText(tag, levels)}
+    </span>
+  )
+}
+
+/** Челлендж дня — своим чипом: ✓ выполнен (синий), ✗ пропущен (оранжевый). */
+function MarkChip({ name, hit }: { name: string; hit: boolean }) {
+  return (
+    <span
+      className={cn(
+        'rounded-md border px-2 py-0.5 text-[12.5px]',
+        hit ? 'border-better/40 bg-better/10 text-better' : 'border-worse/40 bg-worse/10 text-worse',
+      )}
+    >
+      {`${hit ? '✓' : '✗'} ${name}`}
+    </span>
+  )
+}
+
+const Note = ({ text }: { text: string }) => (
+  <p className="border-l-2 border-foreground/25 pl-2.5 text-[13px] text-muted-foreground italic">{`«${text}»`}</p>
 )
 
 const LINE =
-  '[&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-7 [&:not(:last-child)]:before:bottom-0 [&:not(:last-child)]:before:left-[13.5px] [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-border'
+  '[&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-8 [&:not(:last-child)]:before:bottom-1 [&:not(:last-child)]:before:left-[15.5px] [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-foreground/20'
 
-/** Шаг ленты: значок слева на общей линии, подпись и что было. `warn` — то, что могло утянуть вниз. */
-function Step({ icon, label, warn = false, children }: { icon: ReactNode; label: string; warn?: boolean; children?: ReactNode }) {
+const withValue = (label: string, v: number | null) => (v === null ? label : `${label} · ${num1(v)}`)
+
+/**
+ * Шаг ленты: значок на общей линии, подпись слева и оценка справа, под ними — что было. `warn` — то, что могло
+ * утянуть вниз. Скринридеру подпись с оценкой — одной строкой.
+ */
+function Step({ icon, label, value = null, warn = false, children }: { icon: ReactNode; label: string; value?: number | null; warn?: boolean; children?: ReactNode }) {
   return (
-    <li className={cn('relative grid grid-cols-[28px_minmax(0,1fr)] gap-2.5 pb-3 last:pb-0', LINE)}>
+    <li className={cn('relative grid grid-cols-[32px_minmax(0,1fr)] gap-3 pb-5 last:pb-0', LINE)}>
       <span
         aria-hidden
-        className={cn('grid size-7 place-items-center rounded-full [&_svg]:size-4', warn ? 'bg-warn/20 text-warn' : 'bg-secondary text-muted-foreground')}
+        className={cn(
+          'grid size-8 place-items-center rounded-full border [&_svg]:size-4',
+          warn ? 'border-warn/50 bg-warn/15 text-warn' : 'border-foreground/20 bg-card text-muted-foreground',
+        )}
       >
         {icon}
       </span>
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-[12px] text-muted-foreground">{label}</p>
+      <div className="flex min-w-0 flex-col gap-2 pt-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="sr-only">{withValue(label, value)}</span>
+          <span aria-hidden className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+            {label}
+          </span>
+          {value !== null && (
+            <span aria-hidden className="font-mono text-[14px] font-semibold tabular-nums">
+              {num1(value)}
+            </span>
+          )}
+        </div>
         {children}
       </div>
     </li>
   )
 }
 
-const withValue = (label: string, v: number | null) => (v === null ? label : `${label} · ${num1(v)}`)
+const Chips = ({ children }: { children: ReactNode }) => <div className="flex flex-wrap gap-1.5">{children}</div>
 
 /**
  * Один день лентой (решение Georgy 25.09, макет одобрен): сверху точка дня против обычного, дальше по порядку —
@@ -130,8 +176,12 @@ export function DaySheet({
               <span
                 data-testid="day-value"
                 className={cn(
-                  'grid size-13 shrink-0 place-items-center rounded-[14px] text-[20px] font-semibold tabular-nums',
-                  story.tone === 'worse' ? 'bg-worse/15 text-worse' : story.tone === 'better' ? 'bg-better/15 text-better' : 'bg-secondary text-foreground',
+                  'grid size-13 shrink-0 place-items-center rounded-[14px] border text-[20px] font-semibold tabular-nums',
+                  story.tone === 'worse'
+                    ? 'border-worse/45 bg-worse/15 text-worse'
+                    : story.tone === 'better'
+                      ? 'border-better/45 bg-better/15 text-better'
+                      : 'border-border bg-secondary text-foreground',
                 )}
               >
                 {story.value === null ? '—' : num1(story.value)}
@@ -142,15 +192,15 @@ export function DaySheet({
               </div>
             </DialogHeader>
 
-            <ul aria-label="Как прошёл день" className="flex flex-col">
+            <ul aria-label="Как прошёл день" className="flex flex-col pt-1">
               {story.before && (
-                <Step icon={<WineIcon />} label={withValue('вечер накануне', story.before.value)} warn={story.before.harmful.length > 0}>
+                <Step icon={<WineIcon />} label="вечер накануне" value={story.before.value} warn={story.before.harmful.length > 0}>
                   {story.before.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <Chips>
                       {story.before.tags.map((t) => (
-                        <Pill key={t}>{tagText(t, story.before!.levels)}</Pill>
+                        <TagChip key={t} tag={t} levels={story.before!.levels} />
                       ))}
-                    </div>
+                    </Chips>
                   ) : (
                     <p className="text-[13.5px] text-muted-foreground">тегов не было</p>
                   )}
@@ -161,30 +211,38 @@ export function DaySheet({
                   <p className="text-[14px]">{`лёг в ${clockText(story.night.bed)}${laterText(story.night.later)}`}</p>
                 </Step>
               )}
-              <Step icon={<SunIcon />} label={story.morning ? withValue('утро', story.morning.value) : 'утро'}>
+              <Step icon={<SunIcon />} label="утро" value={story.morning?.value ?? null}>
                 {!story.morning ? (
                   <p className="text-[13.5px] text-muted-foreground">{day.started ? 'пропущено' : 'день не начат'}</p>
                 ) : (
-                  story.morning.note && <p className="text-[13.5px] text-muted-foreground">{`«${story.morning.note}»`}</p>
+                  story.morning.note && <Note text={story.morning.note} />
                 )}
               </Step>
-              <Step icon={<CalendarIcon />} label={story.evening ? withValue('вечер', story.evening.value) : 'вечер'}>
+              <Step icon={<CalendarIcon />} label="вечер" value={story.evening?.value ?? null}>
                 {!story.evening && <p className="text-[13.5px] text-muted-foreground">{isToday ? 'ещё не закрыт' : 'не закрыт'}</p>}
                 {story.evening && story.evening.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
+                  <Chips>
                     {story.evening.tags.map((t) => (
-                      <Pill key={t}>{tagText(t, day.levels)}</Pill>
+                      <TagChip key={t} tag={t} levels={day.levels} />
                     ))}
-                  </div>
+                  </Chips>
                 )}
-                {misses.length > 0 && <p className="text-[13.5px] text-worse">{`✗ ${misses.join(', ')}`}</p>}
-                {hits.length > 0 && <p className="text-[13.5px] text-better">{`✓ ${hits.join(', ')}`}</p>}
-                {story.evening?.note && <p className="text-[13.5px] text-muted-foreground">{`«${story.evening.note}»`}</p>}
+                {misses.length + hits.length > 0 && (
+                  <Chips>
+                    {misses.map((name) => (
+                      <MarkChip key={name} name={name} hit={false} />
+                    ))}
+                    {hits.map((name) => (
+                      <MarkChip key={name} name={name} hit />
+                    ))}
+                  </Chips>
+                )}
+                {story.evening?.note && <Note text={story.evening.note} />}
               </Step>
             </ul>
 
             {story.guess && (
-              <div className="flex items-start gap-2.5 rounded-[10px] bg-secondary px-3 py-2.5">
+              <div className="flex items-start gap-2.5 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-2.5">
                 <LightbulbIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" />
                 <p className="text-[13.5px]">
                   {guessText(story.guess, goal)}
